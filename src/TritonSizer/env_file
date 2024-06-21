@@ -1,0 +1,11 @@
+-libpath /home/zhaoxueyan/code/TritonSizer/benmark/platform/ASAP7/lib
+-lib asap7sc7p5t_AO_RVT_FF_nldm_201020.lib
+-lib asap7sc7p5t_SEQ_RVT_FF_nldm_201020.lib     
+-lib sram_asap7_32x256_1rw.lib
+-lib asap7sc7p5t_INVBUF_RVT_FF_nldm_201020.lib  
+-lib asap7sc7p5t_SIMPLE_RVT_FF_nldm_201020.lib  
+-lib sram_asap7_64x256_1rw.lib
+-lib asap7sc7p5t_OA_RVT_FF_nldm_201020.lib      
+-lib sram_asap7_16x256_1rw.lib                  
+-lib sram_asap7_64x64_1rw.lib
+

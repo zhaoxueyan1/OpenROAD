@@ -217,7 +217,7 @@ static void handler(int sig)
   raise(sig);
 }
 
-int main(int argc, char* argv[])
+int flow_OpenROAD(int argc, char* argv[])
 {
   // This avoids problems with locale setting dependent
   // C functions like strtod (e.g. 0.5 vs 0,5).

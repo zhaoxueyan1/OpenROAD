@@ -286,10 +286,10 @@ add_subdirectory(pdn)
 add_subdirectory(dft)
 add_subdirectory(mpl2)
 add_subdirectory(par)
-
+add_subdirectory(TritonSizer)
 ################################################################
 
-add_executable(openroad
+add_library(openroad
   ${OPENROAD_SOURCE}
 )
 

@@ -1,6 +1,6 @@
 [submodule "module/OpenSTA"]
 	path = src/sta
-	url = ../../The-OpenROAD-Project/OpenSTA.git
+	url = git@gitee.com:icontest/OpenSTA.git
 [submodule "src/abc"]
 	path = third-party/abc
-	url = ../../The-OpenROAD-Project/abc.git
+	url = git@github.com:The-OpenROAD-Project/abc.git
