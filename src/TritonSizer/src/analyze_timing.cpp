@@ -56,7 +56,8 @@
 #include "sta/Sta.hh"
 #include "utils.h"
 #include "sizer.h"
-#include "tcl.h"
+#include <tcl8.6/tcl.h>
+#include <tcl8.6/tclDecls.h>
 
 designTiming::designTiming() {
     program = PT;
@@ -114,10 +115,10 @@ void designTiming::closeServerContact() {
 //     sta::evalTclString( _tclExpression);
 
 //     pt_time += cpuTime() - begin;
-//     _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+//     string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 //     float temp1;
 //     char temp2[128];
-//     sscanf(_tclAnswer, "%f%s", &temp1, &temp2);
+//     sscanf(_tclAnswer.c_str(), "%f%s", &temp1, &temp2);
 //     delay = temp1;
 //     riseFall = temp2;
 
@@ -133,10 +134,10 @@ void designTiming::getCellDelay(double &rise_delay, double &fall_delay,
     sta::evalTclString(_tclInputString);
 
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     float temp1;
     float temp2;
-    sscanf(_tclAnswer, "%f%f", &temp1, &temp2);
+    sscanf(_tclAnswer.c_str(), "%f%f", &temp1, &temp2);
     rise_delay = temp1;
     fall_delay = temp2;
 
@@ -151,11 +152,11 @@ void designTiming::getFFDelay(double &rdelay, double &fdelay,
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     pt_time += cpuTime() - begin;
     float temp1;
     float temp2;
-    sscanf(_tclAnswer, "%f%f", &temp1, &temp2);
+    sscanf(_tclAnswer.c_str(), "%f%f", &temp1, &temp2);
     rdelay = temp1;
     fdelay = temp2;
 }
@@ -167,11 +168,11 @@ void designTiming::getNetDelay(double &delay, string sourcePinName,
     //_tclExpression = (char *)_tclInputString.c_str();
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 
     pt_time += cpuTime() - begin;
     float temp;
-    sscanf(_tclAnswer, "%f", &temp);
+    sscanf(_tclAnswer.c_str(), "%f", &temp);
     delay = temp;
 }
 
@@ -184,10 +185,10 @@ void designTiming::getInputSlew(double &riseSlew, double &fallSlew,
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     float temp1;
     float temp2;
-    sscanf(_tclAnswer, "%f%f", &temp1, &temp2);
+    sscanf(_tclAnswer.c_str(), "%f%f", &temp1, &temp2);
     riseSlew = temp1;
     fallSlew = temp2;
 }
@@ -230,9 +231,9 @@ double designTiming::getWorstSlackHold(string _clkName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double _pathSlack = _convertToDouble(_answerStr);
     return (_pathSlack);
 }
@@ -252,9 +253,9 @@ double designTiming::getWorstSlack(string _clkName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double _pathSlack = _convertToDouble(_answerStr);
     return (_pathSlack);
 }
@@ -271,10 +272,10 @@ double designTiming::getTotPower() {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     // cout << _tclAnswer << endl;
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double _totPower = _convertToDouble(_answerStr);
     return (_totPower);
 }
@@ -294,9 +295,9 @@ double designTiming::getLeakPower() {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double _leakPower = _convertToDouble(_answerStr);
     return (_leakPower);
 }
@@ -315,9 +316,9 @@ double designTiming::getTNS(string _clkName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double _pathSlack = _convertToDouble(_answerStr);
     return (_pathSlack);
 }
@@ -337,11 +338,11 @@ void designTiming::getTranVio(double &tot, double &max, int &num) {
     sta::evalTclString(_tclInputString);
 
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     float temp1;
     float temp2;
     int temp3;
-    sscanf(_tclAnswer, "%f%f%d", &temp1, &temp2, &temp3);
+    sscanf(_tclAnswer.c_str(), "%f%f%d", &temp1, &temp2, &temp3);
     tot = temp1;
     max = temp2;
     num = temp3;
@@ -358,9 +359,9 @@ double designTiming::getTNSHold(string _clkName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double _pathSlack = _convertToDouble(_answerStr);
     return (_pathSlack);
 }
@@ -380,8 +381,8 @@ bool designTiming::sizeCell(string cellInstance, string cellMaster) {
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     int _returnStatus = _convertToInt(_answerStr);
     if(_returnStatus == 0) {
         cerr << "Fatal error: size_cell failed; check the status on ptserver"
@@ -403,8 +404,8 @@ bool designTiming::writeECOChange(string filename) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     if(_answerStr == "1")
         return true;
     else
@@ -423,8 +424,8 @@ double designTiming::getCellSlack(string CellName) {
         sta::evalTclString(_tclInputString);
         pt_time += cpuTime() - begin;
 
-        _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-        string _answerStr(sta::Sta::sta()->tclInterp()->result);
+        string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+        string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
         double _setupSlack = _convertToDouble(_answerStr);
         return (_setupSlack);
     }
@@ -438,8 +439,8 @@ bool designTiming::loadDesign(string benchname) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 
     if(_answerStr == "1")
         return true;
@@ -456,8 +457,8 @@ bool designTiming::updateSize(string filename) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 
     if(_answerStr == "1")
         return true;
@@ -479,8 +480,8 @@ bool designTiming::checkSize(string filename) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 
     if(_answerStr == "1")
         return true;
@@ -495,8 +496,8 @@ bool designTiming::checkServer() {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     if(_answerStr == "1")
         return true;
     else
@@ -520,10 +521,10 @@ void designTiming::getPinSlack(double &riseSlack, double &fallSlack,
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     float temp1;
     float temp2;
-    sscanf(_tclAnswer, "%f%f", &temp1, &temp2);
+    sscanf(_tclAnswer.c_str(), "%f%f", &temp1, &temp2);
     riseSlack = temp1;
     fallSlack = temp2;
 }
@@ -543,10 +544,10 @@ void designTiming::getPinMinSlack(double &riseSlack, double &fallSlack,
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     float temp1;
     float temp2;
-    sscanf(_tclAnswer, "%f%f", &temp1, &temp2);
+    sscanf(_tclAnswer.c_str(), "%f%f", &temp1, &temp2);
     riseSlack = temp1;
     fallSlack = temp2;
     // cout << pinName << " " << riseSlack << " " << fallSlack << endl;
@@ -561,10 +562,10 @@ void designTiming::getPinTran(double &riseTran, double &fallTran,
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     float temp1;
     float temp2;
-    sscanf(_tclAnswer, "%f%f", &temp1, &temp2);
+    sscanf(_tclAnswer.c_str(), "%f%f", &temp1, &temp2);
     riseTran = temp1;
     fallTran = temp2;
     // cout << pinName << " " << riseSlack << " " << fallSlack << endl;
@@ -585,7 +586,7 @@ bool designTiming::writePinSlack(string infile, string outfile) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 
     if(_answerStr == "1")
         return true;
@@ -605,7 +606,7 @@ bool designTiming::writePinMinSlack(string infile, string outfile) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 
     if(_answerStr == "1")
         return true;
@@ -628,7 +629,7 @@ bool designTiming::writeMaxTranConst(string infile, string outfile) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     if(_answerStr == "1")
         return true;
     else
@@ -653,7 +654,7 @@ bool designTiming::writePinToggleRate(string infile, string outfile,
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     if(_answerStr == "1")
         return true;
     else
@@ -675,7 +676,7 @@ bool designTiming::writePinToggleRate(string infile, string outfile) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     if(_answerStr == "1")
         return true;
     else
@@ -699,9 +700,9 @@ void designTiming::getPinToggleRate(double &toggleRate, string pinName) {
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     float temp;
-    sscanf(_tclAnswer, "%f", &temp);
+    sscanf(_tclAnswer.c_str(), "%f", &temp);
     toggleRate = temp;
 }
 
@@ -717,7 +718,7 @@ bool designTiming::writePinTran(string infile, string outfile) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     if(_answerStr == "1")
         return true;
     else
@@ -739,7 +740,7 @@ bool designTiming::writePinAll(string infile, string outfile) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     if(_answerStr == "1")
         return true;
     else
@@ -755,10 +756,10 @@ void designTiming::getPinArrival(double &riseArrival, double &fallArrival,
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     float temp1;
     float temp2;
-    sscanf(_tclAnswer, "%f%f", &temp1, &temp2);
+    sscanf(_tclAnswer.c_str(), "%f%f", &temp1, &temp2);
     riseArrival = temp1;
     fallArrival = temp2;
     // cout << pinName << " " << riseSlack << " " << fallSlack << endl;
@@ -776,8 +777,8 @@ double designTiming::getRiseSlack(string PinName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double slack = _convertToDouble(_answerStr);
     return slack;
 }
@@ -795,8 +796,8 @@ double designTiming::getFallSlack(string PinName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double slack = _convertToDouble(_answerStr);
     return slack;
 }
@@ -813,8 +814,8 @@ double designTiming::getRiseTran(string PinName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double tran = _convertToDouble(_answerStr);
     return tran;
 }
@@ -832,8 +833,8 @@ double designTiming::getFallTran(string PinName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double tran = _convertToDouble(_answerStr);
     return tran;
 }
@@ -845,8 +846,8 @@ double designTiming::getRiseArrival(string PinName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double val = _convertToDouble(_answerStr);
     return val;
 }
@@ -857,8 +858,8 @@ double designTiming::getFallArrival(string PinName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double val = _convertToDouble(_answerStr);
     return val;
 }
@@ -874,8 +875,8 @@ double designTiming::getCeff(string PinName) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     double val = _convertToDouble(_answerStr);
     return val;
 }
@@ -891,8 +892,8 @@ bool designTiming::writePinCeff(string infile, string outfile) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 
     if(_answerStr == "1")
         return true;
@@ -920,8 +921,8 @@ bool designTiming::runECO(unsigned mode) {
     double begin = cpuTime();
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 
     if(_answerStr == "1")
         return true;
@@ -936,8 +937,8 @@ string designTiming::getLibCell(string CellName) {
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     return (_answerStr);
 }
 
@@ -948,8 +949,8 @@ void designTiming::Exit() {
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
 }
 
 string designTiming::doOneCmd(string command) {
@@ -960,7 +961,7 @@ string designTiming::doOneCmd(string command) {
     sta::evalTclString(_tclInputString);
     pt_time += cpuTime() - begin;
 
-    _tclAnswer = sta::Sta::sta()->tclInterp()->result;
-    string _answerStr(sta::Sta::sta()->tclInterp()->result);
+    string _tclAnswer(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
+    string _answerStr(Tcl_GetStringResult(sta::Sta::sta()->tclInterp()));
     return _answerStr;
 }

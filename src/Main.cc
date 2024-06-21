@@ -45,6 +45,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include "ord/ordMain.hh"
 // We have had too many problems with this std::filesytem on various platforms
 // so it is disabled but kept for future reference
 #ifdef USE_STD_FILESYSTEM
@@ -217,7 +218,7 @@ static void handler(int sig)
   raise(sig);
 }
 
-int flow_OpenROAD(int argc, char* argv[])
+int ord::flow_OpenROAD(int argc, char* argv[])
 {
   // This avoids problems with locale setting dependent
   // C functions like strtod (e.g. 0.5 vs 0,5).
@@ -259,56 +260,28 @@ int flow_OpenROAD(int argc, char* argv[])
 
   cmd_argc = argc;
   cmd_argv = argv;
-#ifdef ENABLE_PYTHON3
-  if (findCmdLineFlag(cmd_argc, cmd_argv, "-python")) {
-    // Setup the app with tcl
-    auto* interp = Tcl_CreateInterp();
-    Tcl_Init(interp);
-    ord::initOpenRoad(interp);
-    if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_splash")) {
-      showSplash();
-    }
-
-    utl::Logger* logger = ord::OpenRoad::openRoad()->getLogger();
-    if (findCmdLineFlag(cmd_argc, cmd_argv, "-gui")) {
-      logger->warn(utl::ORD, 38, "-gui is not yet supported with -python");
-    }
-
-    if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_init")) {
-      logger->warn(utl::ORD, 39, ".openroad ignored with -python");
-    }
-
-    const char* threads = findCmdLineKey(cmd_argc, cmd_argv, "-threads");
-    if (threads) {
-      ord::OpenRoad::openRoad()->setThreadCount(threads);
-    } else {
-      // set to default number of threads
-      ord::OpenRoad::openRoad()->setThreadCount(
-          ord::OpenRoad::openRoad()->getThreadCount(), false);
-    }
-
-#if PY_VERSION_HEX >= 0x03080000
-    initPython(cmd_argc, cmd_argv);
-    return Py_RunMain();
-#else
-    initPython();
-    bool exit = findCmdLineFlag(cmd_argc, cmd_argv, "-exit");
-    std::vector<wchar_t*> args;
-    args.push_back(Py_DecodeLocale(cmd_argv[0], nullptr));
-    if (!exit) {
-      args.push_back(Py_DecodeLocale("-i", nullptr));
-    }
-    for (int i = 1; i < cmd_argc; i++) {
-      args.push_back(Py_DecodeLocale(cmd_argv[i], nullptr));
-    }
-    return Py_Main(args.size(), args.data());
-#endif  // PY_VERSION_HEX >= 0x03080000
+  // Setup the app with tcl
+  auto* interp = Tcl_CreateInterp();
+  Tcl_Init(interp);
+  ord::initOpenRoad(interp);
+  if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_splash")) {
+    showSplash();
   }
-#endif  // ENABLE_PYTHON3
 
+  utl::Logger* logger = ord::OpenRoad::openRoad()->getLogger();
+  if (findCmdLineFlag(cmd_argc, cmd_argv, "-gui")) {
+    logger->warn(utl::ORD, 38, "-gui is not yet supported with -python");
+  }
+
+  if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_init")) {
+    logger->warn(utl::ORD, 39, ".openroad ignored with -python");
+  }
+
+  const char* threads = "1";
+  ord::OpenRoad::openRoad()->setThreadCount(threads);
   // Set argc to 1 so Tcl_Main doesn't source any files.
   // Tcl_Main never returns.
-  Tcl_Main(1, argv, ord::tclAppInit);
+  // Tcl_Main(1, argv, ord::tclAppInit);
   return 0;
 }
 

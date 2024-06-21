@@ -20,7 +20,10 @@ message(STATUS "OPENSTA_HOME: ${OPENSTA_HOME}")
 include_directories(${OPENSTA_HDEAR_HOME}
                     ${dbSTA_HDEAR_HOME}
                     ${OPENSTA_HDEAR_HOME}/sta
-                    ${OPENSTA_para_HDEAR_HOME})
+                    ${OPENSTA_para_HDEAR_HOME}
+                    ${TCL_INCLUDE_PATH}
+                    ${OPENSTA_HOME}
+                    )
 
 file(GLOB SOURCES "*.cpp")
 
