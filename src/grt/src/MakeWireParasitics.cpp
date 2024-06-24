@@ -108,9 +108,10 @@ void MakeWireParasitics::estimateParasitcs(odb::dbNet* net,
     arc_delay_calc_->reduceParasitic(
         parasitic, sta_net, corner, sta::MinMaxAll::all());
   }
-  parasitics_->deleteParasiticNetworks(sta_net);
+  // parasitics_->deleteParasiticNetworks(sta_net);
 }
 
+// don't use this function
 void MakeWireParasitics::estimateParasitcs(odb::dbNet* net, GRoute& route)
 {
   debugPrint(logger_, GRT, "est_rc", 1, "net {}", net->getConstName());

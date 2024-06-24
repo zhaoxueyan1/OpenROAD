@@ -463,6 +463,7 @@ void Resizer::makePadParasitic(const Net* net)
   parasitics_->deleteParasiticNetworks(net);
 }
 
+// don't use this function
 void Resizer::estimateWireParasiticSteiner(const Pin* drvr_pin, const Net* net)
 {
   SteinerTree* tree = makeSteinerTree(drvr_pin);
