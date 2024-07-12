@@ -230,12 +230,12 @@ int ord::flow_OpenROAD(int argc, char* argv[])
     }
   }
 
-  // Generate a stacktrace on crash
-  signal(SIGABRT, handler);
-  signal(SIGBUS, handler);
-  signal(SIGFPE, handler);
-  signal(SIGILL, handler);
-  signal(SIGSEGV, handler);
+  // // Generate a stacktrace on crash
+  // signal(SIGABRT, handler);
+  // signal(SIGBUS, handler);
+  // signal(SIGFPE, handler);
+  // signal(SIGILL, handler);
+  // signal(SIGSEGV, handler);
 
   if (argc == 2 && stringEq(argv[1], "-help")) {
     showUsage(argv[0], init_filename);
@@ -269,15 +269,15 @@ int ord::flow_OpenROAD(int argc, char* argv[])
   }
 
   utl::Logger* logger = ord::OpenRoad::openRoad()->getLogger();
-  if (findCmdLineFlag(cmd_argc, cmd_argv, "-gui")) {
-    logger->warn(utl::ORD, 38, "-gui is not yet supported with -python");
-  }
+  // if (findCmdLineFlag(cmd_argc, cmd_argv, "-gui")) {
+  //   logger->warn(utl::ORD, 38, "-gui is not yet supported with -python");
+  // }
 
-  if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_init")) {
-    logger->warn(utl::ORD, 39, ".openroad ignored with -python");
-  }
+  // if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_init")) {
+  //   logger->warn(utl::ORD, 39, ".openroad ignored with -python");
+  // }
 
-  const char* threads = "1";
+  const char* threads = "8";
   ord::OpenRoad::openRoad()->setThreadCount(threads);
   // Set argc to 1 so Tcl_Main doesn't source any files.
   // Tcl_Main never returns.
