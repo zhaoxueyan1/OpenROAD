@@ -58,6 +58,7 @@ class InitialPlaceVars
   int maxFanout;
   float netWeightScale;
   bool debug;
+  bool forceCPU;
 
   InitialPlaceVars();
   void reset();

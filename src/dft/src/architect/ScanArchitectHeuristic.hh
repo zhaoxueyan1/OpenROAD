@@ -32,7 +32,6 @@
 #pragma once
 
 #include "ScanArchitect.hh"
-#include "utl/Logger.h"
 
 namespace dft {
 
@@ -43,18 +42,13 @@ class ScanArchitectHeuristic : public ScanArchitect
 {
  public:
   ScanArchitectHeuristic(const ScanArchitectConfig& config,
-                         std::unique_ptr<ScanCellsBucket> scan_cells_bucket,
-                         utl::Logger* logger);
+                         std::unique_ptr<ScanCellsBucket> scan_cells_bucket);
   // Not copyable or movable
   ScanArchitectHeuristic(const ScanArchitectHeuristic&) = delete;
   ScanArchitectHeuristic& operator=(const ScanArchitectHeuristic&) = delete;
   ~ScanArchitectHeuristic() override = default;
 
   void architect() override;
-
-  utl::Logger* logger_;
-
- private:
 };
 
 }  // namespace dft

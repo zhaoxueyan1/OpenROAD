@@ -50,8 +50,6 @@ using std::vector;
 
 using utl::DPL;
 
-using utl::format_as;
-
 void Opendp::checkPlacement(const bool verbose,
                             const bool disallow_one_site_gaps,
                             const string& report_file_name)

@@ -17,8 +17,6 @@ class ScanCellMock : public ScanCell
   void connectScanIn(const ScanDriver& pin) const override;
   void connectScanOut(const ScanLoad& pin) const override;
   ScanDriver getScanOut() const override;
-  odb::Point getOrigin() const override;
-  bool isPlaced() const override;
 };
 
 }  // namespace test

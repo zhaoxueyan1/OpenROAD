@@ -191,13 +191,11 @@ void ScriptWidget::addResultToOutput(const QString& result, bool is_ok)
     addToOutput(result, ok_msg_);
   } else {
     try {
-      auto msg = result.toStdString();
-      if (msg.find(TclCmdInputWidget::exit_string) == std::string::npos) {
-        logger_->error(utl::GUI, 70, msg);
-      }
+      logger_->error(utl::GUI, 70, result.toStdString());
     } catch (const std::runtime_error& e) {
       if (!is_interactive_) {
-        throw;
+        // rethrow error
+        throw e;
       }
     }
   }

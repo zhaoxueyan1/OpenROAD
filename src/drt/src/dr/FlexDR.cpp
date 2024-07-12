@@ -1237,11 +1237,9 @@ int FlexDR::main()
   init();
   frTime t;
   bool incremental = false;
-  bool hasFixed = false;
   for (const auto& net : getDesign()->getTopBlock()->getNets()) {
     incremental |= net->hasInitialRouting();
-    hasFixed |= net->isFixed();
-    if (incremental && hasFixed) {
+    if (incremental) {
       break;
     }
   }
@@ -1256,10 +1254,8 @@ int FlexDR::main()
       clipSize += std::min(MAX_CLIPSIZE_INCREASE, (int) round(clipSizeInc_));
     }
     args.size = clipSize;
-    if (args.ripupMode == RipUpMode::ALL) {
-      if (hasFixed || (incremental && iter_ <= 2)) {
-        args.ripupMode = RipUpMode::INCR;
-      }
+    if (incremental && args.ripupMode == RipUpMode::ALL && iter_ <= 2) {
+      args.ripupMode = RipUpMode::INCR;
     }
     searchRepair(args);
     if (getDesign()->getTopBlock()->getNumMarkers() == 0) {

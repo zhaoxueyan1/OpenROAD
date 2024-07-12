@@ -111,11 +111,10 @@ uint64_t ScanCellsBucket::numberOfCells(size_t hash_domain) const
 
 std::unique_ptr<ScanArchitect> ScanArchitect::ConstructScanScanArchitect(
     const ScanArchitectConfig& config,
-    std::unique_ptr<ScanCellsBucket> scan_cells_bucket,
-    utl::Logger* logger_)
+    std::unique_ptr<ScanCellsBucket> scan_cells_bucket)
 {
-  return std::make_unique<ScanArchitectHeuristic>(
-      config, std::move(scan_cells_bucket), logger_);
+  return std::make_unique<ScanArchitectHeuristic>(config,
+                                                  std::move(scan_cells_bucket));
 }
 
 ScanArchitect::ScanArchitect(const ScanArchitectConfig& config,
@@ -134,22 +133,22 @@ void ScanArchitect::inferChainCount()
   std::unordered_map<size_t, uint64_t> hash_domains_total_bits
       = scan_cells_bucket_->getTotalBitsPerHashDomain();
 
-  if (auto max_length = config_.getMaxLength(); max_length.has_value()) {
+  // TODO(fgaray): Handle more options like a specific chain_count
+  if (config_.getMaxLength().has_value()) {
     // The user is saying that we should respect this max_length
     hash_domain_to_limits_ = inferChainCountFromMaxLength(
-        hash_domains_total_bits, max_length.value(), config_.getMaxChains());
+        hash_domains_total_bits, config_.getMaxLength().value());
   } else {
     // The user did not specify any max_length, let's use a default of 200
-    hash_domain_to_limits_ = inferChainCountFromMaxLength(
-        hash_domains_total_bits, 200, config_.getMaxChains());
+    hash_domain_to_limits_
+        = inferChainCountFromMaxLength(hash_domains_total_bits, 200);
   }
 }
 
 std::map<size_t, ScanArchitect::HashDomainLimits>
 ScanArchitect::inferChainCountFromMaxLength(
     const std::unordered_map<size_t, uint64_t>& hash_domains_total_bit,
-    uint64_t max_length,
-    const std::optional<uint64_t>& max_chains)
+    uint64_t max_length)
 {
   std::map<size_t, HashDomainLimits> hash_domain_to_limits;
   for (const auto& [hash_domain, bits] : hash_domains_total_bit) {
@@ -159,10 +158,6 @@ ScanArchitect::inferChainCountFromMaxLength(
       domain_chain_count = bits / max_length + 1;
     } else {
       domain_chain_count = bits / max_length;
-    }
-
-    if (max_chains.has_value()) {
-      domain_chain_count = std::min(domain_chain_count, max_chains.value());
     }
 
     uint64_t domain_max_length = 0;

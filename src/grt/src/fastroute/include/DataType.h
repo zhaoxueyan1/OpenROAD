@@ -79,9 +79,9 @@ struct Segment  // A Segment is a 2-pin connection
   bool xFirst;  // route x-direction first (only for L route)
   bool HVH;     // TRUE = HVH or false = VHV (only for Z route)
 
-  int16_t x1, y1, x2, y2;  // coordinates of two endpoints
-  int netID;               // the netID of the net this segment belonging to
-  int16_t Zpoint;  // The coordinates of Z point (x for HVH and y for VHV)
+  short x1, y1, x2, y2;  // coordinates of two endpoints
+  int netID;             // the netID of the net this segment belonging to
+  short Zpoint;          // The coordinates of Z point (x for HVH and y for VHV)
 };
 
 struct FrNet  // A Net is a set of connected MazePoints
@@ -138,35 +138,35 @@ struct FrNet  // A Net is a set of connected MazePoints
 struct Edge  // An Edge is the routing track holder between two adjacent
              // MazePoints
 {
-  int16_t congCNT;
-  uint16_t cap;    // the capacity of the edge
-  uint16_t usage;  // the usage of the edge
-  uint16_t red;
-  int16_t last_usage;
+  short congCNT;
+  unsigned short cap;    // the capacity of the edge
+  unsigned short usage;  // the usage of the edge
+  unsigned short red;
+  short last_usage;
   float est_usage;  // the estimated usage of the edge
 
-  uint16_t usage_red() const { return usage + red; }
+  unsigned short usage_red() const { return usage + red; }
   float est_usage_red() const { return est_usage + red; }
 };
 
 struct Edge3D
 {
-  uint16_t cap;    // the capacity of the edge
-  uint16_t usage;  // the usage of the edge
-  uint16_t red;    // the reduction of capacity of the edge
+  unsigned short cap;    // the capacity of the edge
+  unsigned short usage;  // the usage of the edge
+  unsigned short red;    // the reduction of capacity of the edge
 };
 
 struct TreeNode
 {
   bool assigned;
 
-  int16_t status = 0;
-  int16_t conCNT;
-  int16_t botL, topL;
+  short status;
+  short conCNT;
+  short botL, topL;
   // heights and eID arrays size were increased after using PD
   // to create the tree topologies.
   static constexpr int max_connections = 10;
-  int16_t heights[max_connections];
+  short heights[max_connections];
   int eID[max_connections];
 
   int16_t x, y;  // position in the grid graph
@@ -188,20 +188,20 @@ struct Route
   // valid for LRoute:
   // true - the route is horizontal first (x1, y1) - (x2, y1) - (x2, y2),
   // false (x1, y1) - (x1, y2) - (x2, y2)
-  bool xFirst = false;
+  bool xFirst;
 
   // valid for ZRoute:
   // true - the route is HVH shape, false - VHV shape
   bool HVH;
 
   // valid for ZRoute: the position of turn point for Z-shape
-  int16_t Zpoint;
+  short Zpoint;
 
   // valid for MazeRoute: a list of grids (n=routelen+1) the route
   // passes, (x1, y1) is the first one, but (x2, y2) is the lastone
-  std::vector<int16_t> gridsX;
-  std::vector<int16_t> gridsY;
-  std::vector<int16_t> gridsL;
+  std::vector<short> gridsX;
+  std::vector<short> gridsY;
+  std::vector<short> gridsL;
 
   // valid for MazeRoute: the number of edges in the route
   int routelen;

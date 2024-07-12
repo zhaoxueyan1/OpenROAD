@@ -86,7 +86,6 @@ class drNet : public drBlockObject
   bool isRouted() const { return routed_; }
   const std::vector<frRect>& getOrigGuides() const { return origGuides_; }
   uint16_t getPriority() const { return priority_; }
-  bool isFixed() const;
   // setters
   void incPriority()
   {
@@ -148,7 +147,7 @@ class drNet : public drBlockObject
   void resetInQueue() { inQueue_ = false; }
   void setRouted() { routed_ = true; }
   void resetRouted() { routed_ = false; }
-  void setOrigGuides(const std::vector<frRect>& in)
+  void setOrigGuides(std::vector<frRect>& in)
   {
     origGuides_.assign(in.begin(), in.end());
   }

@@ -761,6 +761,7 @@ class NesterovPlaceVars
   static const int maxRecursionWlCoef = 10;
   static const int maxRecursionInitSLPCoef = 10;
 
+  bool forceCPU = false;
   bool timingDrivenMode = true;
   bool routabilityDrivenMode = true;
   bool debug = false;

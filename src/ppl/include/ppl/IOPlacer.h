@@ -35,13 +35,12 @@
 
 #pragma once
 
+#include <map>
 #include <memory>
 #include <set>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
-#include "odb/db.h"
 #include "odb/geom.h"
 #include "ppl/Parameters.h"
 
@@ -74,16 +73,8 @@ using odb::Rect;
 
 using utl::Logger;
 
-struct pinSetComp
-{
-  bool operator()(const odb::dbBTerm* lhs, const odb::dbBTerm* rhs) const
-  {
-    return lhs->getId() < rhs->getId();
-  }
-};
-
 // A list of pins that will be placed together in the die boundary
-using PinSet = std::set<odb::dbBTerm*, pinSetComp>;
+using PinSet = std::set<odb::dbBTerm*>;
 using PinList = std::vector<odb::dbBTerm*>;
 using MirroredPins = std::unordered_map<odb::dbBTerm*, odb::dbBTerm*>;
 
@@ -282,10 +273,6 @@ class IOPlacer
   // db functions
   void populateIOPlacer(const std::set<int>& hor_layer_idx,
                         const std::set<int>& ver_layer_idx);
-  void findConstraintRegion(const Interval& interval,
-                            const Rect& constraint_box,
-                            Rect& region);
-  void commitConstraintsToDB();
   void commitIOPlacementToDB(std::vector<IOPin>& assignment);
   void commitIOPinToDB(const IOPin& pin);
   void initCore(const std::set<int>& hor_layer_idxs,
