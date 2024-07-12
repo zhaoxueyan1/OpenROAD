@@ -712,7 +712,8 @@ Ath__track* Ath__grid::addTrack(uint ii, uint markerCnt, int base)
 Ath__track* Ath__grid::addTrack(uint ii, uint markerCnt)
 {
   int trackBase = _base + _pitch * ii;
-  return addTrack(ii, markerCnt, trackBase);
+  addTrack(ii, markerCnt, trackBase);
+  return nullptr;
 }
 Ath__track* Ath__grid::getTrackPtr(uint ii, uint markerCnt, int base)
 {

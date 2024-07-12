@@ -59,8 +59,6 @@ using utl::DPL;
 using odb::dbBox;
 using odb::dbRow;
 
-using utl::format_as;
-
 PixelPt::PixelPt(Pixel* pixel1, GridX grid_x, GridY grid_y)
     : pixel(pixel1), x(grid_x), y(grid_y)
 {
@@ -998,7 +996,7 @@ void Grid::setGridPaddedLoc(Cell* cell, GridX x, GridY y) const
 {
   cell->x_ = gridToDbu(x + padding_->padLeft(cell), getSiteWidth());
   if (cell->isHybrid()) {
-    const auto& grid_info = getInfoMap().at(getGridMapKey(cell));
+    auto grid_info = getInfoMap().at(getGridMapKey(cell));
     DbuY total_sites_height = grid_info.getSitesTotalHeight();
     const auto& sites = grid_info.getSites();
     const int sites_size = sites.size();

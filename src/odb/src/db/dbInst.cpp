@@ -505,11 +505,10 @@ void dbInst::setOrigin(int x, int y)
   _dbBlock* block = (_dbBlock*) inst->getOwner();
   int prev_x = inst->_x;
   int prev_y = inst->_y;
-  const auto placement_status = getPlacementStatus();
-  if (placement_status.isPlaced() && prev_x == x && prev_y == y) {
+  if (block->_flags._valid_bbox && prev_x == x && prev_y == y) {
     return;
   }
-  if (placement_status.isFixed()) {
+  if (getPlacementStatus().isFixed()) {
     inst->getLogger()->error(utl::ODB,
                              359,
                              "Attempt to change the origin of {} instance {}",

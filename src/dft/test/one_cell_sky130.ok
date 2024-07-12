@@ -10,19 +10,6 @@ Instance ff1
   CLK input clock
  Output pins:
   Q output output1
-Instance ff1
- Cell: sky130_fd_sc_hd__sdfsbp_1
- Library: sky130_fd_sc_hd_merged
- Path cells: sky130_fd_sc_hd__sdfsbp_1
- Input pins:
-  D input port1
-  SCD input (unconnected)
-  SCE input (unconnected)
-  SET_B input set_b
-  CLK input clock
- Output pins:
-  Q output output1
-  Q_N output (unconnected)
 ***************************
 Preview DFT Report
 Number of chains: 1
@@ -35,18 +22,15 @@ Scan chain 'chain_0' has 1 cells (1 bits)
 
 
 Instance ff1
- Cell: sky130_fd_sc_hd__sdfsbp_1
+ Cell: sky130_fd_sc_hd__dfstp_1
  Library: sky130_fd_sc_hd_merged
- Path cells: sky130_fd_sc_hd__sdfsbp_1
+ Path cells: sky130_fd_sc_hd__dfstp_1
  Input pins:
   D input port1
-  SCD input (unconnected)
-  SCE input (unconnected)
   SET_B input set_b
   CLK input clock
  Output pins:
   Q output output1
-  Q_N output (unconnected)
 Instance ff1
  Cell: sky130_fd_sc_hd__sdfsbp_1
  Library: sky130_fd_sc_hd_merged

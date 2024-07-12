@@ -1,8 +1,8 @@
-///////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
 //
 // BSD 3-Clause License
 //
-// Copyright (c) 2023, Google LLC
+// Copyright (c) 2019, The Regents of the University of California
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,55 +35,61 @@
 
 #pragma once
 
-#include <optional>
+#include <cuda_runtime.h>
+#include <thrust/copy.h>
+#include <thrust/device_vector.h>
+#include <thrust/fill.h>
+#include <thrust/host_vector.h>
+#include <thrust/sequence.h>
+
+#include <Eigen/SparseCore>
+#include <memory>
 #include <vector>
 
-#include "object.h"
-#include "odb/geom.h"
+#include "cusolverSp.h"
+#include "cusparse.h"
+#include "device_launch_parameters.h"
+#include "odb/db.h"
 #include "utl/Logger.h"
 
-namespace mpl2 {
+namespace utl {
+class Logger;
+}
 
-class Cluster;
+namespace gpl {
 
-class Mpl2Observer
+typedef Eigen::SparseMatrix<float, Eigen::RowMajor> SMatrix;
+class GpuSolver
 {
  public:
-  Mpl2Observer() = default;
-  virtual ~Mpl2Observer() = default;
+  GpuSolver(SMatrix& placeInstForceMatrix,
+            Eigen::VectorXf& fixedInstForceVec,
+            utl::Logger* logger);
+  void cusolverCal(Eigen::VectorXf& instLocVec);
+  float error();
+  ~GpuSolver();
 
-  virtual void startCoarse() {}
-  virtual void startFine() {}
+ private:
+  int m_;    // Rows of the SP matrix
+  int nnz_;  // non-zeros
+  utl::Logger* log_;
+  float error_;
 
-  virtual void startSA() {}
-  virtual void saStep(const std::vector<SoftMacro>& macros) {}
-  virtual void saStep(const std::vector<HardMacro>& macros) {}
-  virtual void endSA() {}
+  // {d_cooRowIndex_, d_cooColIndex_, d_cooVal_} are the device vectors used to
+  // store the COO formatted triplets.
+  // https://en.wikipedia.org/wiki/Sparse_matrix#Coordinate_list_(COO)
+  // d_instLocVec_ and d_fixedInstForceVec_ are the device lists corresponding
+  // to instLocVec and fixedInstForceVec.
+  thrust::device_vector<int> d_cooRowIndex_, d_cooColIndex_;
+  thrust::device_vector<float> d_cooVal_, d_fixedInstForceVec_, d_instLocVec_;
 
-  virtual void finishedClustering(Cluster* root) {}
+  // {r_cooRowIndex_, r_cooColIndex_, r_cooVal_} are the raw pointers to the
+  // device vectors above.
+  int *r_cooRowIndex_, *r_cooColIndex_;
+  float *r_cooVal_, *r_instLocVec_, *r_fixedInstForceVec_;
 
-  virtual void setMacroBlockages(const std::vector<mpl2::Rect>& macro_blockages)
-  {
-  }
-  virtual void setPlacementBlockages(
-      const std::vector<mpl2::Rect>& placement_blockages)
-  {
-  }
-  virtual void setBundledNets(const std::vector<BundledNet>& bundled_nets) {}
-  virtual void setShowBundledNets(bool show_bundled_nets) {}
-  virtual void setOutline(const odb::Rect& outline) {}
-
-  virtual void setAreaPenalty(float area) {}
-  virtual void setOutlinePenalty(float outline_penalty) {}
-  virtual void setWirelength(float wirelength) {}
-  virtual void setFencePenalty(float fence_penalty) {}
-  virtual void setGuidancePenalty(float guidance_penalty) {}
-  virtual void setBoundaryPenalty(float boundary_penalty) {}
-  virtual void setMacroBlockagePenalty(float macro_blockage_penalty) {}
-  virtual void setNotchPenalty(float notch_penalty) {}
-  virtual void penaltyCalculated(float norm_cost) {}
-
-  virtual void eraseDrawing() {}
+  void cudaerror(cudaError_t code);
+  void cusparseerror(cusparseStatus_t code);
+  void cusolvererror(cusolverStatus_t code);
 };
-
-}  // namespace mpl2
+}  // namespace gpl

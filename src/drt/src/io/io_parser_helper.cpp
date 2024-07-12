@@ -1157,10 +1157,7 @@ void io::Parser::saveGuidesUpdates()
              lNum += 2) {
           auto layer = tech_->getLayer(lNum);
           auto dbLayer = dbTech->findLayer(layer->getName().c_str());
-          odb::dbGuide::create(
-              dbNet,
-              dbLayer,
-              {bbox.xMin(), bbox.yMin(), ebox.xMax(), ebox.yMax()});
+          odb::dbGuide::create(dbNet, dbLayer, bbox);
         }
       } else {
         auto layerName = tech_->getLayer(bNum)->getName();

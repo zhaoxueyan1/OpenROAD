@@ -39,6 +39,7 @@ sta::define_cmd_args "global_placement" {\
     [-disable_timing_driven]\
     [-disable_routability_driven]\
     [-incremental]\
+    [-force_cpu]\
     [-skip_io]\
     [-bin_grid_count grid_count]\
     [-density target_density]\
@@ -91,7 +92,8 @@ proc global_placement { args } {
       -disable_timing_driven \
       -disable_routability_driven \
       -skip_io \
-      -incremental}
+      -incremental\
+      -force_cpu}
 
   # flow control for initial_place
   if { [info exists flags(-skip_initial_place)] } {
@@ -102,9 +104,8 @@ proc global_placement { args } {
     gpl::set_initial_place_max_iter_cmd $initial_place_max_iter
   }
 
-  if { [info exists flags(-force_cpu)] } {
-    utl::warn "GPL" 152 "-force_cpu is deprecated."
-  }
+  set force_cpu [info exists flags(-force_cpu)]
+  gpl::set_force_cpu $force_cpu
 
   set skip_io [info exists flags(-skip_io)]
   gpl::set_skip_io_mode_cmd $skip_io
@@ -163,7 +164,7 @@ proc global_placement { args } {
   gpl::set_routability_use_grt $routability_use_grt
   if { $routability_driven } {
     if { $routability_use_grt } {
-      utl::warn "GPL" 152 \
+      utl::warn "GPL" 152\
         "Using GRT FastRoute instead of default RUDY for congestion in routability driven."
     }
   }

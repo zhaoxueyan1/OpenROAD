@@ -56,28 +56,17 @@ utl::Logger* getLogger()
 
 void preview_dft(bool verbose)
 {
-  getDft()->previewDft(verbose);
+  getDft()->preview_dft(verbose);
 }
-
-void scan_replace()
-{
-  getDft()->scanReplace();
-}
-
 
 void insert_dft()
 {
-  getDft()->insertDft();
+  getDft()->insert_dft();
 }
 
 void set_dft_config_max_length(int max_length)
 {
   getDft()->getMutableDftConfig()->getMutableScanArchitectConfig()->setMaxLength(max_length);
-}
-
-void set_dft_config_max_chains(int max_chains)
-{
-  getDft()->getMutableDftConfig()->getMutableScanArchitectConfig()->setMaxChains(max_chains);
 }
 
 void set_dft_config_clock_mixing(const char* clock_mixing_ptr)

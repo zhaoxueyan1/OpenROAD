@@ -164,6 +164,5 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     export CMAKE_PREFIX_PATH=$(brew --prefix or-tools)
 fi
 
-echo "[INFO] Using ${numThreads} threads."
 eval cmake "${cmakeOptions}" -B "${buildDir}" .
 eval time cmake --build "${buildDir}" -j "${numThreads}"

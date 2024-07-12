@@ -168,9 +168,9 @@ class dbObject
   dbObjectType getObjectType() const;
   dbDatabase* getDb() const;
   uint getId() const;
-  const char* getTypeName() const;
+  const char* getObjName() const;
 
-  static const char* getTypeName(dbObjectType type);
+  static const char* getObjName(dbObjectType type);
   // These are not intended for client use as the returned class is
   // not exported.  They are for internal db convenience.
   _dbObject* getImpl();

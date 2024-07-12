@@ -2,7 +2,6 @@ include("openroad")
 
 set(TEST_NAMES
     constant1
-    dont_touch_attr
     make_port
     network_edit1
     sdc_names1
@@ -42,5 +41,5 @@ set(TEST_NAMES
 )
 
 foreach(TEST_NAME IN LISTS TEST_NAMES)
-  or_integration_test("dbSta" ${TEST_NAME}  ${CMAKE_CURRENT_SOURCE_DIR}/regression)
+  or_integration_test("ant" ${TEST_NAME}  ${CMAKE_CURRENT_SOURCE_DIR}/regression)
 endforeach()
