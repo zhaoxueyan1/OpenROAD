@@ -90,8 +90,8 @@ class Timing
   float getPinArrival(odb::dbBTerm* db_pin, RiseFall rf, MinMax minmax = Max);
   bool isTimeInf(float time);
 
-  float getPinSlew(odb::dbITerm* db_pin, MinMax minmax = Max);
-  float getPinSlew(odb::dbBTerm* db_pin, MinMax minmax = Max);
+  float getPinSlew(odb::dbITerm* db_pin,  RiseFall rf=Rise, MinMax minmax=Max);
+  float getPinSlew(odb::dbBTerm* db_pin,  RiseFall rf=Rise, MinMax minmax=Max);
 
   float getPinSlack(odb::dbITerm* db_pin, RiseFall rf, MinMax minmax = Max);
   float getPinSlack(odb::dbBTerm* db_pin, RiseFall rf, MinMax minmax = Max);
@@ -117,13 +117,14 @@ class Timing
  private:
   sta::dbSta* getSta();
   sta::MinMax* getMinMax(MinMax type);
+  sta::RiseFall* getRiseFall(RiseFall type);
   sta::LibertyCell* getLibertyCell(odb::dbMaster* master);
   std::array<sta::Vertex*, 2> vertices(const sta::Pin* pin);
   bool isEndpoint(sta::Pin* sta_pin);
-  float getPinSlew(sta::Pin* sta_pin, MinMax minmax);
+  float getPinSlew(sta::Pin* sta_pin, RiseFall rf, MinMax minmax);
   float getPinArrival(sta::Pin* sta_pin, RiseFall rf, MinMax minmax);
   float getPinSlack(sta::Pin* sta_pin, RiseFall rf, MinMax minmax);
-  float slewAllCorners(sta::Vertex* vertex, sta::MinMax* minmax);
+  float slewAllCorners(sta::Vertex* vertex, sta::RiseFall* rf, sta::MinMax* minmax);
   std::vector<float> arrivalsClk(const sta::RiseFall* rf,
                                  sta::Clock* clk,
                                  const sta::RiseFall* clk_rf,

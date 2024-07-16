@@ -41,14 +41,17 @@
 #include "db_sta/dbSta.hh"
 #include "odb/db.h"
 #include "ord/OpenRoad.hh"
+#include "sta/MinMax.hh"
 #include "sta/Search.hh"
 // #include "ord/Tech.h"
 #include "ord/Design.h"
 #include "rsz/Resizer.hh"
 #include "sta/Corner.hh"
 #include "sta/Liberty.hh"
+#include "sta/Property.hh"
 #include "sta/TimingArc.hh"
 #include "sta/TimingRole.hh"
+#include "sta/Transition.hh"
 #include "utl/Logger.h"
 
 namespace ord {
@@ -99,41 +102,44 @@ bool Timing::isEndpoint(sta::Pin* sta_pin)
   return false;
 }
 
-float Timing::slewAllCorners(sta::Vertex* vertex, sta::MinMax* minmax)
+float Timing::slewAllCorners(sta::Vertex* vertex,
+                             sta::RiseFall* rf,
+                             sta::MinMax* minmax)
 {
   auto sta = getSta();
   bool max = (minmax == sta::MinMax::max());
   float slew = (max) ? -sta::INF : sta::INF;
   float slew_corner;
   for (auto corner : getCorners()) {
-    slew_corner = sta::delayAsFloat(
-        sta->vertexSlew(vertex, sta::RiseFall::rise(), corner, minmax));
+    slew_corner
+        = sta::delayAsFloat(sta->vertexSlew(vertex, rf, corner, minmax));
     slew = (max) ? std::max(slew, slew_corner) : std::min(slew, slew_corner);
   }
   return slew;
 }
 
-float Timing::getPinSlew(odb::dbITerm* db_pin, MinMax minmax)
+float Timing::getPinSlew(odb::dbITerm* db_pin, RiseFall rf, MinMax minmax)
 {
   sta::dbSta* sta = getSta();
   sta::Pin* sta_pin = sta->getDbNetwork()->dbToSta(db_pin);
-  return getPinSlew(sta_pin, minmax);
+  return getPinSlew(sta_pin, rf, minmax);
 }
 
-float Timing::getPinSlew(odb::dbBTerm* db_pin, MinMax minmax)
+float Timing::getPinSlew(odb::dbBTerm* db_pin, RiseFall rf, MinMax minmax)
 {
   sta::dbSta* sta = getSta();
   sta::Pin* sta_pin = sta->getDbNetwork()->dbToSta(db_pin);
-  return getPinSlew(sta_pin, minmax);
+  return getPinSlew(sta_pin, rf, minmax);
 }
 
-float Timing::getPinSlew(sta::Pin* sta_pin, MinMax minmax)
+float Timing::getPinSlew(sta::Pin* sta_pin, RiseFall rf, MinMax minmax)
 {
   auto vertex_array = vertices(sta_pin);
   float pinSlew = (minmax == Max) ? -sta::INF : sta::INF;
   for (auto vertex : vertex_array) {
     if (vertex != nullptr) {
-      float pinSlewTemp = slewAllCorners(vertex, getMinMax(minmax));
+      float pinSlewTemp
+          = slewAllCorners(vertex, getRiseFall(rf), getMinMax(minmax));
       pinSlew = (minmax == Max) ? std::max(pinSlew, pinSlewTemp)
                                 : std::min(pinSlew, pinSlewTemp);
     }
@@ -340,6 +346,10 @@ std::vector<odb::dbMTerm*> Timing::getTimingFanoutFrom(odb::dbMTerm* input)
 sta::MinMax* Timing::getMinMax(MinMax type)
 {
   return type == Max ? sta::MinMax::max() : sta::MinMax::min();
+}
+sta::RiseFall* Timing::getRiseFall(RiseFall type)
+{
+  return type == Rise ? sta::RiseFall::rise() : sta::RiseFall::fall();
 }
 
 float Timing::getNetCap(odb::dbNet* net, sta::Corner* corner, MinMax minmax)
