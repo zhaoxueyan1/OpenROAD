@@ -147,7 +147,7 @@ void MakeWireParasitics::estimateParasitcs(odb::dbNet* net, GRoute& route)
         parasitic, sta_net, corner, sta::MinMaxAll::all());
   }
 
-  parasitics_->deleteParasiticNetworks(sta_net);
+  // parasitics_->deleteParasiticNetworks(sta_net);
 }
 
 void MakeWireParasitics::clearParasitics()

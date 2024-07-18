@@ -113,9 +113,9 @@ class Timing
 
   void makeEquivCells();
   std::vector<odb::dbMaster*> equivCells(odb::dbMaster* master);
+  sta::dbSta* getSta();
 
  private:
-  sta::dbSta* getSta();
   sta::MinMax* getMinMax(MinMax type);
   sta::RiseFall* getRiseFall(RiseFall type);
   sta::LibertyCell* getLibertyCell(odb::dbMaster* master);
