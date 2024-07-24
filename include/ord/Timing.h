@@ -90,8 +90,8 @@ class Timing
   float getPinArrival(odb::dbBTerm* db_pin, RiseFall rf, MinMax minmax = Max);
   bool isTimeInf(float time);
 
-  float getPinSlew(odb::dbITerm* db_pin,  RiseFall rf=Rise, MinMax minmax=Max);
-  float getPinSlew(odb::dbBTerm* db_pin,  RiseFall rf=Rise, MinMax minmax=Max);
+  float getPinSlew(odb::dbITerm* db_pin,  RiseFall rf, MinMax minmax=Max);
+  float getPinSlew(odb::dbBTerm* db_pin,  RiseFall rf, MinMax minmax=Max);
 
   float getPinSlack(odb::dbITerm* db_pin, RiseFall rf, MinMax minmax = Max);
   float getPinSlack(odb::dbBTerm* db_pin, RiseFall rf, MinMax minmax = Max);
