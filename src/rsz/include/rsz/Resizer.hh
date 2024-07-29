@@ -383,7 +383,7 @@ class Resizer : public dbStaState
   int metersToDbu(double dist) const;
   void makeEquivCells();
 
- protected:
+//  protected:
   void init();
   void initBlock();
   void initDesignArea();

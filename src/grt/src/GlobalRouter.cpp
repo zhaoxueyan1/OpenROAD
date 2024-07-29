@@ -93,7 +93,7 @@ GlobalRouter::GlobalRouter()
       max_routing_layer_(-1),
       layer_for_guide_dimension_(3),
       gcells_offset_(2),
-      overflow_iterations_(1),
+      overflow_iterations_(10),
       congestion_report_iter_step_(0),
       allow_congestion_(false),
       macro_extension_(0),
