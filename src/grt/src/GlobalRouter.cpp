@@ -462,6 +462,8 @@ void GlobalRouter::estimateRC(odb::dbNet* db_net)
   if (!route.empty()) {
     Net* net = getNet(db_net);
     builder.estimateParasitcs(db_net, net->getPins(), route);
+  } else {
+    logger_->warn(GRT, 116, "Net {} has no route.", db_net->getConstName());
   }
 }
 

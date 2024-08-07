@@ -42,6 +42,7 @@
 #include <boost/multi_array.hpp>
 #include <set>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "AbstractMakeWireParasitics.h"
@@ -466,7 +467,11 @@ class FastRouteCore
   void releaseNetResources(const int netID);
 
   // utility functions
-  void setTreeNodesVariables(int netID);
+  std::map<std::pair<short, short>, int> redundant_map;
+  int setTreeNodesVariables(int netID);
+  void setTreeNodesVariables(const int netID, int& numpoints, int node_id);
+  void setTreeEdgesVariables(const int netID, int edge_id);
+  void updateExistTreeEdgesVariables(const int netID, int edge_id);
   int splitEdge(std::vector<TreeEdge>& treeedges,
                 std::vector<TreeNode>& treenodes,
                 int n1,

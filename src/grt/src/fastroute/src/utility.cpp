@@ -31,6 +31,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <queue>
 
@@ -2660,7 +2661,7 @@ int FastRouteCore::splitEdge(std::vector<TreeEdge>& treeedges,
   return new_node_id;
 }
 
-void FastRouteCore::setTreeNodesVariables(const int netID)
+int FastRouteCore::setTreeNodesVariables(const int netID)
 {
   // Number of nodes without redundancy in their x and y positions
   int numpoints = 0;
@@ -2668,10 +2669,14 @@ void FastRouteCore::setTreeNodesVariables(const int netID)
   const int num_terminals = sttrees_[netID].num_terminals;
   auto& treeedges = sttrees_[netID].edges;
   auto& treenodes = sttrees_[netID].nodes;
-
+  redundant_map.clear();
   int routeLen;
   TreeEdge* treeedge;
   // Setting the values needed for each TreeNode
+  // printf("num_nodes: %d, num_terminals %d\n",
+  //        sttrees_[netID].num_nodes(),
+  //        num_terminals);
+  // #pragma omp parallel for schedule(dynamic)
   for (int d = 0; d < sttrees_[netID].num_nodes(); d++) {
     treenodes[d].topL = -1;
     treenodes[d].botL = num_layers_;
@@ -2681,7 +2686,8 @@ void FastRouteCore::setTreeNodesVariables(const int netID)
     treenodes[d].hID = BIG_INT;
     treenodes[d].lID = BIG_INT;
     treenodes[d].status = 0;
-
+    std::pair<short, short> position
+        = std::make_pair(treenodes[d].x, treenodes[d].y);
     if (d < num_terminals) {
       treenodes[d].botL = nets_[netID]->getPinL()[d];
       treenodes[d].topL = nets_[netID]->getPinL()[d];
@@ -2692,24 +2698,36 @@ void FastRouteCore::setTreeNodesVariables(const int netID)
       ycor_[numpoints] = treenodes[d].y;
       dcor_[numpoints] = d;
       numpoints++;
+      if (redundant_map.find(position) == redundant_map.end()) {
+        redundant_map.insert({position, d});
+      }
     } else {
       bool redundant = false;
-      for (int k = 0; k < numpoints; k++) {
-        if ((treenodes[d].x == xcor_[k]) && (treenodes[d].y == ycor_[k])) {
-          treenodes[d].stackAlias = dcor_[k];
-          redundant = true;
-          break;
-        }
+      auto iter = redundant_map.find(position);
+      if (iter != redundant_map.end()) {
+        redundant = true;
+        int k = iter->second;
+        treenodes[d].stackAlias = k;
+        // printf("find redundant node %d %d %d\n",
+        //        treenodes[d].x,
+        //        treenodes[d].y,
+        //        treenodes[d].stackAlias);
       }
       if (!redundant) {
         xcor_[numpoints] = treenodes[d].x;
         ycor_[numpoints] = treenodes[d].y;
         dcor_[numpoints] = d;
         numpoints++;
+        if (redundant_map.find(position) == redundant_map.end()) {
+          redundant_map.insert({position, d});
+        }
+        // redundant_map.insert({{treenodes[d].x, treenodes[d].y}, d});
       }
     }
   }  // loop nodes
   // Setting the values needed for TreeNodes and TreeEdges
+  // printf("num_edges: %d\n", sttrees_[netID].num_edges());
+  // #pragma omp parallel for schedule(dynamic)
   for (int k = 0; k < sttrees_[netID].num_edges(); k++) {
     treeedge = &(treeedges[k]);
 
@@ -2760,6 +2778,308 @@ void FastRouteCore::setTreeNodesVariables(const int netID)
 
     treenodes[n2a].assigned = true;
   }  // loop edges
+  return numpoints;
+}
+
+#if 0
+int FastRouteCore::setTreeNodesVariables(const int netID)
+{
+  // Number of nodes without redundancy in their x and y positions
+  int numpoints = 0;
+
+  const int num_terminals = sttrees_[netID].num_terminals;
+  auto& treeedges = sttrees_[netID].edges;
+  auto& treenodes = sttrees_[netID].nodes;
+  redundant_map.clear();
+  int routeLen;
+  TreeEdge* treeedge;
+  // Setting the values needed for each TreeNode
+  // printf("num_nodes: %d, num_terminals %d\n",
+  //        sttrees_[netID].num_nodes(),
+  //        num_terminals);
+  // #pragma omp parallel for schedule(dynamic)
+  for (int d = 0; d < sttrees_[netID].num_nodes(); d++) {
+    treenodes[d].topL = -1;
+    treenodes[d].botL = num_layers_;
+    treenodes[d].assigned = false;
+    treenodes[d].stackAlias = d;
+    treenodes[d].conCNT = 0;
+    treenodes[d].hID = BIG_INT;
+    treenodes[d].lID = BIG_INT;
+    treenodes[d].status = 0;
+    std::pair<short, short> position
+        = std::make_pair(treenodes[d].x, treenodes[d].y);
+    if (d < num_terminals) {
+      treenodes[d].botL = nets_[netID]->getPinL()[d];
+      treenodes[d].topL = nets_[netID]->getPinL()[d];
+      treenodes[d].assigned = true;
+      treenodes[d].status = 1;
+
+      xcor_[numpoints] = treenodes[d].x;
+      ycor_[numpoints] = treenodes[d].y;
+      dcor_[numpoints] = d;
+      numpoints++;
+      if (redundant_map.find(position) == redundant_map.end()) {
+        redundant_map.insert({position, d});
+      }
+    } else {
+      bool redundant = false;
+      auto iter = redundant_map.find(position);
+      if (iter != redundant_map.end()) {
+        redundant = true;
+        int k = iter->second;
+        treenodes[d].stackAlias = k;
+        // printf("find redundant node %d %d %d\n",
+        //        treenodes[d].x,
+        //        treenodes[d].y,
+        //        treenodes[d].stackAlias);
+      }
+      if (!redundant) {
+        xcor_[numpoints] = treenodes[d].x;
+        ycor_[numpoints] = treenodes[d].y;
+        dcor_[numpoints] = d;
+        numpoints++;
+        if (redundant_map.find(position) == redundant_map.end()) {
+          redundant_map.insert({position, d});
+        }
+        // redundant_map.insert({{treenodes[d].x, treenodes[d].y}, d});
+      }
+    }
+  }  // loop nodes
+  // Setting the values needed for TreeNodes and TreeEdges
+  // printf("num_edges: %d\n", sttrees_[netID].num_edges());
+  // #pragma omp parallel for schedule(dynamic)
+  for (int k = 0; k < sttrees_[netID].num_edges(); k++) {
+    treeedge = &(treeedges[k]);
+
+    if (treeedge->len <= 0) {
+      continue;
+    }
+    routeLen = treeedge->route.routelen;
+
+    int n1 = treeedge->n1;
+    int n2 = treeedge->n2;
+    const std::vector<int16_t>& gridsLtmp = treeedge->route.gridsL;
+
+    int n1a = treenodes[n1].stackAlias;
+
+    int n2a = treenodes[n2].stackAlias;
+
+    treeedge->n1a = n1a;
+    treeedge->n2a = n2a;
+
+    int connectionCNT = treenodes[n1a].conCNT;
+    treenodes[n1a].heights[connectionCNT] = gridsLtmp[0];
+    treenodes[n1a].eID[connectionCNT] = k;
+    treenodes[n1a].conCNT++;
+
+    if (gridsLtmp[0] > treenodes[n1a].topL) {
+      treenodes[n1a].hID = k;
+      treenodes[n1a].topL = gridsLtmp[0];
+    }
+    if (gridsLtmp[0] < treenodes[n1a].botL) {
+      treenodes[n1a].lID = k;
+      treenodes[n1a].botL = gridsLtmp[0];
+    }
+
+    treenodes[n1a].assigned = true;
+
+    connectionCNT = treenodes[n2a].conCNT;
+    treenodes[n2a].heights[connectionCNT] = gridsLtmp[routeLen];
+    treenodes[n2a].eID[connectionCNT] = k;
+    treenodes[n2a].conCNT++;
+    if (gridsLtmp[routeLen] > treenodes[n2a].topL) {
+      treenodes[n2a].hID = k;
+      treenodes[n2a].topL = gridsLtmp[routeLen];
+    }
+    if (gridsLtmp[routeLen] < treenodes[n2a].botL) {
+      treenodes[n2a].lID = k;
+      treenodes[n2a].botL = gridsLtmp[routeLen];
+    }
+
+    treenodes[n2a].assigned = true;
+  }  // loop edges
+  return numpoints;
+}
+#endif
+
+void FastRouteCore::setTreeNodesVariables(const int netID,
+                                          int& numpoints,
+                                          int node_id)
+{
+  // Number of nodes without redundancy in their x and y positions
+
+  const int num_terminals = sttrees_[netID].num_terminals;
+  auto& treeedges = sttrees_[netID].edges;
+  auto& treenodes = sttrees_[netID].nodes;
+
+  int routeLen;
+  TreeEdge* treeedge;
+  // Setting the values needed for each TreeNode
+  // printf("num_nodes: %d\n", sttrees_[netID].num_nodes());
+  // #pragma omp parallel for schedule(dynamic)
+  int d = node_id;
+  treenodes[d].topL = -1;
+  treenodes[d].botL = num_layers_;
+  treenodes[d].assigned = false;
+  treenodes[d].stackAlias = d;
+  treenodes[d].conCNT = 0;
+  treenodes[d].hID = BIG_INT;
+  treenodes[d].lID = BIG_INT;
+  treenodes[d].status = 0;
+  std::pair<short, short> position
+      = std::make_pair(treenodes[d].x, treenodes[d].y);
+  if (d < num_terminals) {
+    treenodes[d].botL = nets_[netID]->getPinL()[d];
+    treenodes[d].topL = nets_[netID]->getPinL()[d];
+    treenodes[d].assigned = true;
+    treenodes[d].status = 1;
+
+    xcor_[numpoints] = treenodes[d].x;
+    ycor_[numpoints] = treenodes[d].y;
+    dcor_[numpoints] = d;
+    numpoints++;
+    if (redundant_map.find(position) == redundant_map.end()) {
+      redundant_map.insert({position, d});
+    }
+  } else {
+    bool redundant = false;
+    auto iter = redundant_map.find(position);
+    if (iter != redundant_map.end()) {
+      redundant = true;
+      int k = iter->second;
+      treenodes[d].stackAlias = k;
+      // printf("find redundant node %d %d %d\n",
+      //        treenodes[d].x,
+      //        treenodes[d].y,
+      //        treenodes[d].stackAlias);
+    }
+    if (!redundant) {
+      xcor_[numpoints] = treenodes[d].x;
+      ycor_[numpoints] = treenodes[d].y;
+      dcor_[numpoints] = d;
+      numpoints++;
+      if (redundant_map.find(position) == redundant_map.end()) {
+        redundant_map.insert({position, d});
+      }
+      // redundant_map.insert({{treenodes[d].x, treenodes[d].y}, d});
+    }
+  }
+
+  // Setting the values needed for TreeNodes and TreeEdges
+  // printf("num_edges: %d\n", sttrees_[netID].num_edges());
+  // #pragma omp parallel for schedule(dynamic)
+  // loop edges
+}
+
+void FastRouteCore::setTreeEdgesVariables(const int netID, int edge_id)
+{
+  const int num_terminals = sttrees_[netID].num_terminals;
+  auto& treeedges = sttrees_[netID].edges;
+  auto& treenodes = sttrees_[netID].nodes;
+  int routeLen;
+  TreeEdge* treeedge;
+
+  int k = edge_id;
+  treeedge = &(treeedges[k]);
+
+  if (treeedge->len <= 0) {
+    return;
+  }
+  routeLen = treeedge->route.routelen;
+
+  int n1 = treeedge->n1;
+  int n2 = treeedge->n2;
+  const std::vector<int16_t>& gridsLtmp = treeedge->route.gridsL;
+
+  int n1a = treenodes[n1].stackAlias;
+
+  int n2a = treenodes[n2].stackAlias;
+
+  treeedge->n1a = n1a;
+  treeedge->n2a = n2a;
+  auto& tree_node_n1a = treenodes[n1a];
+  auto& tree_node_n2a = treenodes[n2a];
+
+  int connectionCNT = tree_node_n1a.conCNT;
+  tree_node_n1a.heights[connectionCNT] = gridsLtmp[0];
+  tree_node_n1a.eID[connectionCNT] = k;
+  tree_node_n1a.conCNT++;
+
+  if (gridsLtmp[0] > tree_node_n1a.topL) {
+    tree_node_n1a.hID = k;
+    tree_node_n1a.topL = gridsLtmp[0];
+  }
+  if (gridsLtmp[0] < tree_node_n1a.botL) {
+    tree_node_n1a.lID = k;
+    tree_node_n1a.botL = gridsLtmp[0];
+  }
+
+  tree_node_n1a.assigned = true;
+
+  connectionCNT = tree_node_n2a.conCNT;
+  tree_node_n2a.heights[connectionCNT] = gridsLtmp[routeLen];
+  tree_node_n2a.eID[connectionCNT] = k;
+  tree_node_n2a.conCNT++;
+  if (gridsLtmp[routeLen] > tree_node_n2a.topL) {
+    tree_node_n2a.hID = k;
+    tree_node_n2a.topL = gridsLtmp[routeLen];
+  }
+  if (gridsLtmp[routeLen] < tree_node_n2a.botL) {
+    tree_node_n2a.lID = k;
+    tree_node_n2a.botL = gridsLtmp[routeLen];
+  }
+
+  tree_node_n2a.assigned = true;
+}
+
+void FastRouteCore::updateExistTreeEdgesVariables(const int netID, int edge_id)
+{
+  const int num_terminals = sttrees_[netID].num_terminals;
+  auto& treeedges = sttrees_[netID].edges;
+  auto& treenodes = sttrees_[netID].nodes;
+  int routeLen;
+  TreeEdge* treeedge;
+
+  int k = edge_id;
+  treeedge = &(treeedges[k]);
+
+  if (treeedge->len <= 0) {
+    return;
+  }
+  routeLen = treeedge->route.routelen;
+
+  const std::vector<int16_t>& gridsLtmp = treeedge->route.gridsL;
+
+  int n1a = treeedge->n1a;
+  int n2a = treeedge->n2a;
+
+  treeedge->n1a = n1a;
+  treeedge->n2a = n2a;
+  auto& tree_node_n1a = treenodes[n1a];
+  auto& tree_node_n2a = treenodes[n2a];
+
+  if (gridsLtmp[0] > tree_node_n1a.topL) {
+    tree_node_n1a.hID = k;
+    tree_node_n1a.topL = gridsLtmp[0];
+  }
+  if (gridsLtmp[0] < tree_node_n1a.botL) {
+    tree_node_n1a.lID = k;
+    tree_node_n1a.botL = gridsLtmp[0];
+  }
+
+  tree_node_n1a.assigned = true;
+
+  if (gridsLtmp[routeLen] > tree_node_n2a.topL) {
+    tree_node_n2a.hID = k;
+    tree_node_n2a.topL = gridsLtmp[routeLen];
+  }
+  if (gridsLtmp[routeLen] < tree_node_n2a.botL) {
+    tree_node_n2a.lID = k;
+    tree_node_n2a.botL = gridsLtmp[routeLen];
+  }
+
+  tree_node_n2a.assigned = true;
 }
 
 std::ostream& operator<<(std::ostream& os, RouteType type)

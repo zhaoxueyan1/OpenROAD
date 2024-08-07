@@ -818,13 +818,15 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
     const int netID = tree_order_pv_[orderIndex].treeIndex;
 
     FrNet* net = nets_[netID];
-
+    if (net->isClock()) {
+      continue;
+    }
     int enlarge = expand;
     const int num_terminals = sttrees_[netID].num_terminals;
     auto& treeedges = sttrees_[netID].edges;
     auto& treenodes = sttrees_[netID].nodes;
     const int origEng = enlarge;
-
+    // int numpoints = setTreeNodesVariables(netID);
     for (int edgeID = 0; edgeID < sttrees_[netID].num_edges(); edgeID++) {
       TreeEdge* treeedge = &(treeedges[edgeID]);
 
@@ -1211,6 +1213,8 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
         n1 = splitEdge(treeedges, treenodes, n2, n1, edgeID);
         // calculate TreeNode variables for new node
         setTreeNodesVariables(netID);
+        // setTreeNodesVariables(netID, numpoints, treenodes.size() - 1);
+        // setTreeEdgesVariables(netID, treeedges.size() - 1);
       }
       if (n1 >= num_terminals && (E1x != n1x || E1y != n1y))
       // n1 is not a pin and E1!=n1, then make change to subtree1,
@@ -1368,6 +1372,8 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
         n2 = splitEdge(treeedges, treenodes, n1, n2, edgeID);
         // calculate TreeNode variables for new node
         setTreeNodesVariables(netID);
+        // setTreeNodesVariables(netID, numpoints, treenodes.size() - 1);
+        // setTreeEdgesVariables(netID, treeedges.size() - 1);
       }
       if (n2 >= num_terminals && (E2x != n2x || E2y != n2y))
       // n2 is not a pin and E2!=n2, then make change to subtree2,
@@ -1559,6 +1565,7 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
       if (!n1Shift && !n2Shift) {
         continue;
       }
+      // updateExistTreeEdgesVariables(netID, edge_n1n2);
       setTreeNodesVariables(netID);
     }
   }
