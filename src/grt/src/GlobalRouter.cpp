@@ -68,6 +68,7 @@
 #include "sta/Clock.hh"
 #include "sta/MinMax.hh"
 #include "sta/Parasitics.hh"
+#include "sta/Sdc.hh"
 #include "sta/Set.hh"
 #include "stt/SteinerTreeBuilder.h"
 #include "utl/Logger.h"
@@ -93,7 +94,7 @@ GlobalRouter::GlobalRouter()
       max_routing_layer_(-1),
       layer_for_guide_dimension_(3),
       gcells_offset_(2),
-      overflow_iterations_(10),
+      overflow_iterations_(50),
       congestion_report_iter_step_(0),
       allow_congestion_(false),
       macro_extension_(0),
@@ -416,7 +417,10 @@ NetRouteMap GlobalRouter::findRouting(std::vector<Net*>& nets,
     MakeWireParasitics builder(
         logger_, resizer_, sta_, db_->getTech(), block_, this);
     fastroute_->setMakeWireParasiticsBuilder(&builder);
-    routes = fastroute_->run();
+    auto* sdc = sta_->sdc();
+    auto* clock = sdc->clocks()->at(0);
+    std::string main_clock_name = clock->name();
+    routes = fastroute_->run(main_clock_name);
     fastroute_->setMakeWireParasiticsBuilder(nullptr);
     addRemainingGuides(routes, nets, min_routing_layer, max_routing_layer);
     connectPadPins(routes);

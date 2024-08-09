@@ -31,12 +31,13 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <algorithm>
+#include <cstdio>
 
 #include "DataType.h"
 #include "FastRoute.h"
 #include "odb/db.h"
 #include "utl/Logger.h"
-
+// #include "db_sta/dbSta.hh"
 namespace grt {
 
 using utl::GRT;
@@ -784,7 +785,8 @@ void FastRouteCore::updateRouteType23D(int netID,
 
 void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
                                          int ripupTHlb,
-                                         int ripupTHub)
+                                         int ripupTHub,
+                                         std::string main_clock_name)
 {
   static multi_array<Direction, 3> directions_3D(
       boost::extents[num_layers_][y_grid_][x_grid_]);
@@ -814,11 +816,16 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
   static multi_array<int, 3> d2_3D(
       boost::extents[num_layers_][y_range_][x_range_]);
 
+  // auto sta = ord::OpenRoad::openRoad()->getSta();
+  // auto* sdc = _sta->sdc();
+  // auto* clock = sdc->clocks()->at(0);
+  // _sizer->clk_name[mode] = clock->name();
   for (int orderIndex = 0; orderIndex < endIND; orderIndex++) {
     const int netID = tree_order_pv_[orderIndex].treeIndex;
 
     FrNet* net = nets_[netID];
-    if (net->isClock()) {
+    if (net->getName() == main_clock_name) {
+      printf("Skipping clock net %s\n", main_clock_name.c_str());
       continue;
     }
     int enlarge = expand;

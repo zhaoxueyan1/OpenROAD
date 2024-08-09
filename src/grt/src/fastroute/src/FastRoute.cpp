@@ -924,7 +924,7 @@ void FastRouteCore::getCapacityReductionData(
   }
 }
 
-NetRouteMap FastRouteCore::run()
+NetRouteMap FastRouteCore::run(std::string main_clock_name)
 {
   if (netCount() == 0) {
     return getRoutes();
@@ -1344,8 +1344,8 @@ NetRouteMap FastRouteCore::run()
   via_cost_ = 1;
 
   if (goingLV && past_cong == 0) {
-    mazeRouteMSMDOrder3D(enlarge_, 0, 20);
-    mazeRouteMSMDOrder3D(enlarge_, 0, 12);
+    mazeRouteMSMDOrder3D(enlarge_, 0, 20, main_clock_name);
+    mazeRouteMSMDOrder3D(enlarge_, 0, 12, main_clock_name);
   }
 
   fillVIA();

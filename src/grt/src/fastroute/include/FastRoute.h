@@ -152,7 +152,7 @@ class FastRouteCore
       const interval<int>::type& last_tile_reduce_interval);
   void initBlockedIntervals(std::vector<int>& track_space);
   void initAuxVar();
-  NetRouteMap run();
+  NetRouteMap run(std::string main_clock_name);
   int totalOverflow() const { return total_overflow_; }
   bool has2Doverflow() const { return has_2D_overflow_; }
   void getBlockage(odb::dbTechLayer* layer,
@@ -329,7 +329,7 @@ class FastRouteCore
   void reInitTree(const int netID);
 
   // maze3D functions
-  void mazeRouteMSMDOrder3D(int expand, int ripupTHlb, int ripupTHub);
+  void mazeRouteMSMDOrder3D(int expand, int ripupTHlb, int ripupTHub, std::string main_clock_name);
   void addNeighborPoints(int netID,
                          int n1,
                          int n2,
