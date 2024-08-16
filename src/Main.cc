@@ -45,6 +45,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+
 #include "ord/ordMain.hh"
 // We have had too many problems with this std::filesytem on various platforms
 // so it is disabled but kept for future reference
@@ -272,7 +273,7 @@ int ord::flow_OpenROAD(int argc, char* argv[])
   // if (findCmdLineFlag(cmd_argc, cmd_argv, "-gui")) {
   //   logger->warn(utl::ORD, 38, "-gui is not yet supported with -python");
   // }
-
+  // logger->setDebugLevel(utl::GRT, "est_rc", 10);
   // if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_init")) {
   //   logger->warn(utl::ORD, 39, ".openroad ignored with -python");
   // }

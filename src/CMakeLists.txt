@@ -36,6 +36,10 @@
 # The location used by etc/DependencyInstaller.sh
 # lib64 is used for CentOS and openSUSE
 # lib is used for Ubuntu and MacOS
+set(CMAKE_BUILD_TYPE Release)
+set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -DNDEBUG") # -DNDEBUG -DNDEBUG # -DNDEBUG
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} -O3")
+
 list(APPEND CMAKE_INSTALL_RPATH
   "/opt/or-tools/lib64"
   "/opt/or-tools/lib"
