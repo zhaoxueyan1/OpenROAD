@@ -33,6 +33,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <iostream>
+#include <map>
+#include <ostream>
 #include <queue>
 
 #include "DataType.h"
@@ -965,7 +968,7 @@ void FastRouteCore::layerAssignmentV4()
         treenodes[n2a].assigned = true;
 
       }  // edge len > 0
-    }    // eunmerating edges
+    }  // eunmerating edges
   }
 }
 
@@ -1267,34 +1270,41 @@ void FastRouteCore::StNetOrder()
     }
   }
 
-  // auto compareSlack = [this](const OrderTree a, const OrderTree b) {
-  //   const FrNet* net_a = nets_[a.treeIndex];
-  //   const FrNet* net_b = nets_[b.treeIndex];
-  //   return net_a->getSlack() < net_b->getSlack();
-  // };
-  // // sort by slack after congestion sort
-  // std::stable_sort(
-  //     tree_order_cong_.begin(), tree_order_cong_.end(), compareSlack);
+  auto compareSlack = [this](const OrderTree a, const OrderTree b) {
+    const FrNet* net_a = nets_[a.treeIndex];
+    const FrNet* net_b = nets_[b.treeIndex];
+    return net_a->getSlack() < net_b->getSlack();
+  };
+  // sort by slack after congestion sort
+  std::stable_sort(
+      tree_order_cong_.begin(), tree_order_cong_.end(), compareSlack);
 }
 
 float FastRouteCore::CalculatePartialSlack()
 {
-  parasitics_builder_->clearParasitics();
+  // parasitics_builder_->clearParasitics();
   auto partial_routes = getPlanarRoutes();
 
   std::vector<float> slacks;
+  std::map<odb::dbNet*, double> length_map;
   slacks.reserve(netCount());
   for (auto& net_route : partial_routes) {
     odb::dbNet* db_net = net_route.first;
     GRoute& route = net_route.second;
+    double length = 0;
     if (!route.empty()) {
-      parasitics_builder_->estimateParasitcs(db_net, route);
+      for (auto& seg : route) {
+        length += seg.length();
+      }
     }
+    length_map[db_net] = length;
+    std::cout << "length " << length << std::endl;
   }
   for (const int& netID : net_ids_) {
     auto fr_net = nets_[netID];
     odb::dbNet* db_net = fr_net->getDbNet();
-    float slack = parasitics_builder_->getNetSlack(db_net);
+    double length = length_map[db_net];
+    float slack = -length * length;
     slacks.push_back(slack);
     fr_net->setSlack(slack);
   }
@@ -2155,7 +2165,7 @@ int FastRouteCore::edgeShift(Tree& t, int net)
                 }
                 costH[j] += std::min(cost1, cost2);
               }  // if(n3!=n2)
-            }    // loop l
+            }  // loop l
             for (l = 0; l < nbrCnt[n2]; l++) {
               n3 = nbr[n2][l];
               if (n3 != n1)  // exclude current edge n1-n2
@@ -2185,8 +2195,8 @@ int FastRouteCore::edgeShift(Tree& t, int net)
                 }
                 costH[j] += std::min(cost1, cost2);
               }  // if(n3!=n1)
-            }    // loop l
-          }      // loop j
+            }  // loop l
+          }  // loop j
           bestCost = BIG_INT;
           Pos = t.branch[n1].y;
           for (j = minY; j <= maxY; j++) {
@@ -2266,7 +2276,7 @@ int FastRouteCore::edgeShift(Tree& t, int net)
                 }
                 costV[j] += std::min(cost1, cost2);
               }  // if(n3!=n2)
-            }    // loop l
+            }  // loop l
             for (l = 0; l < nbrCnt[n2]; l++) {
               n3 = nbr[n2][l];
               if (n3 != n1)  // exclude current edge n1-n2
@@ -2296,8 +2306,8 @@ int FastRouteCore::edgeShift(Tree& t, int net)
                 }
                 costV[j] += std::min(cost1, cost2);
               }  // if(n3!=n1)
-            }    // loop l
-          }      // loop j
+            }  // loop l
+          }  // loop j
           bestCost = BIG_INT;
           Pos = t.branch[n1].x;
           for (j = minX; j <= maxX; j++) {
