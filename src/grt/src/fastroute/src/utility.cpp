@@ -1267,14 +1267,14 @@ void FastRouteCore::StNetOrder()
     }
   }
 
-  auto compareSlack = [this](const OrderTree a, const OrderTree b) {
-    const FrNet* net_a = nets_[a.treeIndex];
-    const FrNet* net_b = nets_[b.treeIndex];
-    return net_a->getSlack() < net_b->getSlack();
-  };
-  // sort by slack after congestion sort
-  std::stable_sort(
-      tree_order_cong_.begin(), tree_order_cong_.end(), compareSlack);
+  // auto compareSlack = [this](const OrderTree a, const OrderTree b) {
+  //   const FrNet* net_a = nets_[a.treeIndex];
+  //   const FrNet* net_b = nets_[b.treeIndex];
+  //   return net_a->getSlack() < net_b->getSlack();
+  // };
+  // // sort by slack after congestion sort
+  // std::stable_sort(
+  //     tree_order_cong_.begin(), tree_order_cong_.end(), compareSlack);
 }
 
 float FastRouteCore::CalculatePartialSlack()
