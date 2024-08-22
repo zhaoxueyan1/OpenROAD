@@ -500,6 +500,7 @@ class FastRouteCore
   void netpinOrderInc();
   void checkRoute3D();
   void StNetOrder();
+  float CalculatePartialSlackFast();
   float CalculatePartialSlack();
   bool checkRoute2DTree(int netID);
   void removeLoops();

@@ -1280,7 +1280,7 @@ void FastRouteCore::StNetOrder()
       tree_order_cong_.begin(), tree_order_cong_.end(), compareSlack);
 }
 
-float FastRouteCore::CalculatePartialSlack()
+float FastRouteCore::CalculatePartialSlackFast()
 {
   // parasitics_builder_->clearParasitics();
   auto partial_routes = getPlanarRoutes();
@@ -1294,7 +1294,8 @@ float FastRouteCore::CalculatePartialSlack()
     double length = 0;
     if (!route.empty()) {
       for (auto& seg : route) {
-        length += seg.length();
+        double t_length = seg.length();
+        length += t_length * t_length;
       }
     }
     length_map[db_net] = length;
@@ -1304,7 +1305,48 @@ float FastRouteCore::CalculatePartialSlack()
     auto fr_net = nets_[netID];
     odb::dbNet* db_net = fr_net->getDbNet();
     double length = length_map[db_net];
-    float slack = -length * length;
+    float slack = -length;
+    slacks.push_back(slack);
+    fr_net->setSlack(slack);
+  }
+
+  std::stable_sort(slacks.begin(), slacks.end());
+
+  // Find the slack threshold based on the percentage of critical nets
+  // defined by the user
+  const int threshold_index
+      = std::ceil(slacks.size() * critical_nets_percentage_ / 100);
+  const float slack_th = slacks[threshold_index];
+
+  // Set the non critical nets slack as the lowest float, so they can be
+  // ordered by overflow (and ordered first than the critical nets)
+  for (const int& netID : net_ids_) {
+    if (nets_[netID]->getSlack() > slack_th) {
+      nets_[netID]->setSlack(std::ceil(std::numeric_limits<float>::lowest()));
+    }
+  }
+
+  return slack_th;
+}
+
+float FastRouteCore::CalculatePartialSlack()
+{
+  parasitics_builder_->clearParasitics();
+  auto partial_routes = getPlanarRoutes();
+
+  std::vector<float> slacks;
+  slacks.reserve(netCount());
+  for (auto& net_route : partial_routes) {
+    odb::dbNet* db_net = net_route.first;
+    GRoute& route = net_route.second;
+    if (!route.empty()) {
+      parasitics_builder_->estimateParasitcs(db_net, route);
+    }
+  }
+  for (const int& netID : net_ids_) {
+    auto fr_net = nets_[netID];
+    odb::dbNet* db_net = fr_net->getDbNet();
+    float slack = parasitics_builder_->getNetSlack(db_net);
     slacks.push_back(slack);
     fr_net->setSlack(slack);
   }
