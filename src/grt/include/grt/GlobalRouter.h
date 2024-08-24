@@ -196,6 +196,7 @@ class GlobalRouter : public ant::GlobalRouteSource
   // layer.
   std::vector<int> routeLayerLengths(odb::dbNet* db_net);
   void globalRoute(bool save_guides = false,
+                   bool fast = false,
                    bool start_incremental = false,
                    bool end_incremental = false);
   void saveCongestion();

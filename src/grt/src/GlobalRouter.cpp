@@ -246,6 +246,7 @@ bool GlobalRouter::haveDetailedRoutes()
 }
 
 void GlobalRouter::globalRoute(bool save_guides,
+                               bool fast,
                                bool start_incremental,
                                bool end_incremental)
 {
@@ -276,7 +277,7 @@ void GlobalRouter::globalRoute(bool save_guides,
         if (verbose_) {
           reportResources();
         }
-
+        fastroute_->fast = fast;
         routes_ = findRouting(nets, min_layer, max_layer);
       }
     } catch (...) {
@@ -4071,10 +4072,7 @@ void GlobalRouter::reportNetDetailedRouteWL(odb::dbWire* wire,
 void GlobalRouter::createWLReportFile(const char* file_name, bool verbose)
 {
   std::ofstream out(file_name);
-  out << "tool "
-      << "net "
-      << "total_wl "
-      << "#pins ";
+  out << "tool " << "net " << "total_wl " << "#pins ";
 
   if (verbose) {
     out << "#vias ";
