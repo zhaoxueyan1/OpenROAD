@@ -1342,7 +1342,7 @@ void FastRouteCore::mazeRouteMSMD(const int iter,
   if (ordering) {
     if (critical_nets_percentage_) {
       if(fast){
-        if (iter <= 6) {
+        if (iter <= slack_max_iter) {
           slack_th = CalculatePartialSlack();
         } else {
           // slack_th = CalculatePartialSlackFast();

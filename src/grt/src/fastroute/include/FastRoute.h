@@ -121,6 +121,7 @@ class FastRouteCore
   void removeNet(odb::dbNet* db_net);
   void initEdges();
   void setNumAdjustments(int nAdjustements);
+  int slack_max_iter = 3;
   void addAdjustment(int x1,
                      int y1,
                      int x2,

@@ -247,6 +247,7 @@ bool GlobalRouter::haveDetailedRoutes()
 
 void GlobalRouter::globalRoute(bool save_guides,
                                bool fast,
+                               int slack_max_iter,
                                bool start_incremental,
                                bool end_incremental)
 {
@@ -278,6 +279,7 @@ void GlobalRouter::globalRoute(bool save_guides,
           reportResources();
         }
         fastroute_->fast = fast;
+        fastroute_->slack_max_iter = slack_max_iter;
         routes_ = findRouting(nets, min_layer, max_layer);
       }
     } catch (...) {
