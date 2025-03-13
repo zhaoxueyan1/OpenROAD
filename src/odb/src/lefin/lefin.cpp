@@ -2352,7 +2352,7 @@ dbLib* lefin::createTechAndLib(const char* tech_name,
   _create_lib = true;
   _create_tech = true;
 
-  if (!readLef(lef_file) || _errors != 0) {
+  if (!readLef(lef_file)) { // || _errors != 0
     if (_lib) {
       dbLib::destroy(_lib);
     }
