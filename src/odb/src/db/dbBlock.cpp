@@ -36,7 +36,9 @@
 #include <unistd.h>
 
 #include <fstream>
+#include <iostream>
 #include <memory>
+#include <ostream>
 #include <set>
 #include <string>
 
@@ -2100,6 +2102,30 @@ dbITerm* dbBlock::findITerm(const char* name)
   std::string s(name);
 
   std::string::size_type idx = s.rfind(block->_hier_delimeter);
+
+  if (idx == std::string::npos) {  // no delimeter
+    return nullptr;
+  }
+
+  std::string instName = s.substr(0, idx);
+  std::string termName = s.substr(idx + 1, s.size());
+
+  dbInst* inst = findInst(instName.c_str());
+
+  if (inst == nullptr) {
+    return nullptr;
+  }
+
+  return inst->findITerm(termName.c_str());
+}
+
+dbITerm* dbBlock::findITerm2(const char* name)
+{
+  _dbBlock* block = (_dbBlock*) this;
+
+  std::string s(name);
+
+  std::string::size_type idx = s.rfind('/');
 
   if (idx == std::string::npos) {  // no delimeter
     return nullptr;

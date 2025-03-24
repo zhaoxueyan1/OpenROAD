@@ -32,6 +32,10 @@
 
 #include "dbLib.h"
 
+#include <cstdlib>
+#include <iostream>
+#include <ostream>
+
 #include "dbDatabase.h"
 #include "dbHashTable.hpp"
 #include "dbMaster.h"
@@ -403,6 +407,8 @@ dbLib* dbLib::create(dbDatabase* db_,
   lib->_name = strdup(name);
   ZALLOCATED(lib->_name);
   lib->_hier_delimeter = hier_delimeter;
+  // std::cout << "hier_delimeter: " << (int) hier_delimeter << std::endl;
+  // exit(0);
   lib->_dbu_per_micron = tech->getDbUnitsPerMicron();
   lib->_tech = tech->getId();
   return (dbLib*) lib;

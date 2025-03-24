@@ -77,7 +77,7 @@ definReader::definReader(dbDatabase* db, utl::Logger* logger, defin::MODE mode)
   _db = db;
   _block_name = nullptr;
   parent_ = nullptr;
-  _continue_on_errors = false;
+  _continue_on_errors = true;
   version_ = nullptr;
   hier_delimeter_ = 0;
   left_bus_delimeter_ = 0;

@@ -1107,7 +1107,7 @@ class dbBlock : public dbObject
   /// For example:   inst0/A
   ///
   dbITerm* findITerm(const char* name);
-
+  dbITerm* findITerm2(const char* name);
   ///
   /// Get the obstructions of this block
   ///
