@@ -458,7 +458,9 @@ void MakeWireParasitics::layerRC(int wire_length_dbu,
     const float res_ohm_per_micron = layer->getResistance() / layer_width;
     r_per_meter = 1E+6 * res_ohm_per_micron;  // ohm/meter
   }
-
+  // res = respersq * len / width
+  // cap = width * len * cap + 2* (len+width) * edge_cap
+  // *-*, cap / 2 
   if (cap_per_meter == 0.0) {
     const float cap_pf_per_micron = layer_width * layer->getCapacitance()
                                     + 2 * layer->getEdgeCapacitance();
