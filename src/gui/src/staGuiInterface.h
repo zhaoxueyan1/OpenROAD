@@ -1,37 +1,5 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #pragma once
 
@@ -39,6 +7,8 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "db_sta/dbNetwork.hh"
@@ -60,6 +30,7 @@ class STAGuiInterface;
 using TimingPathList = std::vector<std::unique_ptr<TimingPath>>;
 using TimingNodeList = std::vector<std::unique_ptr<TimingPathNode>>;
 using StaPins = std::set<const sta::Pin*>;
+using EndPointSlackMap = std::map<const sta::Pin*, float>;
 using ConeDepthMapPinSet = std::map<int, StaPins>;
 using ConeDepthMap = std::map<int, TimingNodeList>;
 
@@ -359,7 +330,8 @@ class STAGuiInterface
 
   TimingPathList getTimingPaths(const StaPins& from,
                                 const std::vector<StaPins>& thrus,
-                                const StaPins& to) const;
+                                const StaPins& to,
+                                const std::string& path_group_name) const;
   TimingPathList getTimingPaths(const sta::Pin* thru) const;
 
   std::unique_ptr<TimingPathNode> getTimingNode(const sta::Pin* pin) const;
@@ -369,6 +341,7 @@ class STAGuiInterface
   ConeDepthMap buildConeConnectivity(const sta::Pin* pin,
                                      ConeDepthMapPinSet& depth_map) const;
 
+  sta::ClockSeq* getClocks() const;
   std::vector<std::unique_ptr<ClockTree>> getClockTrees() const;
 
   int getEndPointCount() const;
@@ -376,6 +349,10 @@ class STAGuiInterface
   StaPins getStartPoints() const;
 
   float getPinSlack(const sta::Pin* pin) const;
+  EndPointSlackMap getEndPointToSlackMap(const std::string& path_group_name);
+
+  std::set<std::string> getGroupPathsNames() const;
+  void updatePathGroups();
 
  private:
   sta::dbSta* sta_;

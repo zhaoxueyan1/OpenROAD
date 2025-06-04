@@ -1,45 +1,19 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "defout_impl.h"
 
-#include <stdio.h>
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "odb/db.h"
 #include "odb/dbMap.h"
@@ -48,10 +22,22 @@
 #include "utl/ScopedTemporaryFile.h"
 namespace odb {
 
+namespace {
+
+std::string getPinName(dbBTerm* bterm)
+{
+  return bterm->getName();
+}
+
+std::string getPinName(dbITerm* iterm)
+{
+  return iterm->getMTerm()->getName();
+}
+
 static const int max_name_length = 256;
 
 template <typename T>
-static std::vector<T*> sortedSet(dbSet<T>& to_sort)
+std::vector<T*> sortedSet(dbSet<T>& to_sort)
 {
   std::vector<T*> sorted(to_sort.begin(), to_sort.end());
   std::sort(sorted.begin(), sorted.end(), [](T* a, T* b) {
@@ -60,7 +46,7 @@ static std::vector<T*> sortedSet(dbSet<T>& to_sort)
   return sorted;
 }
 
-static const char* defOrient(dbOrientType orient)
+const char* defOrient(const dbOrientType& orient)
 {
   switch (orient.getValue()) {
     case dbOrientType::R0:
@@ -91,14 +77,16 @@ static const char* defOrient(dbOrientType orient)
   return "N";
 }
 
-static const char* defSigType(dbSigType type)
+const char* defSigType(const dbSigType& type)
 {
   return type.getString();
 }
-static const char* defIoType(dbIoType type)
+const char* defIoType(const dbIoType& type)
 {
   return type.getString();
 }
+
+}  // namespace
 
 void defout_impl::selectNet(dbNet* net)
 {
@@ -189,7 +177,7 @@ bool defout_impl::writeBlock(dbBlock* block, const char* def_file)
   if (_version < defout::DEF_5_6) {
     fprintf(_out, "NAMESCASESENSITIVE ON ;\n");
   }
-  char hd = block->getHierarchyDelimeter();
+  char hd = block->getHierarchyDelimiter();
 
   if (hd == 0) {
     hd = '|';
@@ -198,7 +186,7 @@ bool defout_impl::writeBlock(dbBlock* block, const char* def_file)
   fprintf(_out, "DIVIDERCHAR \"%c\" ;\n", hd);
 
   char left_bus, right_bus;
-  block->getBusDelimeters(left_bus, right_bus);
+  block->getBusDelimiters(left_bus, right_bus);
 
   if ((left_bus == 0) || (right_bus == 0)) {
     left_bus = '[';
@@ -214,15 +202,30 @@ bool defout_impl::writeBlock(dbBlock* block, const char* def_file)
 
   writePropertyDefinitions(block);
 
-  Rect r = block->getDieArea();
+  Polygon die_area = block->getDieAreaPolygon();
 
-  int x1 = defdist(r.xMin());
-  int y1 = defdist(r.yMin());
-  int x2 = defdist(r.xMax());
-  int y2 = defdist(r.yMax());
+  if (die_area.isRect()) {
+    Rect r = die_area.getEnclosingRect();
+    int x1 = defdist(r.xMin());
+    int y1 = defdist(r.yMin());
+    int x2 = defdist(r.xMax());
+    int y2 = defdist(r.yMax());
 
-  if ((x1 != 0) || (y1 != 0) || (x2 != 0) || (y2 != 0)) {
-    fprintf(_out, "DIEAREA ( %d %d ) ( %d %d ) ;\n", x1, y1, x2, y2);
+    if ((x1 != 0) || (y1 != 0) || (x2 != 0) || (y2 != 0)) {
+      fprintf(_out, "DIEAREA ( %d %d ) ( %d %d ) ;\n", x1, y1, x2, y2);
+    }
+  } else {
+    fprintf(_out, "DIEAREA ");
+    std::vector<odb::Point> points = die_area.getPoints();
+    // ODB ends polygons with a copy of 0 index vertex, in DEF there
+    // is an implicit rule that the last vertex is connected to the
+    // 0th index. So we skip the last point.
+    for (int i = 0; i < points.size() - 1; i++) {
+      int x = defdist(points[i].x());
+      int y = defdist(points[i].y());
+      fprintf(_out, "( %d %d ) ", x, y);
+    }
+    fprintf(_out, ";\n");
   }
 
   writeRows(block);
@@ -241,6 +244,7 @@ bool defout_impl::writeBlock(dbBlock* block, const char* def_file)
   writeFills(block);
   writeNets(block);
   writeGroups(block);
+  writeScanChains(block);
 
   fprintf(_out, "END DESIGN\n");
   {
@@ -307,25 +311,39 @@ void defout_impl::writeTracks(dbBlock* block)
     }
 
     for (int i = 0; i < grid->getNumGridPatternsX(); ++i) {
-      int orgX, count, step;
-      grid->getGridPatternX(i, orgX, count, step);
+      int orgX, count, step, firstmask;
+      bool samemask;
+      grid->getGridPatternX(i, orgX, count, step, firstmask, samemask);
       fprintf(_out,
-              "TRACKS X %d DO %d STEP %d LAYER %s ;\n",
+              "TRACKS X %d DO %d STEP %d",
               defdist(orgX),
               count,
-              defdist(step),
-              lname.c_str());
+              defdist(step));
+      if (firstmask != 0) {
+        fprintf(_out, " MASK %d", firstmask);
+        if (samemask) {
+          fprintf(_out, " SAMEMASK");
+        }
+      }
+      fprintf(_out, " LAYER %s ;\n", lname.c_str());
     }
 
     for (int i = 0; i < grid->getNumGridPatternsY(); ++i) {
-      int orgY, count, step;
-      grid->getGridPatternY(i, orgY, count, step);
+      int orgY, count, step, firstmask;
+      bool samemask;
+      grid->getGridPatternY(i, orgY, count, step, firstmask, samemask);
       fprintf(_out,
-              "TRACKS Y %d DO %d STEP %d LAYER %s ;\n",
+              "TRACKS Y %d DO %d STEP %d",
               defdist(orgY),
               count,
-              defdist(step),
-              lname.c_str());
+              defdist(step));
+      if (firstmask != 0) {
+        fprintf(_out, " MASK %d", firstmask);
+        if (samemask) {
+          fprintf(_out, " SAMEMASK");
+        }
+      }
+      fprintf(_out, " LAYER %s ;\n", lname.c_str());
     }
   }
 }
@@ -914,6 +932,69 @@ void defout_impl::writeGroups(dbBlock* block)
   fprintf(_out, "END GROUPS\n");
 }
 
+void defout_impl::writeScanChains(dbBlock* block)
+{
+  dbDft* dft = block->getDft();
+  dbSet<dbScanChain> scan_chains = dft->getScanChains();
+  if (scan_chains.empty()) {
+    // If we don't have scan chains we have nothing to print
+    return;
+  }
+  fprintf(_out, "\nSCANCHAINS %d ;\n\n", scan_chains.size());
+
+  for (dbScanChain* scan_chain : dft->getScanChains()) {
+    dbSet<dbScanPartition> scan_partitions = scan_chain->getScanPartitions();
+    int chain_suffix = 0;
+    for (dbScanPartition* scan_partition : scan_partitions) {
+      bool already_printed_floating = false;
+      bool already_printed_ordered = false;
+      const std::string chain_name
+          = scan_partitions.size() == 1
+                ? scan_chain->getName()
+                : fmt::format("{}_{}", scan_chain->getName(), chain_suffix);
+
+      const std::string start_pin_name = std::visit(
+          [](auto&& pin) { return pin->getName(); }, scan_chain->getScanIn());
+      const std::string stop_pin_name = std::visit(
+          [](auto&& pin) { return pin->getName(); }, scan_chain->getScanOut());
+
+      fprintf(_out, "- %s\n", chain_name.c_str());
+      fprintf(_out, "+ START PIN %s\n", start_pin_name.c_str());
+
+      for (dbScanList* scan_list : scan_partition->getScanLists()) {
+        dbSet<dbScanInst> scan_insts = scan_list->getScanInsts();
+        if (scan_insts.size() == 1 && !already_printed_floating) {
+          fprintf(_out, "+ FLOATING\n");
+          already_printed_floating = true;
+          already_printed_ordered = false;
+        } else if (scan_insts.size() > 1 && !already_printed_ordered) {
+          fprintf(_out, "+ ORDERED\n");
+          already_printed_floating = false;
+          already_printed_ordered = true;
+        }
+
+        for (dbScanInst* scan_inst : scan_insts) {
+          dbScanInst::AccessPins access_pins = scan_inst->getAccessPins();
+          const std::string scan_in_name = std::visit(
+              [](auto&& pin) { return getPinName(pin); }, access_pins.scan_in);
+          const std::string scan_out_name = std::visit(
+              [](auto&& pin) { return getPinName(pin); }, access_pins.scan_out);
+          fprintf(_out,
+                  "  %s ( IN %s ) ( OUT %s )\n",
+                  scan_inst->getInst()->getName().c_str(),
+                  scan_in_name.c_str(),
+                  scan_out_name.c_str());
+        }
+      }
+      fprintf(_out, "+ PARTITION %s\n", scan_partition->getName().c_str());
+      fprintf(_out, "+ STOP PIN %s ;\n\n", stop_pin_name.c_str());
+      ++chain_suffix;
+    }
+  }
+
+  fprintf(_out, "END SCANCHAINS\n\n");
+}
+
 void defout_impl::writeBTerm(dbBTerm* bterm)
 {
   dbNet* net = bterm->getNet();
@@ -1038,7 +1119,7 @@ void defout_impl::writeBPin(dbBPin* bpin, int cnt)
     fprintf(_out, "+ PORT");
   }
 
-  bool isFirst = 1;
+  bool isFirst = true;
   int dw, dh, x = 0, y = 0;
   int xMin, yMin, xMax, yMax;
 
@@ -1047,7 +1128,7 @@ void defout_impl::writeBPin(dbBPin* bpin, int cnt)
     dh = defdist(int(box->getDY() / 2));
 
     if (isFirst) {
-      isFirst = 0;
+      isFirst = false;
       x = defdist(box->xMin()) + dw;
       y = defdist(box->yMin()) + dh;
     }
@@ -1143,8 +1224,25 @@ void defout_impl::writeBPin(dbBPin* bpin, int cnt)
 
 void defout_impl::writeBlockages(dbBlock* block)
 {
-  dbSet<dbObstruction> obstructions = block->getObstructions();
-  dbSet<dbBlockage> blockages = block->getBlockages();
+  dbSet<dbObstruction> obstructions_raw = block->getObstructions();
+  dbSet<dbBlockage> blockages_raw = block->getBlockages();
+
+  std::vector<dbObstruction*> obstructions;
+  std::vector<dbBlockage*> blockages;
+
+  for (const auto& obstruction : obstructions_raw) {
+    if (obstruction->isSystemReserved()) {
+      continue;
+    }
+    obstructions.push_back(obstruction);
+  }
+
+  for (const auto& blockage : blockages_raw) {
+    if (blockage->isSystemReserved()) {
+      continue;
+    }
+    blockages.push_back(blockage);
+  }
 
   int bcnt = obstructions.size() + blockages.size();
 

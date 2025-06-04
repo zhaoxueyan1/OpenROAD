@@ -1,21 +1,16 @@
-include("openroad")
-
-set(TEST_NAMES
-    constant1
-    make_port
-    network_edit1
-    sdc_names1
-    sdc_names2
-    sdc_get1
-    sta1
-    sta2
-    sta3
-    sta4
-    sta5
+or_integration_tests(
+  "dbSta"
+  TESTS
     block_sta1
+    clock_pin
+    constant1
     find_clks1
     find_clks2
-    report_json1
+    hier2
+    hierclock
+    hierwrite
+    make_port
+    network_edit1
     power1
     read_liberty1
     read_verilog1
@@ -28,7 +23,26 @@ set(TEST_NAMES
     read_verilog8
     read_verilog9
     read_verilog10
+    read_verilog10_no_prop
+    read_verilog11
+    readdb_hier
     report_cell_usage
+    report_cell_usage_file
+    report_cell_usage_modinsts
+    report_cell_usage_modinsts_metrics
+    report_cell_usage_physical_only
+    report_json1
+    report_timing_histogram
+    report_logic_depth_histogram
+    sdc_get1
+    sdc_names1
+    sdc_names2
+    sta1
+    sta2
+    sta3
+    sta4
+    sta5
+    write_sdc1
     write_verilog1
     write_verilog2
     write_verilog3
@@ -37,9 +51,8 @@ set(TEST_NAMES
     write_verilog6
     write_verilog7
     write_verilog8
-    write_sdc1
 )
 
-foreach(TEST_NAME IN LISTS TEST_NAMES)
-  or_integration_test("ant" ${TEST_NAME}  ${CMAKE_CURRENT_SOURCE_DIR}/regression)
-endforeach()
+if(ENABLE_TESTS)
+  add_subdirectory(cpp)
+endif()

@@ -1,48 +1,17 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #pragma once
 
 #include <array>
+#include <map>
 #include <set>
+#include <string>
+#include <vector>
 
 #include "grid_component.h"
+#include "odb/db.h"
 #include "pdn/PdnGen.hh"
-
-namespace odb {
-class dbBox;
-class dbITerm;
-class dbTechLayer;
-}  // namespace odb
 
 namespace pdn {
 class Grid;
@@ -116,6 +85,8 @@ class Straps : public GridComponent
                   int y_start,
                   int x_end,
                   int y_end,
+                  int abs_start,
+                  int abs_end,
                   bool is_delta_x,
                   const TechLayer& layer,
                   const Shape::ObstructionTree& avoid);
@@ -234,6 +205,7 @@ class RepairChannelStraps : public Straps
                       const Shape::ObstructionTreeMap& other_shapes,
                       const std::set<odb::dbNet*>& nets,
                       const odb::Rect& area,
+                      const odb::Rect& available_area,
                       const odb::Rect& obs_check_area);
 
   Type type() const override { return GridComponent::RepairChannel; }
@@ -254,6 +226,8 @@ class RepairChannelStraps : public Straps
                  const Shape::ObstructionTreeMap& obstructions);
   bool isEmpty() const;
 
+  bool isAutoInserted() const override { return true; }
+
   void addNets(const std::set<odb::dbNet*>& nets)
   {
     nets_.insert(nets.begin(), nets.end());
@@ -265,11 +239,13 @@ class RepairChannelStraps : public Straps
   static void repairGridChannels(Grid* grid,
                                  const Shape::ShapeTreeMap& global_shapes,
                                  Shape::ObstructionTreeMap& obstructions,
-                                 bool allow);
+                                 bool allow,
+                                 PDNRenderer* renderer);
 
   struct RepairChannelArea
   {
     odb::Rect area;
+    odb::Rect available_area;
     odb::Rect obs_area;
     Straps* target;
     odb::dbTechLayer* connect_to;
@@ -282,6 +258,7 @@ class RepairChannelStraps : public Straps
   std::set<odb::dbNet*> nets_;
   odb::dbTechLayer* connect_to_;
   odb::Rect area_;
+  odb::Rect available_area_;
   odb::Rect obs_check_area_;
 
   bool invalid_ = false;

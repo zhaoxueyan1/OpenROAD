@@ -1,41 +1,14 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "dbDatabase.h"
 
 #include <algorithm>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "dbArrayTable.h"
 #include "dbBTerm.h"
@@ -43,6 +16,7 @@
 #include "dbCCSeg.h"
 #include "dbCapNode.h"
 #include "dbChip.h"
+#include "dbGDSLib.h"
 #include "dbITerm.h"
 #include "dbJournal.h"
 #include "dbLib.h"
@@ -72,7 +46,9 @@ constexpr int DB_MAGIC2 = 0x4E414442;  // NADB
 template class dbTable<_dbDatabase>;
 
 static dbTable<_dbDatabase>* db_tbl = nullptr;
-static uint db_unique_id = 0;
+// Must be held to access db_tbl
+static std::mutex* db_tbl_mutex = new std::mutex;
+static std::atomic<uint> db_unique_id = 0;
 
 bool _dbDatabase::operator==(const _dbDatabase& rhs) const
 {
@@ -102,6 +78,10 @@ bool _dbDatabase::operator==(const _dbDatabase& rhs) const
     return false;
   }
 
+  if (*_gds_lib_tbl != *rhs._gds_lib_tbl) {
+    return false;
+  }
+
   if (*_prop_tbl != *rhs._prop_tbl) {
     return false;
   }
@@ -113,40 +93,9 @@ bool _dbDatabase::operator==(const _dbDatabase& rhs) const
   return true;
 }
 
-void _dbDatabase::differences(dbDiff& diff,
-                              const char* field,
-                              const _dbDatabase& rhs) const
-{
-  DIFF_BEGIN
-  DIFF_FIELD(_master_id);
-  DIFF_FIELD(_chip);
-  DIFF_TABLE_NO_DEEP(_tech_tbl);
-  DIFF_TABLE_NO_DEEP(_lib_tbl);
-  DIFF_TABLE_NO_DEEP(_chip_tbl);
-  DIFF_TABLE_NO_DEEP(_prop_tbl);
-  DIFF_NAME_CACHE(_name_cache);
-  DIFF_END
-}
-
-void _dbDatabase::out(dbDiff& diff, char side, const char* field) const
-{
-  DIFF_OUT_BEGIN
-  DIFF_OUT_FIELD(_master_id);
-  DIFF_OUT_FIELD(_chip);
-  DIFF_OUT_TABLE_NO_DEEP(_tech_tbl);
-  DIFF_OUT_TABLE_NO_DEEP(_lib_tbl);
-  DIFF_OUT_TABLE_NO_DEEP(_chip_tbl);
-  DIFF_OUT_TABLE_NO_DEEP(_prop_tbl);
-  DIFF_OUT_NAME_CACHE(_name_cache);
-  DIFF_END
-}
-
 dbObjectTable* _dbDatabase::getObjectTable(dbObjectType type)
 {
   switch (type) {
-    case dbDatabaseObj:
-      return db_tbl;
-
     case dbTechObj:
       return _tech_tbl;
 
@@ -155,6 +104,9 @@ dbObjectTable* _dbDatabase::getObjectTable(dbObjectType type)
 
     case dbChipObj:
       return _chip_tbl;
+
+    case dbGdsLibObj:
+      return _gds_lib_tbl;
 
     case dbPropertyObj:
       return _prop_tbl;
@@ -189,6 +141,14 @@ _dbDatabase::_dbDatabase(_dbDatabase* /* unused: db */)
   _chip_tbl = new dbTable<_dbChip>(
       this, this, (GetObjTbl_t) &_dbDatabase::getObjectTable, dbChipObj, 2, 1);
 
+  _gds_lib_tbl
+      = new dbTable<_dbGDSLib>(this,
+                               this,
+                               (GetObjTbl_t) &_dbDatabase::getObjectTable,
+                               dbGdsLibObj,
+                               2,
+                               1);
+
   _tech_tbl = new dbTable<_dbTech>(
       this, this, (GetObjTbl_t) &_dbDatabase::getObjectTable, dbTechObj, 2, 1);
 
@@ -221,6 +181,14 @@ _dbDatabase::_dbDatabase(_dbDatabase* /* unused: db */, int id)
   _chip_tbl = new dbTable<_dbChip>(
       this, this, (GetObjTbl_t) &_dbDatabase::getObjectTable, dbChipObj, 2, 1);
 
+  _gds_lib_tbl
+      = new dbTable<_dbGDSLib>(this,
+                               this,
+                               (GetObjTbl_t) &_dbDatabase::getObjectTable,
+                               dbGdsLibObj,
+                               2,
+                               1);
+
   _tech_tbl = new dbTable<_dbTech>(
       this, this, (GetObjTbl_t) &_dbDatabase::getObjectTable, dbTechObj, 2, 1);
 
@@ -236,34 +204,12 @@ _dbDatabase::_dbDatabase(_dbDatabase* /* unused: db */, int id)
   _prop_itr = new dbPropertyItr(_prop_tbl);
 }
 
-_dbDatabase::_dbDatabase(_dbDatabase* /* unused: db */, const _dbDatabase& d)
-    : _magic1(d._magic1),
-      _magic2(d._magic2),
-      _schema_major(d._schema_major),
-      _schema_minor(d._schema_minor),
-      _master_id(d._master_id),
-      _chip(d._chip),
-      _unique_id(db_unique_id++),
-      _logger(nullptr)
-{
-  _chip_tbl = new dbTable<_dbChip>(this, this, *d._chip_tbl);
-
-  _tech_tbl = new dbTable<_dbTech>(this, this, *d._tech_tbl);
-
-  _lib_tbl = new dbTable<_dbLib>(this, this, *d._lib_tbl);
-
-  _prop_tbl = new dbTable<_dbProperty>(this, this, *d._prop_tbl);
-
-  _name_cache = new _dbNameCache(this, this, *d._name_cache);
-
-  _prop_itr = new dbPropertyItr(_prop_tbl);
-}
-
 _dbDatabase::~_dbDatabase()
 {
   delete _tech_tbl;
   delete _lib_tbl;
   delete _chip_tbl;
+  delete _gds_lib_tbl;
   delete _prop_tbl;
   delete _name_cache;
   delete _prop_itr;
@@ -281,8 +227,10 @@ dbOStream& operator<<(dbOStream& stream, const _dbDatabase& db)
   stream << *db._tech_tbl;
   stream << *db._lib_tbl;
   stream << *db._chip_tbl;
+  stream << *db._gds_lib_tbl;
   stream << NamedTable("prop_tbl", db._prop_tbl);
   stream << *db._name_cache;
+  stream << *db._gds_lib_tbl;
   return stream;
 }
 
@@ -331,6 +279,9 @@ dbIStream& operator>>(dbIStream& stream, _dbDatabase& db)
   stream >> *db._tech_tbl;
   stream >> *db._lib_tbl;
   stream >> *db._chip_tbl;
+  if (db.isSchema(db_schema_gds_lib_in_block)) {
+    stream >> *db._gds_lib_tbl;
+  }
   stream >> *db._prop_tbl;
   stream >> *db._name_cache;
 
@@ -351,12 +302,9 @@ dbIStream& operator>>(dbIStream& stream, _dbDatabase& db)
   }
 
   // Fix up the owner id of properties of this db, this value changes.
-  dbSet<_dbProperty> props(&db, db._prop_tbl);
-  dbSet<_dbProperty>::iterator itr;
-  uint oid = db.getId();
+  const uint oid = db.getId();
 
-  for (itr = props.begin(); itr != props.end(); ++itr) {
-    _dbProperty* p = *itr;
+  for (_dbProperty* p : dbSet<_dbProperty>(&db, db._prop_tbl)) {
     p->_owner = oid;
   }
 
@@ -380,14 +328,9 @@ dbSet<dbLib> dbDatabase::getLibs()
 
 dbLib* dbDatabase::findLib(const char* name)
 {
-  dbSet<dbLib> libs = getLibs();
-  dbSet<dbLib>::iterator itr;
-
-  for (itr = libs.begin(); itr != libs.end(); ++itr) {
-    _dbLib* lib = (_dbLib*) *itr;
-
-    if (strcmp(lib->_name, name) == 0) {
-      return (dbLib*) lib;
+  for (dbLib* lib : getLibs()) {
+    if (strcmp(lib->getConstName(), name) == 0) {
+      return lib;
     }
   }
 
@@ -414,10 +357,7 @@ dbTech* dbDatabase::findTech(const char* name)
 
 dbMaster* dbDatabase::findMaster(const char* name)
 {
-  dbSet<dbLib> libs = getLibs();
-  dbSet<dbLib>::iterator it;
-  for (it = libs.begin(); it != libs.end(); it++) {
-    dbLib* lib = *it;
+  for (dbLib* lib : getLibs()) {
     dbMaster* master = lib->findMaster(name);
     if (master) {
       return master;
@@ -507,6 +447,7 @@ void dbDatabase::read(std::istream& file)
   _dbDatabase* db = (_dbDatabase*) this;
   dbIStream stream(db, file);
   stream >> *db;
+  ((dbDatabase*) db)->triggerPostReadDb();
 }
 
 void dbDatabase::write(std::ostream& file)
@@ -610,10 +551,20 @@ void dbDatabase::commitEco(dbBlock* block_)
   _dbBlock* block = (_dbBlock*) block_;
 
   // TODO: Need a check to ensure the commit is not applied to the block of
-  // which
-  //       this eco was generated from.
+  // which this eco was generated from.
   if (block->_journal_pending) {
     block->_journal_pending->redo();
+    delete block->_journal_pending;
+    block->_journal_pending = nullptr;
+  }
+}
+
+void dbDatabase::undoEco(dbBlock* block_)
+{
+  _dbBlock* block = (_dbBlock*) block_;
+
+  if (block->_journal_pending) {
+    block->_journal_pending->undo();
     delete block->_journal_pending;
     block->_journal_pending = nullptr;
   }
@@ -627,6 +578,7 @@ void dbDatabase::setLogger(utl::Logger* logger)
 
 dbDatabase* dbDatabase::create()
 {
+  std::lock_guard<std::mutex> lock(*db_tbl_mutex);
   if (db_tbl == nullptr) {
     db_tbl = new dbTable<_dbDatabase>(
         nullptr, nullptr, (GetObjTbl_t) nullptr, dbDatabaseObj);
@@ -646,19 +598,14 @@ void dbDatabase::clear()
 
 void dbDatabase::destroy(dbDatabase* db_)
 {
+  std::lock_guard<std::mutex> lock(*db_tbl_mutex);
   _dbDatabase* db = (_dbDatabase*) db_;
   db_tbl->destroy(db);
 }
 
-dbDatabase* dbDatabase::duplicate(dbDatabase* db_)
-{
-  _dbDatabase* db = (_dbDatabase*) db_;
-  _dbDatabase* d = db_tbl->duplicate(db);
-  return (dbDatabase*) d;
-}
-
 dbDatabase* dbDatabase::getDatabase(uint dbid)
 {
+  std::lock_guard<std::mutex> lock(*db_tbl_mutex);
   return (dbDatabase*) db_tbl->getPtr(dbid);
 }
 
@@ -682,17 +629,88 @@ utl::Logger* _dbObject::getLogger() const
   return getDatabase()->getLogger();
 }
 
-bool dbDatabase::diff(dbDatabase* db0_,
-                      dbDatabase* db1_,
-                      FILE* file,
-                      int indent)
+void _dbDatabase::collectMemInfo(MemInfo& info)
 {
-  _dbDatabase* db0 = (_dbDatabase*) db0_;
-  _dbDatabase* db1 = (_dbDatabase*) db1_;
-  dbDiff diff(file);
-  diff.setIndentPerLevel(indent);
-  db0->differences(diff, nullptr, *db1);
-  return diff.hasDifferences();
+  info.cnt++;
+  info.size += sizeof(*this);
+
+  _tech_tbl->collectMemInfo(info.children_["tech"]);
+  _lib_tbl->collectMemInfo(info.children_["lib"]);
+  _chip_tbl->collectMemInfo(info.children_["chip"]);
+  _gds_lib_tbl->collectMemInfo(info.children_["gds_lib"]);
+  _prop_tbl->collectMemInfo(info.children_["prop"]);
+  _name_cache->collectMemInfo(info.children_["name_cache"]);
+}
+
+void dbDatabase::report()
+{
+  _dbDatabase* db = (_dbDatabase*) this;
+  MemInfo root;
+  db->collectMemInfo(root);
+  utl::Logger* logger = db->getLogger();
+  std::function<int64_t(MemInfo&, const std::string&, int)> print =
+      [&](MemInfo& info, const std::string& name, int depth) {
+        double avg_size = 0;
+        int64_t total_size = info.size;
+        if (info.cnt > 0) {
+          avg_size = info.size / static_cast<double>(info.cnt);
+        }
+
+        logger->report("{:40s} cnt={:10d} size={:12d} (avg elem={:12.1f})",
+                       name.c_str(),
+                       info.cnt,
+                       info.size,
+                       avg_size);
+        for (auto [name, child] : info.children_) {
+          total_size += print(child, std::string(depth, ' ') + name, depth + 1);
+        }
+        return total_size;
+      };
+  auto total_size = print(root, "dbDatabase", 1);
+  logger->report("Total size = {}", total_size);
+}
+
+void dbDatabase::addObserver(dbDatabaseObserver* observer)
+{
+  observer->setUnregisterObserver(
+      [this, observer] { removeObserver(observer); });
+  _dbDatabase* db = (_dbDatabase*) this;
+  db->observers_.insert(observer);
+}
+
+void dbDatabase::removeObserver(dbDatabaseObserver* observer)
+{
+  observer->setUnregisterObserver(nullptr);
+  _dbDatabase* db = (_dbDatabase*) this;
+  db->observers_.erase(observer);
+}
+
+void dbDatabase::triggerPostReadLef(dbTech* tech, dbLib* library)
+{
+  _dbDatabase* db = (_dbDatabase*) this;
+  for (dbDatabaseObserver* observer : db->observers_) {
+    observer->postReadLef(tech, library);
+  }
+}
+
+void dbDatabase::triggerPostReadDef(dbBlock* block, const bool floorplan)
+{
+  _dbDatabase* db = (_dbDatabase*) this;
+  for (dbDatabaseObserver* observer : db->observers_) {
+    if (floorplan) {
+      observer->postReadFloorplanDef(block);
+    } else {
+      observer->postReadDef(block);
+    }
+  }
+}
+
+void dbDatabase::triggerPostReadDb()
+{
+  _dbDatabase* db = (_dbDatabase*) this;
+  for (dbDatabaseObserver* observer : db->observers_) {
+    observer->postReadDb(this);
+  }
 }
 
 }  // namespace odb

@@ -1,13 +1,30 @@
-include("openroad")
-
-set(TEST_NAMES
-    level3_01
-    level3_02
-    east_west1
-    east_west2
-    snap_layer1
+or_integration_tests(
+  "mpl"
+  TESTS
+    macro_only
+    no_unfixed_macros
+    guides1
+    guides2
+    io_constraints1
+    io_constraints2
+    io_constraints3
+    io_constraints4
+    io_constraints5
+    io_constraints6
+    io_constraints7
+    io_constraints8
+    io_pads1
+    orientation_improve1
+    orientation_improve2
+    boundary_push1
+    boundary_push2
+    boundary_push3
+    centralization1
+    clocked_macro
 )
 
-foreach(TEST_NAME IN LISTS TEST_NAMES)
-    or_integration_test("mpl" ${TEST_NAME}  ${CMAKE_CURRENT_SOURCE_DIR}/regression)
-endforeach()
+# Skipped
+#mpl_man_tcl_check
+#mpl_readme_msgs_check
+
+add_subdirectory(cpp)

@@ -1,34 +1,5 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2020, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2020-2025, The OpenROAD Authors
 
 #pragma once
 
@@ -39,17 +10,26 @@
 #include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <typeindex>
 #include <typeinfo>
 #include <unordered_map>
+#include <utility>
 #include <variant>
+#include <vector>
 
 #include "odb/db.h"
 
 struct Tcl_Interp;
+struct GifWriter;
+
+namespace sta {
+class dbSta;
+}
 
 namespace utl {
 class Logger;
@@ -57,15 +37,27 @@ class Logger;
 
 namespace gui {
 class HeatMapDataSource;
+class PinDensityDataSource;
 class PlacementDensityDataSource;
+class PowerDensityDataSource;
 class Painter;
 class Selected;
 class Options;
 
+struct GIF
+{
+  std::string filename;
+  std::unique_ptr<GifWriter> writer;
+  int height = -1;
+  int width = -1;
+};
+
 // A collection of selected objects
+
+// Only a finite set of highlight color is supported for now
+constexpr int num_highlight_set = 16;
 using SelectionSet = std::set<Selected>;
-using HighlightSet = std::array<SelectionSet, 8>;  // Only 8 Discrete Highlight
-                                                   // Color is supported for now
+using HighlightSet = std::array<SelectionSet, num_highlight_set>;
 
 using DBUToString = std::function<std::string(int, bool)>;
 using StringToDBU = std::function<int(const std::string&, bool*)>;
@@ -77,6 +69,19 @@ using StringToDBU = std::function<int(const std::string&, bool*)>;
 class Painter
 {
  public:
+  struct Font
+  {
+    Font(const std::string& name, int size) : name(name), size(size) {}
+
+    std::string name;
+    int size;
+
+    bool operator==(const Font& other) const
+    {
+      return (name == other.name) && (size == other.size);
+    }
+  };
+
   struct Color
   {
     constexpr Color() : r(0), g(0), b(0), a(255) {}
@@ -117,17 +122,37 @@ class Painter
   static inline const Color dark_cyan{0x00, 0x80, 0x80, 0xff};
   static inline const Color dark_magenta{0x80, 0x00, 0x80, 0xff};
   static inline const Color dark_yellow{0x80, 0x80, 0x00, 0xff};
+  static inline const Color orange{0xff, 0xa5, 0x00, 0xff};
+  static inline const Color purple{0x80, 0x00, 0x80, 0xff};
+  static inline const Color lime{0xbf, 0xff, 0x00, 0xff};
+  static inline const Color teal{0x00, 0x80, 0x80, 0xff};
+  static inline const Color pink{0xff, 0xc0, 0xcb, 0xff};
+  static inline const Color brown{0x8b, 0x45, 0x13, 0xff};
+  static inline const Color indigo{0x4b, 0x00, 0x82, 0xff};
+  static inline const Color turquoise{0x40, 0xe0, 0xd0, 0xff};
   static inline const Color transparent{0x00, 0x00, 0x00, 0x00};
 
-  static inline const std::array<Painter::Color, 8> highlightColors{
-      Color(Painter::green, 100),
-      Color(Painter::yellow, 100),
-      Color(Painter::cyan, 100),
-      Color(Painter::magenta, 100),
-      Color(Painter::red, 100),
-      Color(Painter::dark_green, 100),
-      Color(Painter::dark_magenta, 100),
-      Color(Painter::blue, 100)};
+  static std::map<std::string, Color> colors();
+  static Color stringToColor(const std::string& color, utl::Logger* logger);
+  static std::string colorToString(const Color& color);
+
+  static inline const std::array<Painter::Color, num_highlight_set>
+      highlightColors{Color(Painter::green, 100),
+                      Color(Painter::yellow, 100),
+                      Color(Painter::cyan, 100),
+                      Color(Painter::magenta, 100),
+                      Color(Painter::red, 100),
+                      Color(Painter::dark_green, 100),
+                      Color(Painter::dark_magenta, 100),
+                      Color(Painter::blue, 100),
+                      Color(Painter::orange, 100),
+                      Color(Painter::purple, 100),
+                      Color(Painter::lime, 100),
+                      Color(Painter::teal, 100),
+                      Color(Painter::pink, 100),
+                      Color(Painter::brown, 100),
+                      Color(Painter::indigo, 100),
+                      Color(Painter::turquoise, 100)};
 
   // The color to highlight in
   static inline const Color highlight = yellow;
@@ -165,6 +190,8 @@ class Painter
   };
   virtual void setBrush(const Color& color, const Brush& style = SOLID) = 0;
 
+  virtual void setFont(const Font& font) = 0;
+
   // Set the pen to an RGBA value and the brush
   void setPenAndBrush(const Color& color,
                       bool cosmetic = false,
@@ -200,6 +227,7 @@ class Painter
   // height of the X.
   virtual void drawX(int x, int y, int size) = 0;
 
+  virtual void drawPolygon(const odb::Polygon& polygon) = 0;
   virtual void drawPolygon(const std::vector<odb::Point>& points) = 0;
 
   enum Anchor
@@ -217,6 +245,9 @@ class Painter
     LEFT_CENTER,
     RIGHT_CENTER
   };
+  static std::map<std::string, Anchor> anchors();
+  static Anchor stringToAnchor(const std::string& anchor, utl::Logger* logger);
+  static std::string anchorToString(const Anchor& anchor);
   virtual void drawString(int x,
                           int y,
                           Anchor anchor,
@@ -295,7 +326,7 @@ class Descriptor
 
   // An action is a name and a callback function, the function should return
   // the next object to select (when deleting the object just return Selected())
-  using ActionCallback = std::function<Selected(void)>;
+  using ActionCallback = std::function<Selected()>;
   struct Action
   {
     std::string name;
@@ -342,6 +373,10 @@ class Descriptor
   // and brush before calling.
   virtual void highlight(std::any object, Painter& painter) const = 0;
   virtual bool isSlowHighlight(std::any /* object */) const { return false; }
+
+  static std::string convertUnits(double value,
+                                  bool area = false,
+                                  int digits = 3);
 };
 
 // An object selected in the gui.  The object is stored as a
@@ -352,7 +387,7 @@ class Selected
 {
  public:
   // Null case
-  Selected() : object_({}), descriptor_(nullptr) {}
+  Selected() = default;
 
   Selected(std::any object, const Descriptor* descriptor)
       : object_(std::move(object)), descriptor_(descriptor)
@@ -424,7 +459,7 @@ class Selected
 
  private:
   std::any object_;
-  const Descriptor* descriptor_;
+  const Descriptor* descriptor_{nullptr};
 };
 
 // This is an interface for classes that wish to be called to render
@@ -465,7 +500,7 @@ class Renderer
   // Used to register display controls for this renderer.
   // DisplayControls is a map with the name of the control and the initial
   // setting for the control
-  using DisplayControlCallback = std::function<void(void)>;
+  using DisplayControlCallback = std::function<void()>;
   struct DisplayControl
   {
     bool visibility;
@@ -579,6 +614,16 @@ class Gui
   int selectPrevious();
   void animateSelection(int repeat = 0);
 
+  std::string addLabel(int x,
+                       int y,
+                       const std::string& text,
+                       std::optional<Painter::Color> color = {},
+                       std::optional<int> size = {},
+                       std::optional<Painter::Anchor> anchor = {},
+                       const std::optional<std::string>& name = {});
+  void deleteLabel(const std::string& name);
+  void clearLabels();
+
   std::string addRuler(int x0,
                        int y0,
                        int x1,
@@ -587,10 +632,10 @@ class Gui
                        const std::string& name = "",
                        bool euclidian = true);
   void deleteRuler(const std::string& name);
+  void clearRulers();
 
   void clearSelections();
   void clearHighlights(int highlight_group = 0);
-  void clearRulers();
 
   int select(const std::string& type,
              const std::string& name_filter = "",
@@ -621,10 +666,19 @@ class Gui
                           const std::string& corner = "",
                           int width_px = 0,
                           int height_px = 0);
+  void selectClockviewerClock(const std::string& clock_name);
+
+  // Save histogram view
+  void saveHistogramImage(const std::string& filename,
+                          const std::string& mode,
+                          int width_px = 0,
+                          int height_px = 0);
 
   // modify display controls
   void setDisplayControlsVisible(const std::string& name, bool value);
   void setDisplayControlsSelectable(const std::string& name, bool value);
+  void setDisplayControlsColor(const std::string& name,
+                               const Painter::Color& color);
   // Get the visibility/selectability for a control in the 'Display Control'
   // panel.
   bool checkDisplayControlsVisible(const std::string& name);
@@ -677,8 +731,8 @@ class Gui
   void timingCone(odbTerm term, bool fanin, bool fanout);
   void timingPathsThrough(const std::set<odbTerm>& terms);
 
-  // open DRC
-  void loadDRC(const std::string& filename);
+  // open markers
+  void selectMarkers(odb::dbMarkerCategory* markers);
 
   // Force an immediate redraw.
   void redraw();
@@ -699,7 +753,11 @@ class Gui
   void hideGui();
 
   // Called to show the gui and return to tcl command line
-  void showGui(const std::string& cmds = "", bool interactive = true);
+  void showGui(const std::string& cmds = "",
+               bool interactive = true,
+               bool load_settings = true);
+  void minimize();
+  void unminimize();
 
   // set the system logger
   void setLogger(utl::Logger* logger);
@@ -714,12 +772,27 @@ class Gui
 
   const Selected& getInspectorSelection();
 
+  // GIF API
+  void gifStart(const std::string& filename);
+  void gifAddFrame(const odb::Rect& region = odb::Rect(),
+                   int width_px = 0,
+                   double dbu_per_pixel = 0,
+                   std::optional<int> delay = {});
+  void gifEnd();
+
   void setHeatMapSetting(const std::string& name,
                          const std::string& option,
                          const Renderer::Setting& value);
   Renderer::Setting getHeatMapSetting(const std::string& name,
                                       const std::string& option);
   void dumpHeatMap(const std::string& name, const std::string& file);
+
+  void setMainWindowTitle(const std::string& title);
+  std::string getMainWindowTitle();
+
+  void selectHelp(const std::string& item);
+  void selectChart(const std::string& name);
+  void updateTimingReport();
 
   // accessors for to add and remove commands needed to restore the state of the
   // gui
@@ -763,7 +836,7 @@ class Gui
   static bool enabled();
 
   // initialize the GUI
-  void init(odb::dbDatabase* db, utl::Logger* logger);
+  void init(odb::dbDatabase* db, sta::dbSta* sta, utl::Logger* logger);
 
  private:
   Gui();
@@ -784,8 +857,32 @@ class Gui
   utl::Logger* logger_;
   odb::dbDatabase* db_;
 
+  // There are RTTI implementation differences between libstdc++ and libc++,
+  // where the latter seems to generate multiple typeids for classes including
+  // but not limited to sta::Instance* in different compile units. We have been
+  // unable to remedy this.
+  //
+  // These classes are a workaround such that unless __GLIBCXX__ is set, hashing
+  // and comparing are done on the type's name instead, which adds a negligible
+  // performance penalty but has the distinct advantage of not crashing when an
+  // Instance is clicked in the GUI.
+  //
+  // In the event the RTTI issue is ever resolved, the following two structs may
+  // be removed.
+  struct TypeInfoHasher
+  {
+    std::size_t operator()(const std::type_index& x) const;
+  };
+  struct TypeInfoComparator
+  {
+    bool operator()(const std::type_index& a, const std::type_index& b) const;
+  };
+
   // Maps types to descriptors
-  std::unordered_map<std::type_index, std::unique_ptr<const Descriptor>>
+  std::unordered_map<std::type_index,
+                     std::unique_ptr<const Descriptor>,
+                     TypeInfoHasher,
+                     TypeInfoComparator>
       descriptors_;
   // Heatmaps
   std::set<HeatMapDataSource*> heat_maps_;
@@ -795,9 +892,16 @@ class Gui
 
   std::set<Renderer*> renderers_;
 
+  std::unique_ptr<PinDensityDataSource> pin_density_heat_map_;
   std::unique_ptr<PlacementDensityDataSource> placement_density_heat_map_;
+  std::unique_ptr<PowerDensityDataSource> power_density_heat_map_;
+
+  std::unique_ptr<GIF> gif_;
+  static constexpr int default_gif_delay_ = 250;
 
   static Gui* singleton_;
+
+  std::string main_window_title_ = "OpenROAD";
 };
 
 // The main entry point
@@ -805,6 +909,8 @@ int startGui(int& argc,
              char* argv[],
              Tcl_Interp* interp,
              const std::string& script = "",
-             bool interactive = true);
+             bool interactive = true,
+             bool load_settings = true,
+             bool minimize = false);
 
 }  // namespace gui

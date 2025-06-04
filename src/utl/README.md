@@ -9,6 +9,32 @@ The utility module contains the `man` command.
 - Parameters without square brackets `-param2 param2` are required.
 ```
 
+### Prometheus Metrics
+
+OpenROAD includes a metrics endpoint server that can track internal tool metrics over time.
+
+![page](/docs/images/grafana.png)
+
+To use this feature you need to do the following start the prometheus and grafana collectors
+
+[Detailed instructions](/etc/monitoring/README.md):
+```shell
+$ cd etc/monitoring
+$ docker compose up -d
+```
+
+This will start a grafana endpoint ready to collect from the OpenROAD application you would
+like to track. By default it's looking for an http server running on port 8080 on your localhost.
+
+To start the metrics endpoint in OpenROAD, run:
+```tcl
+utl::startPrometheusEndpoint 8080
+```
+
+This is all configurable in the docker compose file, and you should be able to access grafana by going to
+http://localhost:3000 username: admin, password: grafana. Go to the dashboard tab and click service,
+then OpenROAD to see the pre-made dashboard.
+
 ## Man installation
 
 The `man` command can be installed optionally as part of the OpenROAD
@@ -49,6 +75,34 @@ You may run various commands or message IDs for man pages.
 man openroad
 man clock_tree_synthesis
 man CTS-0005
+```
+
+### tee
+
+Redirect a commands output to a file and standard out.
+
+```tcl
+tee (-file filename | -variable name)
+    [-append]
+    [-quiet]
+    command
+```
+
+#### Options
+
+| Switch Name | Description | 
+| ----- | ----- |
+| `-file filename` | File to redirect output into. |
+| `-variable name` | Direct output into a variable. |
+| `-append` | Append to file. |
+| `-quiet` | Do not send output to standard out. |
+| `command` | Command to execute. |
+
+## Example scripts
+
+```
+tee -file output.rpt { report_design_area }
+tee -quiet -file output.rpt { report_floating_nets }
 ```
 
 ## Regression tests

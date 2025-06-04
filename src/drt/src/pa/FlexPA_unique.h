@@ -1,31 +1,12 @@
-/*
- * Copyright (c) 2023, The Regents of the University of California
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of the University nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2023-2025, The OpenROAD Authors
 
 #pragma once
+
+#include <map>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "frDesign.h"
 
@@ -44,70 +25,152 @@ namespace drt {
 class UniqueInsts
 {
  public:
-  using InstSet = std::set<frInst*, frBlockObjectComp>;
+  using InstSet = frOrderedIdSet<frInst*>;
   // if target_insts is non-empty then analysis is limited to
   // those instances.
   UniqueInsts(frDesign* design,
               const frCollection<odb::dbInst*>& target_insts,
-              Logger* logger);
+              Logger* logger,
+              RouterConfiguration* router_cfg_);
 
+  /**
+   * @brief Initializes Unique Instances and Pin Acess data.
+   */
   void init();
 
   // Get's the index corresponding to the inst's unique instance
   int getIndex(frInst* inst);
-  // Get's the pin access index corresponding to the inst
-  int getPAIndex(frInst* inst) const;
 
   // Gets the instances in the equivalence set of the given inst
   InstSet* getClass(frInst* inst) const;
 
   const std::vector<frInst*>& getUnique() const;
   frInst* getUnique(int idx) const;
+  frInst* getUnique(frInst* inst) const;
   bool hasUnique(frInst* inst) const;
+
+  /**
+   * @brief Computes the unique class of an inst.
+   *
+   * @param inst inst to have its unique class computed
+   *
+   * @returns the unique class.
+   */
+  UniqueInsts::InstSet& computeUniqueClass(frInst* inst);
+
+  /**
+   * @brief Adds the instance to the unique instances structures,
+   * inserting new data if it is actually a new unique instance.
+   *
+   * @param inst instance to be added.
+   *
+   * @returns True if the instance is the first of its unique class.
+   */
+  bool addInst(frInst* inst);
+
+  /**
+   * @brief deletes an inst from the unique insts structures
+   *
+   * @param inst instance to be deleted
+   *
+   * @returns the unique inst that represents the unique class. If the class was
+   * deleted returns nullptr
+   */
+  frInst* deleteInst(frInst* inst);
+
+  /**
+   * @brief this function if for debugging. It makes the inst the class head.
+   * This is relevant when debugguin with the gui, this is the inst that will
+   * fail in PA, not other inst in its family
+   */
+  void forceInstAsClassHead(frInst* inst);
 
   void report() const;
   void setDesign(frDesign* design) { design_ = design; }
 
  private:
-  using LayerRange = std::tuple<frLayerNum, frLayerNum>;
-  using MasterLayerRange = std::map<frMaster*, LayerRange, frBlockObjectComp>;
+  using LayerRange = std::pair<frLayerNum, frLayerNum>;
+  using MasterLayerRange = frOrderedIdMap<frMaster*, LayerRange>;
 
   frDesign* getDesign() const { return design_; }
   frTechObject* getTech() const { return design_->getTech(); }
+
+  /**
+   * @brief Checks if any net related to the instance has a NonDefaultRule.
+   *
+   * @param inst A cell instance.
+   *
+   * @return If instance contains a NonDefaultRule net connected to any
+   * terminal.
+   */
   bool isNDRInst(frInst& inst);
   bool hasTrackPattern(frTrackPattern* tp, const Rect& box) const;
 
-  void getPrefTrackPatterns(std::vector<frTrackPattern*>& prefTrackPatterns);
+  /**
+   * @brief Creates a vector of preferred track patterns.
+   *
+   * Not every track pattern is a preferred one,
+   * this function acts as filter of design_->getTopBlock()->getTrackPatterns()
+   * to only take the preferred ones, which are the ones in the routing
+   * direction of the layer.
+   *
+   * @return A vector of track patterns objects.
+   */
+  void computePrefTrackPatterns();
   void applyPatternsFile(const char* file_path);
 
-  void initUniqueInstance();
+  /**
+   * @brief Initializes pin access idx of all instances
+   */
   void initPinAccess();
 
-  void initMaster2PinLayerRange(MasterLayerRange& master2PinLayerRange);
+  void initUniqueInstPinAccess(frInst* unique_inst);
 
-  void computeUnique(const MasterLayerRange& master2PinLayerRange,
-                     const std::vector<frTrackPattern*>& prefTrackPatterns);
+  /**
+   * @brief Creates a map from Master instance to LayerRanges.
+   *
+   * LayerRange represents the lower and upper layer of a Master instance.
+   */
+  void initMasterToPinLayerRange();
+
+  /**
+   * @brief Computes all unique instances data structures.
+   *
+   * Fills: master_OT_to_insts_, inst_to_unique_, inst_to_class_ and
+   * unique_to_idx_.
+   */
+  void computeUnique();
+
+  /**
+   * @brief Raises an error if pin shape is illegal.
+   *
+   * @throws DRT 320/321 if the term has offgrid pin shape
+   * @throws DRT 322 if the pin figure is unsuported (not Rect of Polygon)
+   *
+   * @param pin Pin to be checked.
+   */
   void checkFigsOnGrid(const frMPin* pin);
 
   frDesign* design_;
   const frCollection<odb::dbInst*>& target_insts_;
   Logger* logger_;
+  RouterConfiguration* router_cfg_;
 
   // All the unique instances
   std::vector<frInst*> unique_;
-  // Mapp all instances to their representative unique instance
-  std::map<frInst*, frInst*, frBlockObjectComp> inst2unique_;
+  // Maps all instances to their representative unique instance
+  frOrderedIdMap<frInst*, frInst*> inst_to_unique_;
   // Maps all instances to the set of instances with the same unique inst
-  std::unordered_map<frInst*, InstSet*> inst2Class_;
-  // Maps a unique instance to its pin access index
-  std::map<frInst*, int, frBlockObjectComp> unique2paidx_;
+  std::unordered_map<frInst*, InstSet*> inst_to_class_;
   // Maps a unique instance to its index in unique_
-  std::map<frInst*, int, frBlockObjectComp> unique2Idx_;
+  frOrderedIdMap<frInst*, int> unique_to_idx_;
   // master orient track-offset to instances
-  std::map<frMaster*,
-           std::map<dbOrientType, std::map<std::vector<frCoord>, InstSet>>,
-           frBlockObjectComp>
-      masterOT2Insts_;
+  frOrderedIdMap<
+      frMaster*,
+      std::map<dbOrientType, std::map<std::vector<frCoord>, InstSet>>>
+      master_orient_trackoffset_to_insts_;
+  std::vector<frTrackPattern*> pref_track_patterns_;
+  MasterLayerRange master_to_pin_layer_range_;
 };
 
 }  // namespace drt

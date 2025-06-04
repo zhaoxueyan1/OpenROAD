@@ -1,42 +1,23 @@
-/* Authors: Lutong Wang and Bangqi Xu */
-/*
- * Copyright (c) 2019, The Regents of the University of California
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of the University nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "frRegionQuery.h"
 
 #include <boost/polygon/polygon.hpp>
 #include <iostream>
+#include <memory>
+#include <utility>
+#include <vector>
 
+#include "db/obj/frBlockObject.h"
 #include "frDesign.h"
 #include "frRTree.h"
 #include "global.h"
 #include "utl/algorithms.h"
 
 namespace drt {
+
+class FlexDR;
 
 using utl::enumerate;
 namespace gtl = boost::polygon;
@@ -51,6 +32,7 @@ struct frRegionQuery::Impl
 
   frDesign* design_;
   Logger* logger_;
+  RouterConfiguration* router_cfg_;
   // only for pin shapes, obs and snet
   RTreesByLayer<frBlockObject*> shapes_;
   RTreesByLayer<frGuide*> guides_;
@@ -65,8 +47,7 @@ struct frRegionQuery::Impl
 
   Impl() = default;
   void init();
-  void initOrigGuide(
-      std::map<frNet*, std::vector<frRect>, frBlockObjectComp>& tmpGuides);
+  void initOrigGuide(frOrderedIdMap<frNet*, std::vector<frRect>>& tmpGuides);
   void initGuide();
   void initRPin();
   void initGRPin(std::vector<std::pair<frBlockObject*, Point>>& in);
@@ -92,11 +73,14 @@ struct frRegionQuery::Impl
   void addGRObj(grVia* via);
 };
 
-frRegionQuery::frRegionQuery(frDesign* design, Logger* logger)
+frRegionQuery::frRegionQuery(frDesign* design,
+                             Logger* logger,
+                             RouterConfiguration* router_cfg)
     : impl_(std::make_unique<Impl>())
 {
   impl_->design_ = design;
   impl_->logger_ = logger;
+  impl_->router_cfg_ = router_cfg;
 }
 
 frRegionQuery::frRegionQuery() : impl_(nullptr)
@@ -161,12 +145,27 @@ void frRegionQuery::removeDRObj(frShape* shape)
   }
 }
 
+std::vector<std::pair<frBlockObject*, Rect>> frRegionQuery::getVias(
+    frLayerNum layer_num)
+{
+  std::vector<std::pair<frBlockObject*, Rect>> result;
+  result.reserve(impl_->shapes_.at(layer_num).size()
+                 + impl_->drObjs_.at(layer_num).size());
+  for (auto [box, obj] : impl_->shapes_.at(layer_num)) {
+    result.emplace_back(obj, box);
+  }
+  for (auto [box, obj] : impl_->drObjs_.at(layer_num)) {
+    result.emplace_back(obj, box);
+  }
+  return result;
+}
+
 void frRegionQuery::addBlockObj(frBlockObject* obj)
 {
   switch (obj->typeId()) {
     case frcInstTerm: {
       auto instTerm = static_cast<frInstTerm*>(obj);
-      dbTransform xform = instTerm->getInst()->getUpdatedXform();
+      dbTransform xform = instTerm->getInst()->getDBTransform();
       for (auto& pin : instTerm->getTerm()->getPins()) {
         for (auto& uFig : pin->getFigs()) {
           auto shape = uFig.get();
@@ -180,12 +179,12 @@ void frRegionQuery::addBlockObj(frBlockObject* obj)
     }
     case frcInstBlockage: {
       auto instBlk = static_cast<frInstBlockage*>(obj);
-      dbTransform xform = instBlk->getInst()->getUpdatedXform();
+      dbTransform xform = instBlk->getInst()->getDBTransform();
       auto blk = instBlk->getBlockage();
       auto pin = blk->getPin();
       for (auto& uFig : pin->getFigs()) {
         auto shape = uFig.get();
-        if (shape->typeId() == frcPathSeg || shape->typeId() == frcRect) {
+        if (shape->typeId() == frcRect) {
           Rect frb = shape->getBBox();
           xform.apply(frb);
           impl_->shapes_.at(static_cast<frShape*>(shape)->getLayerNum())
@@ -239,7 +238,7 @@ void frRegionQuery::removeBlockObj(frBlockObject* obj)
   switch (obj->typeId()) {
     case frcInstTerm: {
       auto instTerm = static_cast<frInstTerm*>(obj);
-      dbTransform xform = instTerm->getInst()->getUpdatedXform();
+      dbTransform xform = instTerm->getInst()->getDBTransform();
       for (auto& pin : instTerm->getTerm()->getPins()) {
         for (auto& uFig : pin->getFigs()) {
           auto shape = uFig.get();
@@ -253,7 +252,7 @@ void frRegionQuery::removeBlockObj(frBlockObject* obj)
     }
     case frcInstBlockage: {
       auto instBlk = static_cast<frInstBlockage*>(obj);
-      dbTransform xform = instBlk->getInst()->getUpdatedXform();
+      dbTransform xform = instBlk->getInst()->getDBTransform();
       auto blk = instBlk->getBlockage();
       auto pin = blk->getPin();
       for (auto& uFig : pin->getFigs()) {
@@ -367,9 +366,7 @@ void frRegionQuery::removeMarker(frMarker* in)
 void frRegionQuery::Impl::add(frVia* via,
                               ObjectsByLayer<frBlockObject>& allShapes)
 {
-  dbTransform xform;
-  Point origin = via->getOrigin();
-  xform.setOffset(origin);
+  dbTransform xform = via->getTransform();
   for (auto& uShape : via->getViaDef()->getLayer1Figs()) {
     auto shape = uShape.get();
     if (shape->typeId() == frcRect) {
@@ -437,7 +434,7 @@ void frRegionQuery::addGRObj(grVia* via)
 void frRegionQuery::Impl::add(frInstTerm* instTerm,
                               ObjectsByLayer<frBlockObject>& allShapes)
 {
-  dbTransform xform = instTerm->getInst()->getUpdatedXform();
+  dbTransform xform = instTerm->getInst()->getDBTransform();
 
   for (auto& pin : instTerm->getTerm()->getPins()) {
     for (auto& uFig : pin->getFigs()) {
@@ -474,7 +471,7 @@ void frRegionQuery::Impl::add(frBTerm* term,
 void frRegionQuery::Impl::add(frInstBlockage* instBlk,
                               ObjectsByLayer<frBlockObject>& allShapes)
 {
-  dbTransform xform = instBlk->getInst()->getUpdatedXform();
+  dbTransform xform = instBlk->getInst()->getDBTransform();
   auto blk = instBlk->getBlockage();
   auto pin = blk->getPin();
   for (auto& uFig : pin->getFigs()) {
@@ -730,7 +727,7 @@ void frRegionQuery::Impl::init()
       add(instBlk.get(), allShapes);
     }
     cnt++;
-    if (VERBOSE > 0) {
+    if (router_cfg_->VERBOSE > 0) {
       if (cnt < 1000000) {
         if (cnt % 100000 == 0) {
           logger_->info(DRT, 18, "  Complete {} insts.", cnt);
@@ -746,7 +743,7 @@ void frRegionQuery::Impl::init()
   for (auto& term : design_->getTopBlock()->getTerms()) {
     add(term.get(), allShapes);
     cnt++;
-    if (VERBOSE > 0) {
+    if (router_cfg_->VERBOSE > 0) {
       if (cnt < 100000) {
         if (cnt % 10000 == 0) {
           logger_->info(DRT, 20, "  Complete {} terms.", cnt);
@@ -768,7 +765,7 @@ void frRegionQuery::Impl::init()
       add(via.get(), allShapes);
     }
     cnt++;
-    if (VERBOSE > 0) {
+    if (router_cfg_->VERBOSE > 0) {
       if (cnt % 10000 == 0) {
         logger_->info(DRT, 22, "  Complete {} snets.", cnt);
       }
@@ -779,7 +776,7 @@ void frRegionQuery::Impl::init()
   for (auto& blk : design_->getTopBlock()->getBlockages()) {
     add(blk.get(), allShapes);
     cnt++;
-    if (VERBOSE > 0) {
+    if (router_cfg_->VERBOSE > 0) {
       if (cnt % 10000 == 0) {
         logger_->info(DRT, 23, "  Complete {} blockages.", cnt);
       }
@@ -790,7 +787,7 @@ void frRegionQuery::Impl::init()
     shapes_.at(i) = boost::move(RTree<frBlockObject*>(allShapes.at(i)));
     allShapes.at(i).clear();
     allShapes.at(i).shrink_to_fit();
-    if (VERBOSE > 0) {
+    if (router_cfg_->VERBOSE > 0) {
       logger_->info(DRT,
                     24,
                     "  Complete {}.",
@@ -800,13 +797,13 @@ void frRegionQuery::Impl::init()
 }
 
 void frRegionQuery::initOrigGuide(
-    std::map<frNet*, std::vector<frRect>, frBlockObjectComp>& tmpGuides)
+    frOrderedIdMap<frNet*, std::vector<frRect>>& tmpGuides)
 {
   impl_->initOrigGuide(tmpGuides);
 }
 
 void frRegionQuery::Impl::initOrigGuide(
-    std::map<frNet*, std::vector<frRect>, frBlockObjectComp>& tmpGuides)
+    frOrderedIdMap<frNet*, std::vector<frRect>>& tmpGuides)
 {
   const frLayerNum numLayers = design_->getTech()->getLayers().size();
   origGuides_.clear();
@@ -818,7 +815,7 @@ void frRegionQuery::Impl::initOrigGuide(
     for (auto& rect : rects) {
       addOrigGuide(net, rect, allShapes);
       cnt++;
-      if (VERBOSE > 0) {
+      if (router_cfg_->VERBOSE > 0) {
         if (cnt < 1000000) {
           if (cnt % 100000 == 0) {
             logger_->info(DRT, 26, "  Complete {} origin guides.", cnt);
@@ -835,7 +832,7 @@ void frRegionQuery::Impl::initOrigGuide(
     origGuides_.at(i) = boost::move(RTree<frNet*>(allShapes.at(i)));
     allShapes.at(i).clear();
     allShapes.at(i).shrink_to_fit();
-    if (VERBOSE > 0) {
+    if (router_cfg_->VERBOSE > 0) {
       logger_->info(DRT,
                     28,
                     "  Complete {}.",
@@ -862,7 +859,7 @@ void frRegionQuery::Impl::initGuide()
       addGuide(guide.get(), allGuides);
     }
     cnt++;
-    if (VERBOSE > 0) {
+    if (router_cfg_->VERBOSE > 0) {
       if (cnt < 1000000) {
         if (cnt % 100000 == 0) {
           logger_->info(DRT, 29, "  Complete {} nets (guide).", cnt);
@@ -878,7 +875,7 @@ void frRegionQuery::Impl::initGuide()
     guides_.at(i) = boost::move(RTree<frGuide*>(allGuides.at(i)));
     allGuides.at(i).clear();
     allGuides.at(i).shrink_to_fit();
-    if (VERBOSE > 0) {
+    if (router_cfg_->VERBOSE > 0) {
       logger_->info(DRT,
                     35,
                     "  Complete {} (guide).",

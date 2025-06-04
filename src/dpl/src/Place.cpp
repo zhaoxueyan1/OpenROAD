@@ -1,55 +1,27 @@
-/////////////////////////////////////////////////////////////////////////////
-// Original authors: SangGi Do(sanggido@unist.ac.kr), Mingyu
-// Woo(mwoo@eng.ucsd.edu)
-//          (respective Ph.D. advisors: Seokhyeong Kang, Andrew B. Kahng)
-// Rewrite by James Cherry, Parallax Software, Inc.
-//
-// Copyright (c) 2019, The Regents of the University of California
-// Copyright (c) 2018, SangGi Do and Mingyu Woo
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2018-2025, The OpenROAD Authors
 
 #include <algorithm>
+#include <boost/random/uniform_int_distribution.hpp>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <random>
+#include <set>
+#include <string>
+#include <vector>
 
-#include "DplObserver.h"
-#include "Grid.h"
-#include "Objects.h"
-#include "Padding.h"
+#include "PlacementDRC.h"
 #include "dpl/Opendp.h"
+#include "graphics/DplObserver.h"
+#include "infrastructure/Grid.h"
+#include "infrastructure/Objects.h"
+#include "infrastructure/Padding.h"
+#include "infrastructure/network.h"
+#include "odb/dbTransform.h"
+#include "util/journal.h"
 #include "utl/Logger.h"
-
 // #define ODP_DEBUG
 
 namespace dpl {
@@ -87,7 +59,7 @@ void Opendp::detailedPlacement()
   // y axis dummycell insertion
   groupInitPixels();
 
-  if (!groups_.empty()) {
+  if (!arch_->getRegions().empty()) {
     placeGroups();
   }
   place();
@@ -108,11 +80,11 @@ void Opendp::placeGroups()
 
   // naive placement method ( multi -> single )
   placeGroups2();
-  for (Group& group : groups_) {
+  for (auto& group : arch_->getRegions()) {
     // magic number alert
     for (int pass = 0; pass < 3; pass++) {
-      int refine_count = groupRefine(&group);
-      int anneal_count = anneal(&group);
+      int refine_count = groupRefine(group);
+      int anneal_count = anneal(group);
       // magic number alert
       if (refine_count < 10 || anneal_count < 100) {
         break;
@@ -123,37 +95,40 @@ void Opendp::placeGroups()
 
 void Opendp::prePlace()
 {
-  for (Cell& cell : cells_) {
-    Rect* group_rect = nullptr;
-    if (!cell.inGroup() && !cell.is_placed_) {
-      for (Group& group : groups_) {
-        for (Rect& rect : group.region_boundaries) {
-          if (checkOverlap(&cell, rect)) {
+  for (auto& cell : network_->getNodes()) {
+    if (cell->getType() != Node::CELL) {
+      continue;
+    }
+    const Rect* group_rect = nullptr;
+    if (!cell->inGroup() && !cell->isPlaced()) {
+      for (auto& group : arch_->getRegions()) {
+        for (const Rect& rect : group->getRects()) {
+          if (checkOverlap(cell.get(), rect)) {
             group_rect = &rect;
           }
         }
       }
       if (group_rect) {
-        const DbuPt nearest = nearestPt(&cell, *group_rect);
-        const GridPt legal = legalGridPt(&cell, nearest);
-        if (mapMove(&cell, legal)) {
-          cell.hold_ = true;
+        const DbuPt nearest = nearestPt(cell.get(), *group_rect);
+        const GridPt legal = legalGridPt(cell.get(), nearest);
+        if (mapMove(cell.get(), legal)) {
+          cell->setHold(true);
         }
       }
     }
   }
 }
 
-bool Opendp::checkOverlap(const Cell* cell, const DbuRect& rect) const
+bool Opendp::checkOverlap(const Node* cell, const DbuRect& rect) const
 {
   const DbuPt init = initialLocation(cell, false);
   const DbuX x = init.x;
   const DbuY y = init.y;
-  return x + cell->width_ > rect.xl && x < rect.xl
-         && y + cell->height_ > rect.yl && y < rect.yh;
+  return x + cell->getWidth() > rect.xl && x < rect.xl
+         && y + cell->getHeight() > rect.yl && y < rect.yh;
 }
 
-DbuPt Opendp::nearestPt(const Cell* cell, const DbuRect& rect) const
+DbuPt Opendp::nearestPt(const Node* cell, const DbuRect& rect) const
 {
   const DbuPt init = initialLocation(cell, false);
   const DbuX x = init.x;
@@ -162,7 +137,7 @@ DbuPt Opendp::nearestPt(const Cell* cell, const DbuRect& rect) const
   DbuX temp_x = x;
   DbuY temp_y = y;
 
-  const DbuX cell_width = cell->width_;
+  const DbuX cell_width = cell->getWidth();
   if (checkOverlap(cell, rect)) {
     DbuX dist_x;
     DbuY dist_y;
@@ -173,12 +148,12 @@ DbuPt Opendp::nearestPt(const Cell* cell, const DbuRect& rect) const
       dist_x = abs(x - rect.xl);
       temp_x = rect.xl - cell_width;
     }
-    if (abs(y + cell->height_ - rect.yl) > abs(rect.yh - y)) {
+    if (abs(y + cell->getHeight() - rect.yl) > abs(rect.yh - y)) {
       dist_y = abs(rect.yh - y);
       temp_y = rect.yh;
     } else {
       dist_y = abs(y - rect.yl);
-      temp_y = rect.yl - cell->height_;
+      temp_y = rect.yl - cell->getHeight();
     }
     if (dist_x.v < dist_y.v) {
       return {temp_x, y};
@@ -194,8 +169,8 @@ DbuPt Opendp::nearestPt(const Cell* cell, const DbuRect& rect) const
 
   if (y < rect.yl) {
     temp_y = rect.yl;
-  } else if (y + cell->height_ > rect.yh) {
-    temp_y = rect.yh - cell->height_;
+  } else if (y + cell->getHeight() > rect.yh) {
+    temp_y = rect.yh - cell->getHeight();
   }
 
   return {temp_x, temp_y};
@@ -203,13 +178,13 @@ DbuPt Opendp::nearestPt(const Cell* cell, const DbuRect& rect) const
 
 void Opendp::prePlaceGroups()
 {
-  for (Group& group : groups_) {
-    for (Cell* cell : group.cells_) {
-      if (!cell->isFixed() && !cell->is_placed_) {
+  for (auto& group : arch_->getRegions()) {
+    for (Node* cell : group->getCells()) {
+      if (!cell->isFixed() && !cell->isPlaced()) {
         int dist = numeric_limits<int>::max();
         bool in_group = false;
-        Rect* nearest_rect = nullptr;
-        for (Rect& rect : group.region_boundaries) {
+        const Rect* nearest_rect = nullptr;
+        for (const Rect& rect : group->getRects()) {
           if (isInside(cell, rect)) {
             in_group = true;
           }
@@ -226,7 +201,7 @@ void Opendp::prePlaceGroups()
           const DbuPt nearest = nearestPt(cell, *nearest_rect);
           const GridPt legal = legalGridPt(cell, nearest);
           if (mapMove(cell, legal)) {
-            cell->hold_ = true;
+            cell->setHold(true);
           }
         }
       }
@@ -234,16 +209,16 @@ void Opendp::prePlaceGroups()
   }
 }
 
-bool Opendp::isInside(const Cell* cell, const Rect& rect) const
+bool Opendp::isInside(const Node* cell, const Rect& rect) const
 {
   const DbuPt init = initialLocation(cell, false);
   const DbuX x = init.x;
   const DbuY y = init.y;
-  return x >= rect.xMin() && x + cell->width_ <= rect.xMax() && y >= rect.yMin()
-         && y + cell->height_ <= rect.yMax();
+  return x >= rect.xMin() && x + cell->getWidth() <= rect.xMax()
+         && y >= rect.yMin() && y + cell->getHeight() <= rect.yMax();
 }
 
-int Opendp::distToRect(const Cell* cell, const Rect& rect) const
+int Opendp::distToRect(const Node* cell, const Rect& rect) const
 {
   const DbuPt init = initialLocation(cell, true);
   const DbuX x = init.x;
@@ -253,14 +228,14 @@ int Opendp::distToRect(const Cell* cell, const Rect& rect) const
   DbuY dist_y{0};
   if (x < rect.xMin()) {
     dist_x = DbuX{rect.xMin()} - x;
-  } else if (x + cell->width_ > rect.xMax()) {
-    dist_x = x + cell->width_ - rect.xMax();
+  } else if (x + cell->getWidth() > rect.xMax()) {
+    dist_x = x + cell->getWidth() - rect.xMax();
   }
 
   if (y < rect.yMin()) {
     dist_y = DbuY{rect.yMin()} - y;
-  } else if (y + cell->height_ > rect.yMax()) {
-    dist_y = y + cell->height_ - rect.yMax();
+  } else if (y + cell->getHeight() > rect.yMax()) {
+    dist_y = y + cell->getHeight() - rect.yMax();
   }
 
   return sumXY(dist_x, dist_y);
@@ -270,10 +245,10 @@ class CellPlaceOrderLess
 {
  public:
   explicit CellPlaceOrderLess(const Rect& core);
-  bool operator()(const Cell* cell1, const Cell* cell2) const;
+  bool operator()(const Node* cell1, const Node* cell2) const;
 
  private:
-  int centerDist(const Cell* cell) const;
+  int centerDist(const Node* cell) const;
 
   const int center_x_;
   const int center_y_;
@@ -285,12 +260,13 @@ CellPlaceOrderLess::CellPlaceOrderLess(const Rect& core)
 {
 }
 
-int CellPlaceOrderLess::centerDist(const Cell* cell) const
+int CellPlaceOrderLess::centerDist(const Node* cell) const
 {
-  return sumXY(abs(cell->x_ - center_x_), abs(cell->y_ - center_y_));
+  return sumXY(abs(cell->getLeft() - center_x_),
+               abs(cell->getBottom() - center_y_));
 }
 
-bool CellPlaceOrderLess::operator()(const Cell* cell1, const Cell* cell2) const
+bool CellPlaceOrderLess::operator()(const Node* cell1, const Node* cell2) const
 {
   const int64_t area1 = cell1->area();
   const int64_t area2 = cell2->area();
@@ -300,34 +276,35 @@ bool CellPlaceOrderLess::operator()(const Cell* cell1, const Cell* cell2) const
          || (area1 == area2
              && (dist1 < dist2
                  || (dist1 == dist2
-                     && strcmp(cell1->db_inst_->getConstName(),
-                               cell2->db_inst_->getConstName())
+                     && strcmp(cell1->getDbInst()->getConstName(),
+                               cell2->getDbInst()->getConstName())
                             < 0)));
 }
 
 void Opendp::place()
 {
-  vector<Cell*> sorted_cells;
-  sorted_cells.reserve(cells_.size());
+  vector<Node*> sorted_cells;
+  sorted_cells.reserve(network_->getNumCells());
 
-  for (Cell& cell : cells_) {
-    if (!(cell.isFixed() || cell.inGroup() || cell.is_placed_)) {
-      sorted_cells.push_back(&cell);
-      if (!grid_->cellFitsInCore(&cell)) {
+  for (auto& cell : network_->getNodes()) {
+    if (cell->getType() != Node::CELL) {
+      continue;
+    }
+    if (!(cell->isFixed() || cell->inGroup() || cell->isPlaced())) {
+      sorted_cells.push_back(cell.get());
+      if (!grid_->cellFitsInCore(cell.get())) {
         logger_->error(DPL,
                        15,
                        "instance {} does not fit inside the ROW core area.",
-                       cell.name());
+                       cell->name());
       }
     }
   }
-  sort(sorted_cells.begin(),
-       sorted_cells.end(),
-       CellPlaceOrderLess(grid_->getCore()));
+  sort(sorted_cells.begin(), sorted_cells.end(), CellPlaceOrderLess(core_));
 
   // Place multi-row instances first.
   if (have_multi_row_cells_) {
-    for (Cell* cell : sorted_cells) {
+    for (Node* cell : sorted_cells) {
       if (isMultiRow(cell)) {
         debugPrint(logger_,
                    DPL,
@@ -341,7 +318,7 @@ void Opendp::place()
       }
     }
   }
-  for (Cell* cell : sorted_cells) {
+  for (Node* cell : sorted_cells) {
     if (!isMultiRow(cell)) {
       if (!mapMove(cell)) {
         shiftMove(cell);
@@ -352,22 +329,20 @@ void Opendp::place()
 
 void Opendp::placeGroups2()
 {
-  for (Group& group : groups_) {
-    vector<Cell*> group_cells;
-    group_cells.reserve(cells_.size());
-    for (Cell* cell : group.cells_) {
-      if (!cell->isFixed() && !cell->is_placed_) {
+  for (auto& group : arch_->getRegions()) {
+    vector<Node*> group_cells;
+    group_cells.reserve(network_->getNumCells());
+    for (Node* cell : group->getCells()) {
+      if (!cell->isFixed() && !cell->isPlaced()) {
         group_cells.push_back(cell);
       }
     }
-    sort(group_cells.begin(),
-         group_cells.end(),
-         CellPlaceOrderLess(grid_->getCore()));
+    sort(group_cells.begin(), group_cells.end(), CellPlaceOrderLess(core_));
 
     // Place multi-row cells in each group region.
     bool multi_pass = true;
-    for (Cell* cell : group_cells) {
-      if (!cell->isFixed() && !cell->is_placed_) {
+    for (Node* cell : group_cells) {
+      if (!cell->isFixed() && !cell->isPlaced()) {
         assert(cell->inGroup());
         if (isMultiRow(cell)) {
           multi_pass = mapMove(cell);
@@ -380,8 +355,8 @@ void Opendp::placeGroups2()
     bool single_pass = true;
     if (multi_pass) {
       // Place single-row cells in each group region.
-      for (Cell* cell : group_cells) {
-        if (!cell->isFixed() && !cell->is_placed_) {
+      for (Node* cell : group_cells) {
+        if (!cell->isFixed() && !cell->isPlaced()) {
           assert(cell->inGroup());
           if (!isMultiRow(cell)) {
             single_pass = mapMove(cell);
@@ -395,16 +370,16 @@ void Opendp::placeGroups2()
 
     if (!single_pass || !multi_pass) {
       // Erase group cells
-      for (Cell* cell : group.cells_) {
-        grid_->erasePixel(cell);
+      for (Node* cell : group->getCells()) {
+        unplaceCell(cell);
       }
 
       // Determine brick placement by utilization.
       // magic number alert
-      if (group.util > 0.95) {
-        brickPlace1(&group);
+      if (group->getUtil() > 0.95) {
+        brickPlace1(group);
       } else {
-        brickPlace2(&group);
+        brickPlace2(group);
       }
     }
   }
@@ -413,14 +388,14 @@ void Opendp::placeGroups2()
 // Place cells in group toward edges.
 void Opendp::brickPlace1(const Group* group)
 {
-  const Rect& boundary = group->boundary;
-  vector<Cell*> sorted_cells(group->cells_);
+  const Rect& boundary = group->getBBox();
+  vector<Node*> sorted_cells(group->getCells());
 
-  sort(sorted_cells.begin(), sorted_cells.end(), [&](Cell* cell1, Cell* cell2) {
+  sort(sorted_cells.begin(), sorted_cells.end(), [&](Node* cell1, Node* cell2) {
     return rectDist(cell1, boundary) < rectDist(cell2, boundary);
   });
 
-  for (Cell* cell : sorted_cells) {
+  for (Node* cell : sorted_cells) {
     DbuX x;
     DbuY y;
     rectDist(cell, boundary, &x.v, &y.v);
@@ -434,7 +409,7 @@ void Opendp::brickPlace1(const Group* group)
   }
 }
 
-void Opendp::rectDist(const Cell* cell,
+void Opendp::rectDist(const Node* cell,
                       const Rect& rect,
                       // Return values.
                       int* x,
@@ -457,7 +432,7 @@ void Opendp::rectDist(const Cell* cell,
   }
 }
 
-int Opendp::rectDist(const Cell* cell, const Rect& rect) const
+int Opendp::rectDist(const Node* cell, const Rect& rect) const
 {
   int x, y;
   rectDist(cell, rect, &x, &y);
@@ -468,17 +443,18 @@ int Opendp::rectDist(const Cell* cell, const Rect& rect) const
 // Place group cells toward region edges.
 void Opendp::brickPlace2(const Group* group)
 {
-  vector<Cell*> sorted_cells(group->cells_);
+  vector<Node*> sorted_cells(group->getCells());
 
-  sort(sorted_cells.begin(), sorted_cells.end(), [&](Cell* cell1, Cell* cell2) {
-    return rectDist(cell1, *cell1->region_) < rectDist(cell2, *cell2->region_);
+  sort(sorted_cells.begin(), sorted_cells.end(), [&](Node* cell1, Node* cell2) {
+    return rectDist(cell1, *cell1->getRegion())
+           < rectDist(cell2, *cell2->getRegion());
   });
 
-  for (Cell* cell : sorted_cells) {
-    if (!cell->hold_) {
+  for (Node* cell : sorted_cells) {
+    if (!cell->isHold()) {
       DbuX x;
       DbuY y;
-      rectDist(cell, *cell->region_, &x.v, &y.v);
+      rectDist(cell, *cell->getRegion(), &x.v, &y.v);
       const GridPt legal = legalGridPt(cell, {x, y});
       // This looks for a site starting at the nearest corner in rect,
       // which seems broken. It should start looking at the nearest point
@@ -492,16 +468,16 @@ void Opendp::brickPlace2(const Group* group)
 
 int Opendp::groupRefine(const Group* group)
 {
-  vector<Cell*> sort_by_disp(group->cells_);
+  vector<Node*> sort_by_disp(group->getCells());
 
-  sort(sort_by_disp.begin(), sort_by_disp.end(), [&](Cell* cell1, Cell* cell2) {
+  sort(sort_by_disp.begin(), sort_by_disp.end(), [&](Node* cell1, Node* cell2) {
     return (disp(cell1) > disp(cell2));
   });
 
   int count = 0;
   for (int i = 0; i < sort_by_disp.size() * group_refine_percent_; i++) {
-    Cell* cell = sort_by_disp[i];
-    if (!cell->hold_ && !cell->isFixed()) {
+    Node* cell = sort_by_disp[i];
+    if (!cell->isHold() && !cell->isFixed()) {
       if (refineMove(cell)) {
         count++;
       }
@@ -513,13 +489,17 @@ int Opendp::groupRefine(const Group* group)
 // This is NOT annealing. It is random swapping. -cherry
 int Opendp::anneal(Group* group)
 {
-  srand(rand_seed_);
+  std::mt19937 rand_gen(rand_seed_);
   int count = 0;
 
   // magic number alert
-  for (int i = 0; i < 100 * group->cells_.size(); i++) {
-    Cell* cell1 = group->cells_[rand() % group->cells_.size()];
-    Cell* cell2 = group->cells_[rand() % group->cells_.size()];
+  using idx_range = boost::random::uniform_int_distribution<int>;
+  const size_t num_cells = group->getCells().size();
+  for (int i = 0; i < 100 * num_cells; i++) {
+    const auto cell1_idx = idx_range(0, num_cells - 1)(rand_gen);
+    const auto cell2_idx = idx_range(0, num_cells - 1)(rand_gen);
+    Node* cell1 = group->getCells()[cell1_idx];
+    Node* cell2 = group->getCells()[cell2_idx];
     if (swapCells(cell1, cell2)) {
       count++;
     }
@@ -530,22 +510,25 @@ int Opendp::anneal(Group* group)
 // Not called -cherry.
 int Opendp::refine()
 {
-  vector<Cell*> sorted;
-  sorted.reserve(cells_.size());
+  vector<Node*> sorted;
+  sorted.reserve(network_->getNumCells());
 
-  for (Cell& cell : cells_) {
-    if (!(cell.isFixed() || cell.hold_ || cell.inGroup())) {
-      sorted.push_back(&cell);
+  for (auto& cell : network_->getNodes()) {
+    if (cell->getType() != Node::CELL) {
+      continue;
+    }
+    if (!(cell->isFixed() || cell->isHold() || cell->inGroup())) {
+      sorted.push_back(cell.get());
     }
   }
-  sort(sorted.begin(), sorted.end(), [&](Cell* cell1, Cell* cell2) {
+  sort(sorted.begin(), sorted.end(), [&](Node* cell1, Node* cell2) {
     return disp(cell1) > disp(cell2);
   });
 
   int count = 0;
   for (int i = 0; i < sorted.size() * refine_percent_; i++) {
-    Cell* cell = sorted[i];
-    if (!cell->hold_) {
+    Node* cell = sorted[i];
+    if (!cell->isHold()) {
       if (refineMove(cell)) {
         count++;
       }
@@ -556,13 +539,13 @@ int Opendp::refine()
 
 ////////////////////////////////////////////////////////////////
 
-bool Opendp::mapMove(Cell* cell)
+bool Opendp::mapMove(Node* cell)
 {
   const GridPt init = legalGridPt(cell, true);
   return mapMove(cell, init);
 }
 
-bool Opendp::mapMove(Cell* cell, const GridPt& grid_pt)
+bool Opendp::mapMove(Node* cell, const GridPt& grid_pt)
 {
   debugPrint(logger_,
              DPL,
@@ -570,48 +553,44 @@ bool Opendp::mapMove(Cell* cell, const GridPt& grid_pt)
              1,
              "Map move {} ({}, {}) to ({}, {})",
              cell->name(),
-             cell->x_,
-             cell->y_,
+             cell->getLeft(),
+             cell->getBottom(),
              grid_pt.x,
              grid_pt.y);
-  const PixelPt pixel_pt = diamondSearch(cell, grid_pt.x, grid_pt.y);
+  const PixelPt pixel_pt = searchNearestSite(cell, grid_pt.x, grid_pt.y);
   debugPrint(logger_,
              DPL,
              "place",
              1,
-             "Diamond search {} ({}, {}) to ({}, {}) on site {}",
+             "Search Nearest Site {} ({}, {}) to ({}, {})",
              cell->name(),
-             cell->x_,
-             cell->y_,
+             cell->getLeft(),
+             cell->getBottom(),
              pixel_pt.x,
-             pixel_pt.y,
-             pixel_pt.pixel->site->getName());
+             pixel_pt.y);
   if (pixel_pt.pixel) {
-    grid_->paintPixel(cell, pixel_pt.x, pixel_pt.y);
+    placeCell(cell, pixel_pt.x, pixel_pt.y);
     if (debug_observer_) {
-      debug_observer_->placeInstance(cell->db_inst_);
+      debug_observer_->placeInstance(cell->getDbInst());
     }
     return true;
   }
   return false;
 }
 
-void Opendp::shiftMove(Cell* cell)
+bool Opendp::shiftMove(Node* cell)
 {
   const GridPt grid_pt = legalGridPt(cell, true);
-  const GridMapKey grid_key = grid_->getGridMapKey(cell);
-  const auto& grid_info = grid_->infoMap(grid_key);
-  const int grid_index = grid_info.getGridIndex();
   // magic number alert
   const GridY boundary_margin{3};
   const GridX margin_width{grid_->gridPaddedWidth(cell).v * boundary_margin.v};
-  std::set<Cell*> region_cells;
+  std::set<Node*> region_cells;
   for (GridX x = grid_pt.x - margin_width; x < grid_pt.x + margin_width; x++) {
     for (GridY y = grid_pt.y - boundary_margin; y < grid_pt.y + boundary_margin;
          y++) {
-      Pixel* pixel = grid_->gridPixel(grid_index, x, y);
+      Pixel* pixel = grid_->gridPixel(x, y);
       if (pixel) {
-        Cell* cell = pixel->cell;
+        Node* cell = pixel->cell;
         if (cell && !cell->isFixed()) {
           region_cells.insert(cell);
         }
@@ -620,9 +599,9 @@ void Opendp::shiftMove(Cell* cell)
   }
 
   // erase region cells
-  for (Cell* around_cell : region_cells) {
+  for (Node* around_cell : region_cells) {
     if (cell->inGroup() == around_cell->inGroup()) {
-      grid_->erasePixel(around_cell);
+      unplaceCell(around_cell);
     }
   }
 
@@ -632,127 +611,109 @@ void Opendp::shiftMove(Cell* cell)
   }
 
   // re-place erased cells
-  for (Cell* around_cell : region_cells) {
+  for (Node* around_cell : region_cells) {
     if (cell->inGroup() == around_cell->inGroup() && !mapMove(around_cell)) {
       placement_failures_.push_back(cell);
     }
   }
+  return placement_failures_.empty();
 }
 
-bool Opendp::swapCells(Cell* cell1, Cell* cell2)
+bool Opendp::swapCells(Node* cell1, Node* cell2)
 {
-  if (cell1 != cell2 && !cell1->hold_ && !cell2->hold_
-      && cell1->width_ == cell2->width_ && cell1->height_ == cell2->height_
-      && !cell1->isFixed() && !cell2->isFixed()) {
-    const int dist_change = distChange(cell1, cell2->x_, cell2->y_)
-                            + distChange(cell2, cell1->x_, cell1->y_);
+  if (cell1 != cell2 && !cell1->isHold() && !cell2->isHold()
+      && cell1->getWidth() == cell2->getWidth()
+      && cell1->getHeight() == cell2->getHeight() && !cell1->isFixed()
+      && !cell2->isFixed()) {
+    const int dist_change
+        = distChange(cell1, cell2->getLeft(), cell2->getBottom())
+          + distChange(cell2, cell1->getLeft(), cell1->getBottom());
 
     if (dist_change < 0) {
       const GridX grid_x1 = grid_->gridPaddedX(cell2);
-      const GridY grid_y1 = grid_->gridY(cell2);
+      const GridY grid_y1 = grid_->gridSnapDownY(cell2);
       const GridX grid_x2 = grid_->gridPaddedX(cell1);
-      const GridY grid_y2 = grid_->gridY(cell1);
+      const GridY grid_y2 = grid_->gridSnapDownY(cell1);
 
-      grid_->erasePixel(cell1);
-      grid_->erasePixel(cell2);
-      grid_->paintPixel(cell1, grid_x1, grid_y1);
-      grid_->paintPixel(cell2, grid_x2, grid_y2);
+      unplaceCell(cell1);
+      unplaceCell(cell2);
+      placeCell(cell1, grid_x1, grid_y1);
+      placeCell(cell2, grid_x2, grid_y2);
       return true;
     }
   }
   return false;
 }
 
-bool Opendp::refineMove(Cell* cell)
+bool Opendp::refineMove(Node* cell)
 {
   const GridPt grid_pt = legalGridPt(cell, true);
-  const PixelPt pixel_pt = diamondSearch(cell, grid_pt.x, grid_pt.y);
+  const PixelPt pixel_pt = searchNearestSite(cell, grid_pt.x, grid_pt.y);
 
   if (pixel_pt.pixel) {
-    const GridY scaled_max_displacement_y_
-        = grid_->map_ycoordinates(GridY{max_displacement_y_},
-                                  grid_->getSmallestNonHybridGridKey(),
-                                  grid_->getGridMapKey(cell),
-                                  true);
     if (abs(grid_pt.x - pixel_pt.x) > max_displacement_x_
-        || abs(grid_pt.y - pixel_pt.y) > scaled_max_displacement_y_) {
+        || abs(grid_pt.y - pixel_pt.y) > max_displacement_y_) {
       return false;
     }
 
-    const DbuY row_height = grid_->getRowHeight(cell);
     const int dist_change
         = distChange(cell,
                      gridToDbu(pixel_pt.x, grid_->getSiteWidth()),
-                     gridToDbu(pixel_pt.y, row_height));
+                     grid_->gridYToDbu(pixel_pt.y));
 
     if (dist_change < 0) {
-      grid_->erasePixel(cell);
-      grid_->paintPixel(cell, pixel_pt.x, pixel_pt.y);
+      unplaceCell(cell);
+      placeCell(cell, pixel_pt.x, pixel_pt.y);
       return true;
     }
   }
   return false;
 }
 
-int Opendp::distChange(const Cell* cell, const DbuX x, const DbuY y) const
+int Opendp::distChange(const Node* cell, const DbuX x, const DbuY y) const
 {
   const DbuPt init = initialLocation(cell, false);
-  const int cell_dist = sumXY(abs(cell->x_ - init.x), abs(cell->y_ - init.y));
+  const int cell_dist
+      = sumXY(abs(cell->getLeft() - init.x), abs(cell->getBottom() - init.y));
   const int pt_dist = sumXY(abs(init.x - x), abs(init.y - y));
   return pt_dist - cell_dist;
 }
 
 ////////////////////////////////////////////////////////////////
 
-PixelPt Opendp::diamondSearch(const Cell* cell,
-                              const GridX x,
-                              const GridY y) const
+PixelPt Opendp::searchNearestSite(const Node* cell,
+                                  const GridX x,
+                                  const GridY y) const
 {
   // Diamond search limits.
   GridX x_min = x - max_displacement_x_;
   GridX x_max = x + max_displacement_x_;
-  // TODO: IMO, this is still not correct.
-  //  I am scaling based on the smallest row_height to keep code consistent with
-  //  the original code.
-  //  max_displacement_y_ is in microns, and this doesn't translate directly to
-  //  x and y on the grid.
-  const GridY scaled_max_displacement_y
-      = grid_->map_ycoordinates(GridY{max_displacement_y_},
-                                grid_->getSmallestNonHybridGridKey(),
-                                grid_->getGridMapKey(cell),
-                                true);
-  GridY y_min = y - scaled_max_displacement_y;
-  GridY y_max = y + scaled_max_displacement_y;
-
-  auto [row_height, grid_info] = grid_->getRowInfo(cell);
+  GridY y_min = y - max_displacement_y_;
+  GridY y_max = y + max_displacement_y_;
 
   // Restrict search to group boundary.
-  Group* group = cell->group_;
+  Group* group = cell->getGroup();
   if (group) {
     // Map boundary to grid staying inside.
-    const DbuX site_width = grid_->getSiteWidth();
-    const Rect grid_boundary(divCeil(group->boundary.xMin(), site_width.v),
-                             divCeil(group->boundary.yMin(), row_height.v),
-                             group->boundary.xMax() / site_width.v,
-                             group->boundary.yMax() / row_height.v);
-    const Point min = grid_boundary.closestPtInside(Point(x_min.v, y_min.v));
-    const Point max = grid_boundary.closestPtInside(Point(x_max.v, y_max.v));
-    x_min = GridX{min.getX()};
-    y_min = GridY{min.getY()};
-    x_max = GridX{max.getX()};
-    y_max = GridY{max.getY()};
+    const GridRect grid_boundary = grid_->gridWithin(group->getBBox());
+    const GridPt min = grid_boundary.closestPtInside({x_min, y_min});
+    const GridPt max = grid_boundary.closestPtInside({x_max, y_max});
+    x_min = min.x;
+    y_min = min.y;
+    x_max = max.x;
+    y_max = max.y;
   }
 
-  // Clip diamond limits to grid bounds.
+  // Clip limits to grid bounds.
   x_min = max(GridX{0}, x_min);
   y_min = max(GridY{0}, y_min);
-  x_max = min(grid_info.getSiteCount(), x_max);
-  y_max = min(grid_info.getRowCount(), y_max);
+  x_max = min(grid_->getRowSiteCount(), x_max);
+  y_max = min(grid_->getRowCount(), y_max);
   debugPrint(logger_,
              DPL,
              "place",
              1,
-             "Diamond Search {} ({}, {}) bounds ({}-{}, {}-{})",
+             "Search Nearest Site {} ({}, {}) bounds ({}-{}, {}-{})",
              cell->name(),
              x,
              y,
@@ -761,172 +722,92 @@ PixelPt Opendp::diamondSearch(const Cell* cell,
              y_min,
              y_max - 1);
 
-  // Check the bin at the initial position first.
-  const PixelPt avail_pt = binSearch(x, cell, x, y);
-  if (avail_pt.pixel) {
-    return avail_pt;
-  }
+  struct PQ_entry
+  {
+    int manhattan_distance;
+    GridPt p;
+    bool operator>(const PQ_entry& other) const
+    {
+      return manhattan_distance > other.manhattan_distance;
+    }
+    bool operator==(const PQ_entry& other) const
+    {
+      return manhattan_distance == other.manhattan_distance;
+    }
+  };
+  std::priority_queue<PQ_entry, std::vector<PQ_entry>, std::greater<PQ_entry>>
+      positionsHeap;
+  std::unordered_set<GridPt> visited;
+  GridPt center{x, y};
+  positionsHeap.push(PQ_entry{0, center});
+  visited.insert(center);
 
-  const int max_i = std::max(scaled_max_displacement_y.v, max_displacement_x_);
-  for (int i = 1; i < max_i; i++) {
-    PixelPt best_pt;
-    int best_dist = 0;
-    // left side
-    for (int j = 1; j < i * 2; j++) {
-      const int x_offset = -((j + 1) / 2);
-      int y_offset = (i * 2 - j) / 2;
-      if (abs(x_offset) < max_displacement_x_
-          && abs(y_offset) < scaled_max_displacement_y) {
-        if (j % 2 == 1) {
-          y_offset = -y_offset;
-        }
-        diamondSearchSide(cell,
-                          x,
-                          y,
-                          x_min,
-                          y_min,
-                          x_max,
-                          y_max,
-                          x_offset,
-                          y_offset,
-                          best_pt,
-                          best_dist);
-      }
+  const vector<GridPt> neighbors = {{GridX(-1), GridY(0)},
+                                    {GridX(1), GridY(0)},
+                                    {GridX(0), GridY(-1)},
+                                    {GridX(0), GridY(1)}};
+  while (!positionsHeap.empty()) {
+    const GridPt nearest = positionsHeap.top().p;
+    positionsHeap.pop();
+
+    if (canBePlaced(cell, nearest.x, nearest.y)) {
+      return PixelPt(
+          grid_->gridPixel(nearest.x, nearest.y), nearest.x, nearest.y);
     }
 
-    // right side
-    for (int j = 1; j < (i + 1) * 2; j++) {
-      const int x_offset = (j - 1) / 2;
-      int y_offset = ((i + 1) * 2 - j) / 2;
-      if (abs(x_offset) < max_displacement_x_
-          && abs(y_offset) < scaled_max_displacement_y) {
-        if (j % 2 == 1) {
-          y_offset = -y_offset;
-        }
-        diamondSearchSide(cell,
-                          x,
-                          y,
-                          x_min,
-                          y_min,
-                          x_max,
-                          y_max,
-                          x_offset,
-                          y_offset,
-                          best_pt,
-                          best_dist);
+    // Put neighbors in the queue
+    for (GridPt offset : neighbors) {
+      GridPt neighbor = {nearest.x + offset.x, nearest.y + offset.y};
+      // Check if it was already put in the queue
+      if (visited.count(neighbor) > 0) {
+        continue;
       }
-    }
-    if (best_pt.pixel) {
-      return best_pt;
+      // Check limits
+      if (neighbor.x < x_min || neighbor.x > x_max || neighbor.y < y_min
+          || neighbor.y > y_max) {
+        continue;
+      }
+
+      visited.insert(neighbor);
+      positionsHeap.push(PQ_entry{calcDist(center, neighbor), neighbor});
     }
   }
   return PixelPt();
 }
 
-void Opendp::diamondSearchSide(const Cell* cell,
-                               const GridX x,
-                               const GridY y,
-                               const GridX x_min,
-                               const GridY y_min,
-                               const GridX x_max,
-                               const GridY y_max,
-                               const int x_offset,
-                               const int y_offset,
-                               // Return values
-                               PixelPt& best_pt,
-                               int& best_dist) const
+int Opendp::calcDist(GridPt p0, GridPt p1) const
 {
-  const GridX bin_x = min(x_max, max(x_min, x + x_offset * bin_search_width_));
-  const GridY bin_y = min(y_max, max(y_min, y + y_offset));
-  PixelPt avail_pt = binSearch(x, cell, bin_x, bin_y);
-  if (avail_pt.pixel) {
-    DbuY y_dist{0};
-    if (cell->isHybrid() && !cell->isHybridParent()) {
-      const auto gmk = grid_->getGridMapKey(cell);
-
-      y_dist = abs(grid_->coordinateToHeight(y, gmk)
-                   - grid_->coordinateToHeight(avail_pt.y, gmk));
-    } else {
-      y_dist = gridToDbu(abs(y - avail_pt.y), grid_->getRowHeight(cell));
-    }
-    const int avail_dist
-        = sumXY(gridToDbu(abs(x - avail_pt.x), grid_->getSiteWidth()), y_dist);
-    if (best_pt.pixel == nullptr || avail_dist < best_dist) {
-      best_pt = avail_pt;
-      best_dist = avail_dist;
-    }
-  }
+  DbuY y_dist = abs(grid_->gridYToDbu(p0.y) - grid_->gridYToDbu(p1.y));
+  DbuX x_dist = gridToDbu(abs(p0.x - p1.x), grid_->getSiteWidth());
+  return sumXY(x_dist, y_dist);
 }
 
-PixelPt Opendp::binSearch(GridX x,
-                          const Cell* cell,
-                          const GridX bin_x,
-                          const GridY bin_y) const
+bool Opendp::canBePlaced(const Node* cell, GridX bin_x, GridY bin_y) const
 {
   debugPrint(logger_,
              DPL,
              "place",
              3,
-             " Bin Search {} ({:4} {}> {:4},{:4})",
+             " canBePlaced {} ({:4},{:4})",
              cell->name(),
-             x > bin_x ? bin_x + bin_search_width_ - 1 : bin_x,
-             x > bin_x ? "-" : "+",
-             x > bin_x ? bin_x : bin_x + bin_search_width_ - 1,
+             bin_x,
              bin_y);
-  const GridX x_end = bin_x + grid_->gridPaddedWidth(cell);
-  const DbuY row_height = grid_->getRowHeight(cell);
-  const auto& grid_info = grid_->infoMap(grid_->getGridMapKey(cell));
-  if (bin_y >= grid_info.getRowCount()) {
-    return PixelPt();
+
+  if (bin_y >= grid_->getRowCount()) {
+    return false;
   }
 
-  const GridY height = grid_->gridHeight(cell);
-  const GridY y_end = bin_y + height;
+  const GridX x_end = bin_x + grid_->gridPaddedWidth(cell);
+  const GridY y_end
+      = grid_->gridEndY(grid_->gridYToDbu(bin_y) + cell->getHeight());
 
   if (debug_observer_) {
     debug_observer_->binSearch(cell, bin_x, bin_y, x_end, y_end);
   }
-
-  if (y_end > grid_info.getRowCount()) {
-    return PixelPt();
-  }
-
-  if (x > bin_x) {
-    for (int i = bin_search_width_ - 1; i >= 0; i--) {
-      const Point p(gridToDbu(bin_x + i, grid_->getSiteWidth()).v,
-                    gridToDbu(bin_y, row_height).v);
-      if (cell->region_ && !cell->region_->intersects(p)) {
-        continue;
-      }
-      // the else case where a cell has no region will be checked using the
-      // rtree in checkPixels
-      if (checkPixels(cell, bin_x + i, bin_y, x_end + i, y_end)) {
-        Pixel* valid_grid_pixel
-            = grid_->gridPixel(grid_info.getGridIndex(), bin_x + i, bin_y);
-        return PixelPt(valid_grid_pixel, bin_x + i, bin_y);
-      }
-    }
-  } else {
-    for (int i = 0; i < bin_search_width_; i++) {
-      const Point p(gridToDbu(bin_x + i, grid_->getSiteWidth()).v,
-                    gridToDbu(bin_y, row_height).v);
-      if (cell->region_) {
-        if (!cell->region_->intersects(p)) {
-          continue;
-        }
-      }
-      if (checkPixels(cell, bin_x + i, bin_y, x_end + i, y_end)) {
-        Pixel* valid_grid_pixel
-            = grid_->gridPixel(grid_info.getGridIndex(), bin_x + i, bin_y);
-        return PixelPt(valid_grid_pixel, bin_x + i, bin_y);
-      }
-    }
-  }
-
-  return PixelPt();
+  return checkPixels(cell, bin_x, bin_y, x_end, y_end);
 }
 
-bool Opendp::checkRegionOverlap(const Cell* cell,
+bool Opendp::checkRegionOverlap(const Node* cell,
                                 const GridX x,
                                 const GridY y,
                                 const GridX x_end,
@@ -944,26 +825,15 @@ bool Opendp::checkRegionOverlap(const Cell* cell,
              x_end,
              y,
              y_end);
-  const auto row_info = grid_->getRowInfo(cell);
-  const auto gmk = grid_->getGridMapKey(cell);
-  const DbuY min_row_height = grid_->getRowHeight();
-  const auto smallest_non_hybrid_grid_key
-      = grid_->getSmallestNonHybridGridKey();
   const DbuX site_width = grid_->getSiteWidth();
   const bgBox queryBox(
-      {gridToDbu(x, site_width).v,
-       grid_->map_ycoordinates(y, gmk, smallest_non_hybrid_grid_key, true).v
-           * min_row_height.v},
-      {gridToDbu(x_end, site_width - 1).v,
-       grid_->map_ycoordinates(y_end, gmk, smallest_non_hybrid_grid_key, false)
-                   .v
-               * min_row_height.v
-           - 1});
+      {gridToDbu(x, site_width).v, grid_->gridYToDbu(y).v},
+      {gridToDbu(x_end, site_width).v - 1, grid_->gridYToDbu(y_end).v - 1});
 
   std::vector<bgBox> result;
   findOverlapInRtree(queryBox, result);
 
-  if (cell->region_) {
+  if (cell->getRegion()) {
     if (result.size() == 1) {
       // the queryBox must be fully contained in the region or else there
       // might be a part of the cell outside of any region
@@ -979,33 +849,29 @@ bool Opendp::checkRegionOverlap(const Cell* cell,
 }
 
 // Check all pixels are empty.
-bool Opendp::checkPixels(const Cell* cell,
+bool Opendp::checkPixels(const Node* cell,
                          const GridX x,
                          const GridY y,
                          const GridX x_end,
                          const GridY y_end) const
 {
-  const auto gmk = grid_->getGridMapKey(cell);
-  const auto row_info = grid_->getRowInfo(cell);
-  if (x_end > row_info.second.getSiteCount()) {
+  if (x_end > grid_->getRowSiteCount()) {
     return false;
   }
   if (!checkRegionOverlap(cell, x, y, x_end, y_end)) {
     return false;
   }
-  const auto cell_site = cell->getSite();
-  const int layer = row_info.second.getGridIndex();
+
   for (GridY y1 = y; y1 < y_end; y1++) {
+    const bool first_row = (y1 == y);
     for (GridX x1 = x; x1 < x_end; x1++) {
-      const Pixel* pixel = grid_->gridPixel(layer, x1, y1);
+      const Pixel* pixel = grid_->gridPixel(x1, y1);
+      auto site = cell->getSite();
       if (pixel == nullptr || pixel->cell || !pixel->is_valid
-          || (cell->inGroup() && pixel->group != cell->group_)
+          || (cell->inGroup() && pixel->group != cell->getGroup())
           || (!cell->inGroup() && pixel->group)
-          || (pixel->site != nullptr && pixel->site != cell_site)) {
+          || (first_row && pixel->sites.find(site) == pixel->sites.end())) {
         return false;
-      }
-      if (pixel->site == nullptr) {
-        logger_->error(DPL, 1599, "Pixel site is null");
       }
     }
     if (disallow_one_site_gaps_) {
@@ -1016,67 +882,33 @@ bool Opendp::checkPixels(const Cell* cell,
       const GridX x_begin = max(GridX{0}, x - 1);
       const GridY y_begin = max(GridY{0}, y - 1);
       // inclusive search, so we don't add 1 to the end
-      const GridX x_finish = min(x_end, row_info.second.getSiteCount() - 1);
-      const GridY y_finish = min(y_end, row_info.second.getRowCount() - 1);
+      const GridX x_finish = min(x_end, grid_->getRowSiteCount() - 1);
+      const GridY y_finish = min(y_end, grid_->getRowCount() - 1);
 
-      auto isAbutted = [this](const int layer, const GridX x, const GridY y) {
-        const Pixel* pixel = grid_->gridPixel(layer, x, y);
+      auto isAbutted = [this](const GridX x, const GridY y) {
+        const Pixel* pixel = grid_->gridPixel(x, y);
         return (pixel == nullptr || pixel->cell);
       };
 
-      auto cellAtSite = [this](const int layer, const GridX x, const GridY y) {
-        const Pixel* pixel = grid_->gridPixel(layer, x, y);
+      auto cellAtSite = [this](const GridX x, const GridY y) {
+        const Pixel* pixel = grid_->gridPixel(x, y);
         return (pixel != nullptr && pixel->cell);
       };
-      // upper left corner
-      if (!isAbutted(layer, x_begin, y_begin)
-          && cellAtSite(layer, x_begin - 1, y_begin)) {
-        return false;
-      }
-      // lower left corner
-      if (!isAbutted(layer, x_begin, y_finish)
-          && cellAtSite(layer, x_begin - 1, y_finish)) {
-        return false;
-      }
-      // upper right corner
-      if (!isAbutted(layer, x_finish, y_begin)
-          && cellAtSite(layer, x_finish + 1, y_begin)) {
-        return false;
-      }
-      // lower right corner
-      if (!isAbutted(layer, x_finish, y_finish)
-          && cellAtSite(layer, x_finish + 1, y_finish)) {
-        return false;
-      }
-
-      const DbuY min_row_height = grid_->getRowHeight();
-      const GridY steps{row_info.first.v / min_row_height.v};
-      // This is needed for the scenario where we are placing a triple height
-      // cell and we are not sure if there is a single height cell direcly in
-      // the middle that would be missed by the 4 corners check above.
-      // So, we loop with steps of min_row_height and check the left and right
-      const GridY y_begin_mapped = grid_->map_ycoordinates(
-          y_begin, gmk, grid_->getSmallestNonHybridGridKey(), true);
-
-      GridY offset{0};
-      for (GridY step{0}; step < steps; step++) {
+      for (GridY y = y_begin; y <= y_finish; ++y) {
         // left side
-        // x_begin doesn't need to be mapped since we support only uniform site
-        // width in all grids for now
-        if (!isAbutted(0, x_begin, y_begin_mapped + offset)
-            && cellAtSite(0, x_begin - 1, y_begin_mapped + offset)) {
+        if (!isAbutted(x_begin, y) && cellAtSite(x_begin - 1, y)) {
           return false;
         }
         // right side
-        if (!isAbutted(0, x_finish, y_begin_mapped + offset)
-            && cellAtSite(0, x_finish + 1, y_begin_mapped + offset)) {
+        if (!isAbutted(x_finish, y) && cellAtSite(x_finish + 1, y)) {
           return false;
         }
-        offset += min_row_height.v;  // BUG?
       }
     }
   }
-  return true;
+  const auto& orient = grid_->gridPixel(x, y)->sites.at(
+      cell->getDbInst()->getMaster()->getSite());
+  return drc_engine_->checkEdgeSpacing(cell, x, y, orient);
 }
 
 ////////////////////////////////////////////////////////////////
@@ -1084,116 +916,88 @@ bool Opendp::checkPixels(const Cell* cell,
 // Legalize cell origin
 //  inside the core
 //  row site
-DbuPt Opendp::legalPt(const Cell* cell, const DbuPt& pt) const
+DbuPt Opendp::legalPt(const Node* cell, const DbuPt& pt) const
 {
   // Move inside core.
-  const DbuY row_height = grid_->getRowHeight(cell);
-  const auto& grid_info = grid_->infoMap(grid_->getGridMapKey(cell));
   const DbuX site_width = grid_->getSiteWidth();
-  const DbuX core_x{
-      min(max(DbuX{0}, pt.x),
-          gridToDbu(grid_info.getSiteCount(), site_width) - cell->width_)};
+  const DbuX core_x = std::clamp(
+      pt.x,
+      DbuX{0},
+      gridToDbu(grid_->getRowSiteCount(), site_width) - cell->getWidth());
   // Align with row site.
   const GridX grid_x{divRound(core_x.v, site_width.v)};
   const DbuX legal_x{gridToDbu(grid_x, site_width)};
-  DbuY legal_y{0};
-  if (cell->isHybrid()) {
-    DbuY last_row_height{std::numeric_limits<int>::max()};
-    if (cell->isHybridParent()) {
-      last_row_height
-          = gridToDbu(grid_info.getRowCount(), row_height) - cell->height_;
-    } else {
-      auto parent = grid_->getHybridParent().at(cell->getSite());
-      DbuY parent_height{static_cast<int>(parent->getHeight())};
-      last_row_height = gridToDbu(grid_info.getRowCount() - 1, parent_height);
-    }
-    const auto [index, height]
-        = grid_->gridY(min(max(DbuY{0}, pt.y), last_row_height), grid_info);
-    legal_y = height;
-  } else {
-    const DbuY core_y
-        = min(max(DbuY{0}, pt.y),
-              gridToDbu(grid_info.getRowCount(), row_height) - cell->height_);
-    const int grid_y = divRound(core_y.v, row_height.v);
-    legal_y = DbuY{grid_y * row_height.v};
-  }
+  // Align to row
+  const DbuY core_y
+      = std::clamp(pt.y, DbuY{0}, DbuY{core_.yMax()} - cell->getHeight());
+  const GridY grid_y = grid_->gridRoundY(core_y);
+  DbuY legal_y = grid_->gridYToDbu(grid_y);
 
   return {legal_x, legal_y};
 }
 
-GridPt Opendp::legalGridPt(const Cell* cell, const DbuPt& pt) const
+GridPt Opendp::legalGridPt(const Node* cell, const DbuPt& pt) const
 {
   const DbuPt legal = legalPt(cell, pt);
-  return GridPt(grid_->gridX(legal.x), grid_->gridY(legal.y, cell));
+  return GridPt(grid_->gridX(legal.x), grid_->gridSnapDownY(legal.y));
 }
 
-DbuPt Opendp::nearestBlockEdge(const Cell* cell,
+DbuPt Opendp::nearestBlockEdge(const Node* cell,
                                const DbuPt& legal_pt,
                                const Rect& block_bbox) const
 {
   const DbuX legal_x = legal_pt.x;
   const DbuY legal_y = legal_pt.y;
-  const DbuY row_height = grid_->getRowHeight(cell);
 
   const DbuX x_min_dist = abs(legal_x - block_bbox.xMin());
   const DbuX x_max_dist
-      = abs(DbuX{block_bbox.xMax()} - (legal_x + cell->width_));
+      = abs(DbuX{block_bbox.xMax()} - (legal_x + cell->getWidth()));
   const DbuY y_min_dist = abs(legal_y - block_bbox.yMin());
   const DbuY y_max_dist
-      = abs(DbuY{block_bbox.yMax()} - (legal_y + cell->height_));
+      = abs(DbuY{block_bbox.yMax()} - (legal_y + cell->getHeight()));
 
   const int min_dist
       = std::min({x_min_dist.v, x_max_dist.v, y_min_dist.v, y_max_dist.v});
 
   if (min_dist == x_min_dist) {  // left of block
-    return legalPt(cell, {DbuX{block_bbox.xMin()} - cell->width_, legal_pt.y});
+    return legalPt(cell,
+                   {DbuX{block_bbox.xMin()} - cell->getWidth(), legal_pt.y});
   }
   if (min_dist == x_max_dist) {  // right of block
     return legalPt(cell, {DbuX{block_bbox.xMax()}, legal_pt.y});
   }
   if (min_dist == y_min_dist) {  // below block
-    return legalPt(
-        cell,
-        {legal_pt.x,
-         DbuY{divFloor(block_bbox.yMin(), row_height.v) * row_height.v
-              - cell->height_.v}});
+    return legalPt(cell,
+                   {legal_pt.x, DbuY{block_bbox.yMin() - cell->getHeight().v}});
   }
   // above block
-  return legalPt(
-      cell,
-      {legal_pt.x,
-       DbuY{divCeil(block_bbox.yMax(), row_height.v) * row_height.v}});
+  return legalPt(cell, {legal_pt.x, DbuY{block_bbox.yMax()}});
 }
 
 // Find the nearest valid site left/right/above/below, if any.
 // The site doesn't need to be empty but mearly valid.  That should
 // be a reasonable place to start the search.  Returns true if any
 // site can be found.
-bool Opendp::moveHopeless(const Cell* cell, GridX& grid_x, GridY& grid_y) const
+bool Opendp::moveHopeless(const Node* cell, GridX& grid_x, GridY& grid_y) const
 {
   GridX best_x = grid_x;
   GridY best_y = grid_y;
   int best_dist = std::numeric_limits<int>::max();
-  const auto [row_height, grid_info] = grid_->getRowInfo(cell);
-  const int grid_index = grid_info.getGridIndex();
-  const GridX layer_site_count = grid_info.getSiteCount();
-  const GridY layer_row_count = grid_info.getRowCount();
+  const GridX site_count = grid_->getRowSiteCount();
+  const GridY row_count = grid_->getRowCount();
   const DbuX site_width = grid_->getSiteWidth();
 
-  // since the site doesn't have to be empty, we don't need to check all
-  // layers. They will be checked in the checkPixels in the diamondSearch
-  // method after this initialization
   for (GridX x = grid_x - 1; x >= 0; --x) {  // left
-    if (grid_->pixel(grid_index, grid_y, x).is_valid) {
+    if (grid_->pixel(grid_y, x).is_valid) {
       best_dist = gridToDbu(grid_x - x - 1, site_width).v;
       best_x = x;
       best_y = grid_y;
       break;
     }
   }
-  for (GridX x = grid_x + 1; x < layer_site_count; ++x) {  // right
-    if (grid_->pixel(grid_index, grid_y, x).is_valid) {
-      const int dist = gridToDbu(x - grid_x, site_width).v - cell->width_.v;
+  for (GridX x = grid_x + 1; x < site_count; ++x) {  // right
+    if (grid_->pixel(grid_y, x).is_valid) {
+      const int dist = gridToDbu(x - grid_x, site_width).v - cell->getWidth().v;
       if (dist < best_dist) {
         best_dist = dist;
         best_x = x;
@@ -1203,9 +1007,8 @@ bool Opendp::moveHopeless(const Cell* cell, GridX& grid_x, GridY& grid_y) const
     }
   }
   for (GridY y = grid_y - 1; y >= 0; --y) {  // below
-    if (grid_->pixel(grid_index, y, grid_x).is_valid) {
-      // FIXME(mina1460): this is wrong for hybrid sites
-      const int dist = gridToDbu(grid_y - y - 1, row_height).v;
+    if (grid_->pixel(y, grid_x).is_valid) {
+      const int dist = (grid_->gridYToDbu(grid_y) - grid_->gridYToDbu(y)).v;
       if (dist < best_dist) {
         best_dist = dist;
         best_x = grid_x;
@@ -1214,9 +1017,9 @@ bool Opendp::moveHopeless(const Cell* cell, GridX& grid_x, GridY& grid_y) const
       break;
     }
   }
-  for (GridY y = grid_y + 1; y < layer_row_count; ++y) {  // above
-    if (grid_->pixel(grid_index, y, grid_x).is_valid) {
-      const int dist = gridToDbu(y - grid_y, row_height).v - cell->height_.v;
+  for (GridY y = grid_y + 1; y < row_count; ++y) {  // above
+    if (grid_->pixel(y, grid_x).is_valid) {
+      const int dist = (grid_->gridYToDbu(y) - grid_->gridYToDbu(grid_y)).v;
       if (dist < best_dist) {
         best_dist = dist;
         best_x = grid_x;
@@ -1236,60 +1039,56 @@ bool Opendp::moveHopeless(const Cell* cell, GridX& grid_x, GridY& grid_y) const
 void Opendp::initMacrosAndGrid()
 {
   importDb();
+  adjustNodesOrient();
   initGrid();
   setFixedGridCells();
 }
 
-void Opendp::convertDbToCell(dbInst* db_inst, Cell& cell)
+void Opendp::convertDbToCell(dbInst* db_inst, Node& cell)
 {
-  cell.db_inst_ = db_inst;
+  cell.setType(Node::CELL);
+  cell.setDbInst(db_inst);
   Rect bbox = getBbox(db_inst);
-  cell.width_ = DbuX{bbox.dx()};
-  cell.height_ = DbuY{bbox.dy()};
-  cell.x_ = DbuX{bbox.xMin()};
-  cell.y_ = DbuY{bbox.yMin()};
-  cell.orient_ = db_inst->getOrient();
+  cell.setWidth(DbuX{bbox.dx()});
+  cell.setHeight(DbuY{bbox.dy()});
+  cell.setLeft(DbuX{bbox.xMin()});
+  cell.setBottom(DbuY{bbox.yMin()});
+  cell.setOrient(db_inst->getOrient());
 }
 
-DbuPt Opendp::pointOffMacro(const Cell& cell)
+DbuPt Opendp::pointOffMacro(const Node& cell)
 {
   // Get cell position
   const DbuPt init = initialLocation(&cell, false);
+  const Rect bbox(init.x.v,
+                  init.y.v,
+                  init.x.v + cell.getWidth().v,
+                  init.y.v + cell.getHeight().v);
 
-  const auto grid_info = grid_->getGridInfo(&cell);
-  Pixel* pixel1 = grid_->gridPixel(grid_info.getGridIndex(),
-                                   grid_->gridX(init.x),
-                                   grid_->gridY(init.y, &cell));
-  Pixel* pixel2 = grid_->gridPixel(grid_info.getGridIndex(),
-                                   grid_->gridX(init.x + cell.width_),
-                                   grid_->gridY(init.y, &cell));
-  Pixel* pixel3 = grid_->gridPixel(grid_info.getGridIndex(),
-                                   grid_->gridX(init.x),
-                                   grid_->gridY(init.y + cell.height_, &cell));
-  Pixel* pixel4 = grid_->gridPixel(grid_info.getGridIndex(),
-                                   grid_->gridX(init.x + cell.width_),
-                                   grid_->gridY(init.y + cell.height_, &cell));
+  const GridRect grid_box = grid_->gridCovering(bbox);
 
-  Cell* block = nullptr;
+  Pixel* pixel1 = grid_->gridPixel(grid_box.xlo, grid_box.ylo);
+  Pixel* pixel2 = grid_->gridPixel(grid_box.xhi, grid_box.ylo);
+  Pixel* pixel3 = grid_->gridPixel(grid_box.xlo, grid_box.yhi);
+  Pixel* pixel4 = grid_->gridPixel(grid_box.xhi, grid_box.yhi);
+
+  Node* block = nullptr;
   if (pixel1 && pixel1->cell && pixel1->cell->isBlock()) {
     block = pixel1->cell;
-  }
-  if (pixel2 && pixel2->cell && pixel2->cell->isBlock()) {
+  } else if (pixel2 && pixel2->cell && pixel2->cell->isBlock()) {
     block = pixel2->cell;
-  }
-  if (pixel3 && pixel3->cell && pixel3->cell->isBlock()) {
+  } else if (pixel3 && pixel3->cell && pixel3->cell->isBlock()) {
     block = pixel3->cell;
-  }
-  if (pixel4 && pixel4->cell && pixel4->cell->isBlock()) {
+  } else if (pixel4 && pixel4->cell && pixel4->cell->isBlock()) {
     block = pixel4->cell;
   }
 
   if (block && block->isBlock()) {
     // Get new legal position
-    const Rect block_bbox(block->x_.v,
-                          block->y_.v,
-                          block->x_.v + block->width_.v,
-                          block->y_.v + block->height_.v);
+    const Rect block_bbox(block->getLeft().v,
+                          block->getBottom().v,
+                          block->getLeft().v + block->getWidth().v,
+                          block->getBottom().v + block->getHeight().v);
     return nearestBlockEdge(&cell, init, block_bbox);
   }
   return init;
@@ -1297,7 +1096,7 @@ DbuPt Opendp::pointOffMacro(const Cell& cell)
 
 void Opendp::legalCellPos(dbInst* db_inst)
 {
-  Cell cell;
+  Node cell;
   convertDbToCell(db_inst, cell);
   // returns the initial position of the cell
   const DbuPt init_pos = initialLocation(&cell, false);
@@ -1312,23 +1111,23 @@ void Opendp::legalCellPos(dbInst* db_inst)
 
   // transform to grid Pos for align
   const GridPt legal_grid_pt{grid_->gridX(DbuX{new_pos.x}),
-                             grid_->gridY(DbuY{new_pos.y}, &cell)};
+                             grid_->gridSnapDownY(DbuY{new_pos.y})};
   // Transform position on real position
-  grid_->setGridPaddedLoc(&cell, legal_grid_pt.x, legal_grid_pt.y);
+  setGridPaddedLoc(&cell, legal_grid_pt.x, legal_grid_pt.y);
   // Set position of cell on db
-  const Rect core = grid_->getCore();
-  db_inst->setLocation(core.xMin() + cell.x_.v, core.yMin() + cell.y_.v);
+  db_inst->setLocation(core_.xMin() + cell.getLeft().v,
+                       core_.yMin() + cell.getBottom().v);
 }
 
-DbuPt Opendp::initialLocation(const Cell* cell, const bool padded) const
+DbuPt Opendp::initialLocation(const Node* cell, const bool padded) const
 {
   DbuPt loc;
-  cell->db_inst_->getLocation(loc.x.v, loc.y.v);
-  loc.x -= grid_->getCore().xMin();
+  cell->getDbInst()->getLocation(loc.x.v, loc.y.v);
+  loc.x -= core_.xMin();
   if (padded) {
     loc.x -= gridToDbu(padding_->padLeft(cell), grid_->getSiteWidth());
   }
-  loc.y -= grid_->getCore().yMin();
+  loc.y -= core_.yMin();
   return loc;
 }
 
@@ -1337,7 +1136,7 @@ DbuPt Opendp::initialLocation(const Cell* cell, const bool padded) const
 //  row site
 //  not on top of a macro
 //  not in a hopeless site
-DbuPt Opendp::legalPt(const Cell* cell, const bool padded) const
+DbuPt Opendp::legalPt(const Node* cell, const bool padded) const
 {
   if (cell->isFixed()) {
     logger_->critical(
@@ -1345,34 +1144,32 @@ DbuPt Opendp::legalPt(const Cell* cell, const bool padded) const
   }
 
   const DbuPt init = initialLocation(cell, padded);
-  const DbuY row_height = grid_->getRowHeight(cell);
   DbuPt legal_pt = legalPt(cell, init);
-  const auto grid_info = grid_->getGridInfo(cell);
   GridX grid_x = grid_->gridX(legal_pt.x);
-  const DbuY y = legal_pt.y + grid_info.getOffset();
-  auto [grid_y, height] = grid_->gridY(y, grid_info);
-  Pixel* pixel = grid_->gridPixel(grid_info.getGridIndex(), grid_x, grid_y);
+  GridY grid_y = grid_->gridSnapDownY(legal_pt.y);
+
+  Pixel* pixel = grid_->gridPixel(grid_x, grid_y);
   if (pixel) {
     // Move std cells off of macros.  First try the is_hopeless strategy
     if (pixel->is_hopeless && moveHopeless(cell, grid_x, grid_y)) {
       legal_pt = DbuPt(gridToDbu(grid_x, grid_->getSiteWidth()),
-                       gridToDbu(grid_y, row_height));
-      pixel = grid_->gridPixel(grid_info.getGridIndex(), grid_x, grid_y);
+                       grid_->gridYToDbu(grid_y));
+      pixel = grid_->gridPixel(grid_x, grid_y);
     }
 
-    const Cell* block = pixel->cell;
+    const Node* block = static_cast<Node*>(pixel->cell);
 
     // If that didn't do the job fall back on the old move to nearest
     // edge strategy.  This doesn't consider site availability at the
     // end used so it is secondary.
     if (block && block->isBlock()) {
-      const Rect block_bbox(block->x_.v,
-                            block->y_.v,
-                            block->x_.v + block->width_.v,
-                            block->y_.v + block->height_.v);
-      if ((legal_pt.x + cell->width_) >= block_bbox.xMin()
+      const Rect block_bbox(block->getLeft().v,
+                            block->getBottom().v,
+                            block->getLeft().v + block->getWidth().v,
+                            block->getBottom().v + block->getHeight().v);
+      if ((legal_pt.x + cell->getWidth()) >= block_bbox.xMin()
           && legal_pt.x <= block_bbox.xMax()
-          && (legal_pt.y + cell->height_) >= block_bbox.yMin()
+          && (legal_pt.y + cell->getHeight()) >= block_bbox.yMin()
           && legal_pt.y <= block_bbox.yMax()) {
         legal_pt = nearestBlockEdge(cell, legal_pt, block_bbox);
       }
@@ -1382,10 +1179,50 @@ DbuPt Opendp::legalPt(const Cell* cell, const bool padded) const
   return legal_pt;
 }
 
-GridPt Opendp::legalGridPt(const Cell* cell, const bool padded) const
+GridPt Opendp::legalGridPt(const Node* cell, const bool padded) const
 {
   const DbuPt pt = legalPt(cell, padded);
-  return GridPt(grid_->gridX(pt.x), grid_->gridY(pt.y, cell));
+  return GridPt(grid_->gridX(pt.x), grid_->gridSnapDownY(pt.y));
+}
+
+void Opendp::setGridPaddedLoc(Node* cell, const GridX x, const GridY y)
+{
+  cell->setLeft(gridToDbu(x + padding_->padLeft(cell), grid_->getSiteWidth()));
+  cell->setBottom(grid_->gridYToDbu(y));
+}
+void Opendp::placeCell(Node* cell, const GridX x, const GridY y)
+{
+  const DbuX original_x = cell->getLeft();
+  const DbuY original_y = cell->getBottom();
+  const bool was_placed = cell->isPlaced();
+  grid_->paintPixel(cell, x, y);
+  setGridPaddedLoc(cell, x, y);
+  cell->setPlaced(true);
+  cell->setOrient(grid_->gridPixel(x, y)->sites.at(
+      cell->getDbInst()->getMaster()->getSite()));
+  if (journal_) {
+    MoveCellAction action(cell,
+                          original_x,
+                          original_y,
+                          cell->getLeft(),
+                          cell->getBottom(),
+                          was_placed);
+    journal_->addAction(action);
+  }
+}
+
+void Opendp::unplaceCell(Node* cell)
+{
+  if (cell->isFixed() || !cell->isPlaced()) {
+    return;
+  }
+  if (journal_) {
+    UnplaceCellAction action(cell, cell->isHold());
+    journal_->addAction(action);
+  }
+  grid_->erasePixel(cell);
+  cell->setPlaced(false);
+  cell->setHold(false);
 }
 
 }  // namespace dpl

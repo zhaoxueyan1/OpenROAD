@@ -1,36 +1,11 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2024, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2024-2025, The OpenROAD Authors
 
 #include "connection.h"
+
+#include <limits>
+#include <memory>
+#include <string>
 
 #include "node.h"
 #include "odb/db.h"
@@ -102,31 +77,23 @@ bool Connection::compare(const std::unique_ptr<Connection>& other) const
   return compare(other.get());
 }
 
-std::tuple<int, int, int, int, int, int> Connection::compareTuple() const
+Connection::CompareInformation Connection::compareTuple() const
 {
-  int node0_x = 0;
-  int node0_y = 0;
-  int node0_l = 0;
-
-  int node1_x = 0;
-  int node1_y = 0;
-  int node1_l = 0;
-
+  Node::CompareInformation node0_info;
   if (node0_ != nullptr) {
-    const auto& pt = node0_->getPoint();
-    node0_x = pt.getX();
-    node0_y = pt.getY();
-    node0_l = node0_->getLayer()->getNumber();
+    node0_info = node0_->compareTuple();
+  } else {
+    node0_info = Node::dummyCompareTuple();
   }
 
+  Node::CompareInformation node1_info;
   if (node1_ != nullptr) {
-    const auto& pt = node1_->getPoint();
-    node1_x = pt.getX();
-    node1_y = pt.getY();
-    node1_l = node1_->getLayer()->getNumber();
+    node1_info = node1_->compareTuple();
+  } else {
+    node1_info = Node::dummyCompareTuple();
   }
 
-  return {node0_l, node0_x, node0_y, node1_l, node1_x, node1_y};
+  return {node0_info, node1_info};
 }
 
 std::string Connection::describeWithNodes() const

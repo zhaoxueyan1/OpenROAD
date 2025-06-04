@@ -1,59 +1,37 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2021, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2021-2025, The OpenROAD Authors
 
 #include "gui/gui.h"
 
 #include <QApplication>
 #include <boost/algorithm/string/predicate.hpp>
+#include <cmath>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "chartsWidget.h"
 #include "clockWidget.h"
 #include "displayControls.h"
 #include "drcWidget.h"
+#include "gif.h"
+#include "heatMapPinDensity.h"
 #include "heatMapPlacementDensity.h"
+#include "helpWidget.h"
 #include "inspector.h"
 #include "layoutViewer.h"
 #include "mainWindow.h"
 #include "odb/db.h"
 #include "odb/dbShape.h"
-#include "odb/defin.h"
 #include "odb/geom.h"
-#include "odb/lefin.h"
 #include "ord/OpenRoad.hh"
 #include "ruler.h"
 #include "scriptWidget.h"
-#include "sta/StaMain.hh"
+#include "timingWidget.h"
 #include "utl/Logger.h"
+#include "utl/decode.h"
 #include "utl/exception.h"
 
 extern int cmd_argc;
@@ -96,7 +74,7 @@ static void message_handler(QtMsgType type,
   }
   switch (type) {
     case QtDebugMsg:
-      logger->debug(utl::GUI, "qt", print_msg);
+      debugPrint(logger, utl::GUI, "qt", 1, print_msg);
       break;
     case QtInfoMsg:
       logger->info(utl::GUI, 75, print_msg);
@@ -225,6 +203,7 @@ Gui::Gui()
     : continue_after_close_(false),
       logger_(nullptr),
       db_(nullptr),
+      pin_density_heat_map_(nullptr),
       placement_density_heat_map_(nullptr)
 {
   resetConversions();
@@ -287,10 +266,11 @@ Selected Gui::makeSelected(const std::any& object)
   if (it != descriptors_.end()) {
     return it->second->makeSelected(object);
   }
-  logger_->warn(utl::GUI,
-                33,
-                "No descriptor is registered for {}.",
-                object.type().name());
+  char* type_name
+      = abi::__cxa_demangle(object.type().name(), nullptr, nullptr, nullptr);
+  logger_->warn(
+      utl::GUI, 33, "No descriptor is registered for type {}.", type_name);
+  free(type_name);
   return Selected();  // FIXME: null descriptor
 }
 
@@ -414,6 +394,23 @@ void Gui::animateSelection(int repeat)
   main_window->getLayoutViewer()->selectionAnimation(repeat);
 }
 
+std::string Gui::addLabel(int x,
+                          int y,
+                          const std::string& text,
+                          std::optional<Painter::Color> color,
+                          std::optional<int> size,
+                          std::optional<Painter::Anchor> anchor,
+                          const std::optional<std::string>& name)
+{
+  return main_window->addLabel(
+      x, y, text, color, size, anchor, std::move(name));
+}
+
+void Gui::deleteLabel(const std::string& name)
+{
+  main_window->deleteLabel(name);
+}
+
 std::string Gui::addRuler(int x0,
                           int y0,
                           int x1,
@@ -491,7 +488,7 @@ int Gui::select(const std::string& type,
           }
         }
 
-        main_window->addSelected(selected_set);
+        main_window->addSelected(selected_set, true);
         if (highlight_group != -1) {
           main_window->addHighlighted(selected_set, highlight_group);
         }
@@ -554,6 +551,11 @@ void Gui::clearHighlights(int highlight_group)
   main_window->clearHighlighted(highlight_group);
 }
 
+void Gui::clearLabels()
+{
+  main_window->clearLabels();
+}
+
 void Gui::clearRulers()
 {
   main_window->clearRulers();
@@ -600,11 +602,16 @@ std::string Gui::requestUserInput(const std::string& title,
                                        QString::fromStdString(question));
 }
 
-void Gui::loadDRC(const std::string& filename)
+void Gui::selectMarkers(odb::dbMarkerCategory* markers)
 {
-  if (!filename.empty()) {
-    main_window->getDRCViewer()->loadReport(QString::fromStdString(filename));
-  }
+  main_window->getDRCViewer()->selectCategory(markers);
+}
+
+void Gui::setDisplayControlsColor(const std::string& name,
+                                  const Painter::Color& color)
+{
+  const QColor qcolor(color.r, color.g, color.b, color.a);
+  main_window->getControls()->setControlByPath(name, qcolor);
 }
 
 void Gui::setDisplayControlsVisible(const std::string& name, bool value)
@@ -776,6 +783,36 @@ void Gui::saveClockTreeImage(const std::string& clock_name,
   }
   main_window->getClockViewer()->saveImage(
       clock_name, filename, corner, width, height);
+}
+
+void Gui::saveHistogramImage(const std::string& filename,
+                             const std::string& mode,
+                             int width_px,
+                             int height_px)
+{
+  if (!enabled()) {
+    return;
+  }
+  std::optional<int> width;
+  std::optional<int> height;
+  if (width_px > 0) {
+    width = width_px;
+  }
+  if (height_px > 0) {
+    height = height_px;
+  }
+  const ChartsWidget::Mode chart_mode
+      = main_window->getChartsWidget()->modeFromString(mode);
+  main_window->getChartsWidget()->saveImage(
+      filename, chart_mode, width, height);
+}
+
+void Gui::selectClockviewerClock(const std::string& clock_name)
+{
+  if (!enabled()) {
+    return;
+  }
+  main_window->getClockViewer()->selectClock(clock_name);
 }
 
 static QWidget* findWidget(const std::string& name)
@@ -990,6 +1027,19 @@ void Gui::dumpHeatMap(const std::string& name, const std::string& file)
 {
   HeatMapDataSource* source = getHeatMap(name);
   source->dumpToFile(file);
+}
+
+void Gui::setMainWindowTitle(const std::string& title)
+{
+  main_window_title_ = title;
+  if (main_window) {
+    main_window->setTitle(title);
+  }
+}
+
+std::string Gui::getMainWindowTitle()
+{
+  return main_window_title_;
 }
 
 Renderer::~Renderer()
@@ -1244,7 +1294,7 @@ void Gui::hideGui()
   main_window->exit();
 }
 
-void Gui::showGui(const std::string& cmds, bool interactive)
+void Gui::showGui(const std::string& cmds, bool interactive, bool load_settings)
 {
   if (enabled()) {
     logger_->warn(utl::GUI, 8, "GUI already active.");
@@ -1255,19 +1305,203 @@ void Gui::showGui(const std::string& cmds, bool interactive)
   // passing in cmd_argc and cmd_argv to meet Qt application requirement for
   // arguments nullptr for tcl interp to indicate nothing to setup and commands
   // and interactive setting
-  startGui(cmd_argc, cmd_argv, nullptr, cmds, interactive);
+  startGui(cmd_argc, cmd_argv, nullptr, cmds, interactive, load_settings);
 }
 
-void Gui::init(odb::dbDatabase* db, utl::Logger* logger)
+void Gui::minimize()
+{
+  main_window->showMinimized();
+}
+
+void Gui::unminimize()
+{
+  main_window->showNormal();
+}
+
+void Gui::init(odb::dbDatabase* db, sta::dbSta* sta, utl::Logger* logger)
 {
   db_ = db;
   setLogger(logger);
 
-  // placement density heatmap
+  pin_density_heat_map_ = std::make_unique<PinDensityDataSource>(logger);
+  pin_density_heat_map_->registerHeatMap();
+
   placement_density_heat_map_
       = std::make_unique<PlacementDensityDataSource>(logger);
   placement_density_heat_map_->registerHeatMap();
+
+  power_density_heat_map_
+      = std::make_unique<PowerDensityDataSource>(sta, logger);
+  power_density_heat_map_->registerHeatMap();
 }
+
+void Gui::selectHelp(const std::string& item)
+{
+  if (!enabled()) {
+    return;
+  }
+
+  main_window->getHelpViewer()->selectHelp(item);
+}
+
+void Gui::selectChart(const std::string& name)
+{
+  if (!enabled()) {
+    return;
+  }
+
+  const ChartsWidget::Mode mode
+      = main_window->getChartsWidget()->modeFromString(name);
+  main_window->getChartsWidget()->setMode(mode);
+}
+
+void Gui::updateTimingReport()
+{
+  main_window->getTimingWidget()->populatePaths();
+}
+
+// See class header for documentation.
+std::size_t Gui::TypeInfoHasher::operator()(const std::type_index& x) const
+{
+#ifdef __GLIBCXX__
+  return std::hash<std::type_index>{}(x);
+#else
+  return std::hash<std::string_view>{}(std::string_view(x.name()));
+#endif
+}
+// See class header for documentation.
+bool Gui::TypeInfoComparator::operator()(const std::type_index& a,
+                                         const std::type_index& b) const
+{
+#ifdef __GLIBCXX__
+  return a == b;
+#else
+  return strcmp(a.name(), b.name()) == 0;
+#endif
+}
+
+void Gui::gifStart(const std::string& filename)
+{
+  if (!enabled()) {
+    logger_->error(utl::GUI, 49, "Cannot generate GIF without GUI enabled");
+  }
+
+  gif_ = std::make_unique<GIF>();
+  gif_->filename = filename;
+  gif_->writer = nullptr;
+}
+
+void Gui::gifAddFrame(const odb::Rect& region,
+                      int width_px,
+                      double dbu_per_pixel,
+                      std::optional<int> delay)
+{
+  if (gif_ == nullptr) {
+    logger_->warn(utl::GUI, 51, "GIF not active");
+    return;
+  }
+
+  if (db_ == nullptr) {
+    logger_->error(utl::GUI, 50, "No design loaded.");
+  }
+  odb::Rect save_region = region;
+  const bool use_die_area = region.dx() == 0 || region.dy() == 0;
+  const bool is_offscreen
+      = main_window == nullptr
+        || main_window->testAttribute(
+            Qt::WA_DontShowOnScreen); /* if not interactive this will be set */
+  if (is_offscreen
+      && use_die_area) {  // if gui is active and interactive the visible are of
+                          // the layout viewer will be used.
+    auto* chip = db_->getChip();
+    if (chip == nullptr) {
+      logger_->error(utl::GUI, 79, "No design loaded.");
+    }
+
+    auto* block = chip->getBlock();
+    if (block == nullptr) {
+      logger_->error(utl::GUI, 80, "No design loaded.");
+    }
+
+    save_region
+        = block->getBBox()
+              ->getBox();  // get die area since screen area is not reliable
+    const double bloat_by = 0.05;  // 5%
+    const int bloat = std::min(save_region.dx(), save_region.dy()) * bloat_by;
+
+    save_region.bloat(bloat, save_region);
+  }
+
+  QImage img = main_window->getLayoutViewer()->createImage(
+      save_region, width_px, dbu_per_pixel);
+
+  if (gif_->writer == nullptr) {
+    gif_->writer = std::make_unique<GifWriter>();
+    gif_->width = img.width();
+    gif_->height = img.height();
+    GifBegin(gif_->writer.get(),
+             gif_->filename.c_str(),
+             gif_->width,
+             gif_->height,
+             delay.value_or(default_gif_delay_));
+  } else {
+    // scale IMG if not matched
+    img = img.scaled(gif_->width, gif_->height, Qt::KeepAspectRatio);
+  }
+
+  std::vector<uint8_t> frame(gif_->width * gif_->height * 4, 0);
+  for (int x = 0; x < img.width(); x++) {
+    if (x >= gif_->width) {
+      continue;
+    }
+    for (int y = 0; y < img.height(); y++) {
+      if (y >= gif_->height) {
+        continue;
+      }
+
+      const QRgb pixel = img.pixel(x, y);
+      const int frame_offset = (y * gif_->width + x) * 4;
+      frame[frame_offset + 0] = qRed(pixel);
+      frame[frame_offset + 1] = qGreen(pixel);
+      frame[frame_offset + 2] = qBlue(pixel);
+      frame[frame_offset + 3] = qAlpha(pixel);
+    }
+  }
+
+  GifWriteFrame(gif_->writer.get(),
+                frame.data(),
+                gif_->width,
+                gif_->height,
+                delay.value_or(default_gif_delay_));
+}
+
+void Gui::gifEnd()
+{
+  if (gif_ == nullptr) {
+    logger_->warn(utl::GUI, 58, "GIF not active");
+    return;
+  }
+
+  GifEnd(gif_->writer.get());
+  gif_ = nullptr;
+}
+
+class SafeApplication : public QApplication
+{
+ public:
+  using QApplication::QApplication;
+
+  bool notify(QObject* receiver, QEvent* event) override
+  {
+    try {
+      return QApplication::notify(receiver, event);
+    } catch (std::exception& ex) {
+      // Ignored here as the message will be logged in the GUI
+    }
+
+    return false;
+  }
+};
 
 //////////////////////////////////////////////////
 
@@ -1277,13 +1511,15 @@ int startGui(int& argc,
              char* argv[],
              Tcl_Interp* interp,
              const std::string& script,
-             bool interactive)
+             bool interactive,
+             bool load_settings,
+             bool minimize)
 {
   auto gui = gui::Gui::get();
   // ensure continue after close is false
   gui->clearContinueAfterClose();
 
-  QApplication app(argc, argv);
+  SafeApplication app(argc, argv);
   application = &app;
 
   // Default to 12 point for easier reading
@@ -1294,9 +1530,13 @@ int startGui(int& argc,
   auto* open_road = ord::OpenRoad::openRoad();
 
   // create new MainWindow
-  main_window = new gui::MainWindow;
+  main_window = new gui::MainWindow(load_settings);
+  if (minimize) {
+    main_window->showMinimized();
+  }
+  main_window->setTitle(gui->getMainWindowTitle());
 
-  open_road->addObserver(main_window);
+  open_road->getDb()->addObserver(main_window);
   if (!interactive) {
     gui->setContinueAfterClose();
     main_window->setAttribute(Qt::WA_DontShowOnScreen);
@@ -1317,7 +1557,7 @@ int startGui(int& argc,
       interp, interactive, init_openroad, [&]() {
         // init remainder of GUI, to be called immediately after OpenRoad is
         // guaranteed to be initialized.
-        main_window->init(open_road->getSta());
+        main_window->init(open_road->getSta(), open_road->getDocsPath());
         // announce design created to ensure GUI gets setup
         main_window->postReadDb(main_window->getDb());
       });
@@ -1392,7 +1632,7 @@ int startGui(int& argc,
   }
 
   // cleanup
-  open_road->removeObserver(main_window);
+  open_road->getDb()->removeObserver(main_window);
 
   if (!exception.hasException()) {
     // don't save anything if exception occured
@@ -1415,7 +1655,19 @@ int startGui(int& argc,
   // rethow exception, if one happened after cleanup of main_window
   exception.rethrow();
 
-  if (interactive && (!gui->isContinueAfterClose() || exit_requested)) {
+  debugPrint(open_road->getLogger(),
+             utl::GUI,
+             "init",
+             1,
+             "Exit state: interactive ({}), isContinueAfterClose ({}), "
+             "exit_requested ({}), exit_code ({})",
+             interactive,
+             gui->isContinueAfterClose(),
+             exit_requested,
+             exit_code);
+
+  const bool do_exit = !gui->isContinueAfterClose() && exit_requested;
+  if (interactive && do_exit) {
     // if exiting, go ahead and exit with gui return code.
     exit(exit_code);
   }
@@ -1492,9 +1744,9 @@ std::string Descriptor::Property::toString(const std::any& value)
     return *v ? "True" : "False";
   } else if (auto v = std::any_cast<odb::Rect>(&value)) {
     std::string text = "(";
-    text += convert_dbu(v->xMin(), false) + ",";
+    text += convert_dbu(v->xMin(), false) + ", ";
     text += convert_dbu(v->yMin(), false) + "), (";
-    text += convert_dbu(v->xMax(), false) + ",";
+    text += convert_dbu(v->xMax(), false) + ", ";
     text += convert_dbu(v->yMax(), false) + ")";
     return text;
   } else if (auto v = std::any_cast<odb::Point>(&value)) {
@@ -1506,32 +1758,25 @@ std::string Descriptor::Property::toString(const std::any& value)
   return "<unknown>";
 }
 
-}  // namespace gui
-
-namespace sta {
 // Tcl files encoded into strings.
 extern const char* gui_tcl_inits[];
-}  // namespace sta
-
-extern "C" {
-struct Tcl_Interp;
-}
-
-namespace ord {
 
 extern "C" {
 extern int Gui_Init(Tcl_Interp* interp);
 }
 
-void initGui(OpenRoad* openroad)
+void initGui(Tcl_Interp* interp,
+             odb::dbDatabase* db,
+             sta::dbSta* sta,
+             utl::Logger* logger)
 {
   // Define swig TCL commands.
-  Gui_Init(openroad->tclInterp());
-  sta::evalTclInit(openroad->tclInterp(), sta::gui_tcl_inits);
+  Gui_Init(interp);
+  utl::evalTclInit(interp, gui::gui_tcl_inits);
 
   // ensure gui is made
   auto* gui = gui::Gui::get();
-  gui->init(openroad->getDb(), openroad->getLogger());
+  gui->init(db, sta, logger);
 }
 
-}  // namespace ord
+}  // namespace gui

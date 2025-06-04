@@ -1,36 +1,6 @@
-///////////////////////////////////////////////////////////////////////////
-//
-// BSD 3-Clause License
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
+
 ///////////////////////////////////////////////////////////////////////////////
 // High-level description
 // This is the interfaces for TritonPart
@@ -40,39 +10,45 @@
 ///////////////////////////////////////////////////////////////////////////////
 #include "TritonPart.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <iterator>
+#include <memory>
 #include <set>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "Coarsener.h"
+#include "Evaluator.h"
+#include "GreedyRefine.h"
 #include "Hypergraph.h"
+#include "ILPRefine.h"
+#include "KWayFMRefine.h"
+#include "KWayPMRefine.h"
 #include "Multilevel.h"
 #include "Partitioner.h"
-#include "Refiner.h"
 #include "Utilities.h"
+#include "db_sta/dbNetwork.hh"
+#include "db_sta/dbSta.hh"
 #include "odb/db.h"
-#include "sta/ArcDelayCalc.hh"
-#include "sta/Bfs.hh"
-#include "sta/Corner.hh"
-#include "sta/DcalcAnalysisPt.hh"
+#include "odb/geom.h"
 #include "sta/ExceptionPath.hh"
-#include "sta/FuncExpr.hh"
 #include "sta/Graph.hh"
-#include "sta/GraphDelayCalc.hh"
 #include "sta/Liberty.hh"
-#include "sta/Network.hh"
+#include "sta/MinMax.hh"
+#include "sta/NetworkClass.hh"
 #include "sta/PathAnalysisPt.hh"
 #include "sta/PathEnd.hh"
 #include "sta/PathExpanded.hh"
-#include "sta/PathRef.hh"
-#include "sta/PatternMatch.hh"
-#include "sta/PortDirection.hh"
 #include "sta/Sdc.hh"
 #include "sta/Search.hh"
-#include "sta/SearchPred.hh"
-#include "sta/Sequential.hh"
+#include "sta/SearchClass.hh"
 #include "sta/Sta.hh"
-#include "sta/Units.hh"
 #include "utl/Logger.h"
 
 using utl::PAR;
@@ -83,7 +59,7 @@ namespace par {
 // Public functions
 // -----------------------------------------------------------------------------------
 
-TritonPart::TritonPart(ord::dbNetwork* network,
+TritonPart::TritonPart(sta::dbNetwork* network,
                        odb::dbDatabase* db,
                        sta::dbSta* sta,
                        utl::Logger* logger)
@@ -254,7 +230,7 @@ void TritonPart::PartitionHypergraph(unsigned int num_parts_arg,
 
   logger_->report("Partitioning Parameters");
   logger_->report("\tNumber of partitions = {}", num_parts_);
-  logger_->report("\tUBfactor = {}", ub_factor_);
+  logger_->report("\tUBfactor = {:.1f}", ub_factor_);
   logger_->report("\tSeed = {}", seed_);
   logger_->report("\tVertex dimensions = {}", vertex_dimensions_);
   logger_->report("\tHyperedge dimensions = {}", hyperedge_dimensions_);
@@ -1624,8 +1600,7 @@ void TritonPart::BuildTimingPaths()
     sta::PathExpanded expand(path, sta_);
     expand.path(expand.size() - 1);
     for (size_t i = 0; i < expand.size(); i++) {
-      // PathRef is reference to a path vertex
-      sta::PathRef* ref = expand.path(i);
+      const sta::Path* ref = expand.path(i);
       sta::Pin* pin = ref->vertex(sta_)->pin();
       // Nets connect pins at a level of the hierarchy
       auto net = network_->net(pin);  // sta::Net*
@@ -2020,8 +1995,10 @@ void TritonPart::MultiLevelPartition()
 
   // Perform the last-minute refinement
   tritonpart_coarsener->SetThrCoarsenHyperedgeSizeSkip(global_net_threshold_);
-  tritonpart_mlevel_partitioner->VcycleRefinement(
-      hypergraph_, upper_block_balance, lower_block_balance, solution_);
+  tritonpart_mlevel_partitioner->VcycleRefinement(original_hypergraph_,
+                                                  upper_block_balance,
+                                                  lower_block_balance,
+                                                  solution_);
 
   // evaluate on the original hypergraph
   // tritonpart_evaluator->CutEvaluator(original_hypergraph_, solution_, true);

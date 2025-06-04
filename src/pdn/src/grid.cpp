@@ -1,38 +1,16 @@
-//////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #include "grid.h"
 
+#include <algorithm>
 #include <boost/geometry.hpp>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "connect.h"
 #include "domain.h"
@@ -180,7 +158,11 @@ void Grid::makeShapes(const Shape::ShapeTreeMap& global_shapes,
 
   // find and repair disconnected channels
   RepairChannelStraps::repairGridChannels(
-      this, all_shapes, local_obstructions, allow_repair_channels_);
+      this,
+      all_shapes,
+      local_obstructions,
+      allow_repair_channels_,
+      domain_->getPDNGen()->getDebugRenderer());
 }
 
 void Grid::makeRoutingObstructions(odb::dbBlock* block) const
@@ -568,8 +550,17 @@ void Grid::getIntersections(std::vector<ViaPtr>& shape_intersections,
 void Grid::resetShapes()
 {
   vias_.clear();
+  std::set<GridComponent*> remove;
   for (auto* component : getGridComponents()) {
     component->clearShapes();
+
+    if (component->isAutoInserted()) {
+      remove.insert(component);
+    }
+  }
+
+  for (auto* component : remove) {
+    removeGridComponent(component);
   }
 
   for (const auto& connect : connect_) {
@@ -840,6 +831,7 @@ void Grid::removeInvalidVias()
 std::vector<GridComponent*> Grid::getGridComponents() const
 {
   std::vector<GridComponent*> components;
+  components.reserve(rings_.size() + straps_.size());
   for (const auto& ring : rings_) {
     components.push_back(ring.get());
   }
@@ -849,6 +841,25 @@ std::vector<GridComponent*> Grid::getGridComponents() const
   }
 
   return components;
+}
+
+void Grid::removeGridComponent(GridComponent* component)
+{
+  for (auto itr = rings_.begin(); itr != rings_.end();) {
+    if (itr->get() == component) {
+      itr = rings_.erase(itr);
+    } else {
+      itr++;
+    }
+  }
+
+  for (auto itr = straps_.begin(); itr != straps_.end();) {
+    if (itr->get() == component) {
+      itr = straps_.erase(itr);
+    } else {
+      itr++;
+    }
+  }
 }
 
 void Grid::writeToDb(const std::map<odb::dbNet*, odb::dbSWire*>& net_map,
@@ -1022,6 +1033,25 @@ void Grid::makeInitialObstructions(odb::dbBlock* block,
       obs[layer].insert(obs[layer].end(), shapes.begin(), shapes.end());
     }
   }
+
+  // fixed pins obs
+  for (auto* bterm : block->getBTerms()) {
+    for (auto* bpin : bterm->getBPins()) {
+      if (!bpin->getPlacementStatus().isFixed()) {
+        continue;
+      }
+
+      for (auto* geom : bpin->getBoxes()) {
+        auto* layer = geom->getTechLayer();
+        auto shape
+            = std::make_shared<Shape>(layer, geom->getBox(), Shape::BLOCK_OBS);
+        shape->generateObstruction();
+        shape->setRect(shape->getRect());
+        obs[layer].push_back(shape);
+      }
+    }
+  }
+
   debugPrint(logger, utl::PDN, "Make", 2, "Get initial obstructions - end");
 }
 

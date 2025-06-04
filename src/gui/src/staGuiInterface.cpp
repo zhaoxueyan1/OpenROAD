@@ -1,39 +1,9 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #include "staGuiInterface.h"
+
+#include <vector>
 
 #include "db_sta/dbNetwork.hh"
 #include "odb/dbTransform.h"
@@ -48,6 +18,7 @@
 #include "sta/PathExpanded.hh"
 #include "sta/Sdc.hh"
 #include "sta/Search.hh"
+#include "sta/VisitPathEnds.hh"
 
 namespace gui {
 
@@ -127,9 +98,8 @@ const odb::Rect TimingPathNode::getPinBBox() const
 {
   if (isPinITerm()) {
     return getPinAsITerm()->getBBox();
-  } else {
-    return getPinAsBTerm()->getBBox();
   }
+  return getPinAsBTerm()->getBBox();
 }
 
 const odb::Rect TimingPathNode::getPinLargestBox() const
@@ -151,20 +121,19 @@ const odb::Rect TimingPathNode::getPinLargestBox() const
     }
 
     return pin_rect;
-  } else {
-    auto* bterm = getPinAsBTerm();
+  }
+  auto* bterm = getPinAsBTerm();
 
-    odb::Rect pin_rect;
-    for (auto* pin : bterm->getBPins()) {
-      for (auto* box : pin->getBoxes()) {
-        odb::Rect box_rect = box->getBox();
-        if (pin_rect.dx() < box_rect.dx()) {
-          pin_rect = box_rect;
-        }
+  odb::Rect pin_rect;
+  for (auto* pin : bterm->getBPins()) {
+    for (auto* box : pin->getBoxes()) {
+      odb::Rect box_rect = box->getBox();
+      if (pin_rect.dx() < box_rect.dx()) {
+        pin_rect = box_rect;
       }
     }
-    return pin_rect;
   }
+  return pin_rect;
 }
 
 /////////
@@ -218,7 +187,7 @@ void TimingPath::populateNodeList(sta::Path* path,
     const bool pin_is_clock = sta->isClock(pin);
     const bool is_driver = network->isDriver(pin);
     const bool is_rising = ref->transition(sta) == sta::RiseFall::rise();
-    const auto arrival = ref->arrival(sta);
+    const auto arrival = ref->arrival();
 
     // based on:
     // https://github.com/The-OpenROAD-Project/OpenSTA/blob/a48199d52df23732164c378b6c5dcea5b1b301a1/search/ReportPath.cc#L2756
@@ -249,8 +218,7 @@ void TimingPath::populateNodeList(sta::Path* path,
     odb::dbITerm* term;
     odb::dbBTerm* port;
     odb::dbModITerm* moditerm;
-    odb::dbModBTerm* modbterm;
-    sta->getDbNetwork()->staToDb(pin, term, port, moditerm, modbterm);
+    sta->getDbNetwork()->staToDb(pin, term, port, moditerm);
     odb::dbObject* pin_object = term;
     if (term == nullptr) {
       pin_object = port;
@@ -686,20 +654,20 @@ void ClockTree::addPath(sta::PathExpanded& path,
     return;
   }
 
-  sta::PathRef* ref = path.path(idx);
+  const sta::Path* ref = path.path(idx);
   sta::Vertex* vertex = ref->vertex(sta);
   sta::Pin* pin = vertex->pin();
   sta::Net* net = getNet(pin);
 
   ClockTree* add_to_tree = getTree(net);
-  if (add_to_tree->addVertex(vertex, ref->arrival(sta))) {
+  if (add_to_tree->addVertex(vertex, ref->arrival())) {
     add_to_tree->addPath(path, idx + 1, sta);
   }
 }
 
 void ClockTree::addPath(sta::PathExpanded& path, const sta::StaState* sta)
 {
-  sta::PathRef* start = path.startPath();
+  const sta::Path* start = path.startPath();
   if (start->clkEdge(sta)->transition() != sta::RiseFall::rise()) {
     // only populate with rising edges
     return;
@@ -723,9 +691,8 @@ sta::Net* ClockTree::getNet(const sta::Pin* pin) const
   sta::Term* term = network_->term(pin);
   if (term != nullptr) {
     return network_->net(term);
-  } else {
-    return network_->net(pin);
   }
+  return network_->net(pin);
 }
 
 bool ClockTree::isLeaf(const sta::Pin* pin) const
@@ -740,14 +707,13 @@ bool ClockTree::addVertex(sta::Vertex* vertex, sta::Delay delay)
   if (isLeaf(pin)) {
     leaves_[pin] = delay;
     return false;
-  } else {
-    if (vertex->isDriver(network_)) {
-      drivers_[pin] = delay;
-    } else {
-      child_sinks_[pin] = delay;
-    }
-    return true;
   }
+  if (vertex->isDriver(network_)) {
+    drivers_[pin] = delay;
+  } else {
+    child_sinks_[pin] = delay;
+  }
+  return true;
 }
 
 std::pair<const sta::Pin*, sta::Delay> ClockTree::getPairedSink(
@@ -828,6 +794,56 @@ std::map<const sta::Pin*, std::set<const sta::Pin*>> ClockTree::getPinMapping()
 
 /////////////
 
+class PathGroupSlackEndVisitor : public sta::PathEndVisitor
+{
+ public:
+  PathGroupSlackEndVisitor(const sta::PathGroup* path_group,
+                           sta::StaState* sta);
+  PathGroupSlackEndVisitor(const PathGroupSlackEndVisitor&) = default;
+  PathEndVisitor* copy() const override;
+  void visit(sta::PathEnd* path_end) override;
+  float worstSlack() const { return worst_slack_; }
+  bool hasSlack() const { return has_slack_; }
+  void resetWorstSlack();
+
+ private:
+  const sta::PathGroup* path_group_;
+  sta::StaState* sta_;
+  bool has_slack_{false};
+  float worst_slack_{std::numeric_limits<float>::max()};
+};
+
+PathGroupSlackEndVisitor::PathGroupSlackEndVisitor(
+    const sta::PathGroup* path_group,
+    sta::StaState* sta)
+    : path_group_(path_group), sta_(sta)
+{
+}
+
+sta::PathEndVisitor* PathGroupSlackEndVisitor::copy() const
+{
+  return new PathGroupSlackEndVisitor(*this);
+}
+
+void PathGroupSlackEndVisitor::visit(sta::PathEnd* path_end)
+{
+  sta::Search* search = sta_->search();
+  if (search->pathGroup(path_end) == path_group_) {
+    worst_slack_ = std::min(worst_slack_, path_end->slack(sta_));
+    if (!has_slack_) {
+      has_slack_ = true;
+    }
+  }
+}
+
+void PathGroupSlackEndVisitor::resetWorstSlack()
+{
+  worst_slack_ = std::numeric_limits<float>::max();
+  has_slack_ = false;
+}
+
+/////////////
+
 STAGuiInterface::STAGuiInterface(sta::dbSta* sta)
     : sta_(sta),
       corner_(nullptr),
@@ -863,6 +879,58 @@ float STAGuiInterface::getPinSlack(const sta::Pin* pin) const
                         use_max_ ? sta::MinMax::max() : sta::MinMax::min());
 }
 
+std::set<std::string> STAGuiInterface::getGroupPathsNames() const
+{
+  std::set<std::string> group_paths_names;
+  sta::Sdc* sdc = sta_->sdc();
+  sta::GroupPathMap group_paths_map = sdc->groupPaths();
+  for (const auto [name, group_paths] : group_paths_map) {
+    group_paths_names.insert(name);
+  }
+  return group_paths_names;
+}
+
+// Makes STA incorporate the Sdc GroupPaths information
+// into Search PathGroups. This is equivalent to what happens
+// when running "report_checks".
+void STAGuiInterface::updatePathGroups()
+{
+  sta::Search* search = sta_->search();
+  search->makePathGroups(1,         /* group count */
+                         1,         /* endpoint count*/
+                         false,     /* unique pins */
+                         -sta::INF, /* min slack */
+                         sta::INF,  /* max slack*/
+                         nullptr,   /* group names */
+                         true,      /* setup */
+                         true,      /* hold */
+                         true,      /* recovery */
+                         true,      /* removal */
+                         true,      /* clk gating setup */
+                         true /* clk gating hold*/);
+}
+
+EndPointSlackMap STAGuiInterface::getEndPointToSlackMap(
+    const std::string& path_group_name)
+{
+  updatePathGroups();
+
+  EndPointSlackMap end_point_to_slack;
+  sta::VisitPathEnds visit_ends(sta_);
+  sta::Search* search = sta_->search();
+  sta::PathGroup* path_group
+      = search->findPathGroup(path_group_name.c_str(), sta::MinMax::max());
+  PathGroupSlackEndVisitor path_group_visitor(path_group, sta_);
+  for (sta::Vertex* vertex : *sta_->endpoints()) {
+    visit_ends.visitPathEnds(vertex, &path_group_visitor);
+    if (path_group_visitor.hasSlack()) {
+      end_point_to_slack[vertex->pin()] = path_group_visitor.worstSlack();
+      path_group_visitor.resetWorstSlack();
+    }
+  }
+  return end_point_to_slack;
+}
+
 int STAGuiInterface::getEndPointCount() const
 {
   return sta_->endpoints()->size();
@@ -887,13 +955,14 @@ std::unique_ptr<TimingPathNode> STAGuiInterface::getTimingNode(
 
 TimingPathList STAGuiInterface::getTimingPaths(const sta::Pin* thru) const
 {
-  return getTimingPaths({}, {{thru}}, {});
+  return getTimingPaths({}, {{thru}}, {}, "" /* path group name */);
 }
 
 TimingPathList STAGuiInterface::getTimingPaths(
     const StaPins& from,
     const std::vector<StaPins>& thrus,
-    const StaPins& to) const
+    const StaPins& to,
+    const std::string& path_group_name) const
 {
   TimingPathList paths;
 
@@ -932,8 +1001,13 @@ TimingPathList STAGuiInterface::getTimingPaths(
                                  sta::RiseFallBoth::riseFall());
   }
 
-  sta::Search* search = sta_->search();
+  std::unique_ptr<sta::PathGroupNameSet> group_names;
+  if (!path_group_name.empty()) {
+    group_names = std::make_unique<sta::PathGroupNameSet>();
+    group_names->insert(path_group_name.c_str());
+  }
 
+  sta::Search* search = sta_->search();
   sta::PathEndSeq path_ends
       = search->findPathEnds(  // from, thrus, to, unconstrained
           e_from,
@@ -950,7 +1024,7 @@ TimingPathList STAGuiInterface::getTimingPaths(
           -sta::INF,
           sta::INF,  // slack_min, slack_max,
           true,      // sort_by_slack
-          nullptr,   // group_names
+          group_names.get(),
           // setup, hold, recovery, removal,
           use_max_,
           !use_max_,
@@ -1136,9 +1210,8 @@ ConeDepthMap STAGuiInterface::buildConeConnectivity(
 
       odb::dbBTerm* bterm;
       odb::dbITerm* iterm;
-      odb::dbModBTerm* modbterm;
       odb::dbModITerm* moditerm;
-      network->staToDb(pin, iterm, bterm, moditerm, modbterm);
+      network->staToDb(pin, iterm, bterm, moditerm);
       if (bterm != nullptr) {
         dbpin = bterm;
       } else {
@@ -1252,6 +1325,11 @@ void STAGuiInterface::annotateConeTiming(const sta::Pin* source_pin,
   }
 }
 
+sta::ClockSeq* STAGuiInterface::getClocks() const
+{
+  return sta_->sdc()->clocks();
+}
+
 std::vector<std::unique_ptr<ClockTree>> STAGuiInterface::getClockTrees() const
 {
   initSTA();
@@ -1270,7 +1348,7 @@ std::vector<std::unique_ptr<ClockTree>> STAGuiInterface::getClockTrees() const
   for (sta::Vertex* src_vertex : *graph->regClkVertices()) {
     sta::VertexPathIterator path_iter(src_vertex, sta_);
     while (path_iter.hasNext()) {
-      sta::PathVertex* path = path_iter.next();
+      sta::Path* path = path_iter.next();
 
       if (path->dcalcAnalysisPt(sta_)->corner() != corner_) {
         continue;

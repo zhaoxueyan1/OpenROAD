@@ -1,35 +1,5 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2020, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE
-// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2020-2025, The OpenROAD Authors
 
 #include "graphics.h"
 
@@ -37,7 +7,10 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "nesterovBase.h"
 #include "nesterovPlace.h"
@@ -85,9 +58,8 @@ Graphics::Graphics(utl::Logger* logger,
   gui::Gui::get()->registerRenderer(this);
   initHeatmap();
   if (inst) {
-    for (GCell* cell : nbc_->gCells()) {
-      Instance* cell_inst = cell->instance();
-      if (cell_inst && cell_inst->dbInst() == inst) {
+    for (GCell* cell : nbc_->getGCells()) {
+      if (cell->contains(inst)) {
         selected_ = cell;
         break;
       }
@@ -101,7 +73,8 @@ void Graphics::initHeatmap()
       "Type",
       "Type:",
       []() {
-        return std::vector<std::string>{"Density", "Overflow"};
+        return std::vector<std::string>{
+            "Density", "Overflow", "Overflow Normalized"};
       },
       [this]() -> std::string {
         switch (heatmap_type_) {
@@ -109,6 +82,8 @@ void Graphics::initHeatmap()
             return "Density";
           case Overflow:
             return "Overflow";
+          case OverflowMinMax:
+            return "Overflow Normalized";
         }
         return "Density";
       },
@@ -117,6 +92,8 @@ void Graphics::initHeatmap()
           heatmap_type_ = Density;
         } else if (value == "Overflow") {
           heatmap_type_ = Overflow;
+        } else if (value == "Overflow Normalized") {
+          heatmap_type_ = OverflowMinMax;
         } else {
           heatmap_type_ = Density;
         }
@@ -155,55 +132,132 @@ void Graphics::drawInitial(gui::Painter& painter)
   }
 }
 
+void Graphics::drawForce(gui::Painter& painter)
+{
+  for (const auto& nb : nbVec_) {
+    const auto& bins = nb->bins();
+    if (bins.empty()) {
+      continue;
+    }
+    const auto& bin = *bins.begin();
+    const auto size = std::max(bin.dx(), bin.dy());
+    if (size * painter.getPixelsPerDBU() < 10) {  // too small
+      return;
+    }
+    float efMax = 0;
+    int max_len = std::numeric_limits<int>::max();
+    for (auto& bin : bins) {
+      efMax = std::max(efMax,
+                       std::hypot(bin.electroForceX(), bin.electroForceY()));
+      max_len = std::min({max_len, bin.dx(), bin.dy()});
+    }
+
+    for (auto& bin : bins) {
+      float fx = bin.electroForceX();
+      float fy = bin.electroForceY();
+      float f = std::hypot(fx, fy);
+      float ratio = f / efMax;
+      float dx = fx / f * max_len * ratio;
+      float dy = fy / f * max_len * ratio;
+
+      int cx = bin.cx();
+      int cy = bin.cy();
+
+      painter.setPen(gui::Painter::red, true);
+      painter.drawLine(cx, cy, cx + dx, cy + dy);
+
+      // Draw a circle at the outer end of the line
+      int circle_x = static_cast<int>(cx + dx);
+      int circle_y = static_cast<int>(cy + dy);
+      float bin_area = bin.dx() * bin.dy();
+      int circle_radius = static_cast<int>(0.05 * std::sqrt(bin_area / M_PI));
+      painter.setPen(gui::Painter::red, true);
+      painter.drawCircle(circle_x, circle_y, circle_radius);
+    }
+  }
+}
+
+void Graphics::drawCells(const std::vector<GCellHandle>& cells,
+                         gui::Painter& painter)
+{
+  for (const auto& handle : cells) {
+    const GCell* gCell
+        = handle;  // Uses the conversion operator to get a GCell*
+    drawSingleGCell(gCell, painter);
+  }
+}
+
+void Graphics::drawCells(const std::vector<GCell*>& cells,
+                         gui::Painter& painter)
+{
+  for (const auto& gCell : cells) {
+    drawSingleGCell(gCell, painter);
+  }
+}
+
+void Graphics::drawSingleGCell(const GCell* gCell, gui::Painter& painter)
+{
+  const int gcx = gCell->dCx();
+  const int gcy = gCell->dCy();
+
+  int xl = gcx - gCell->dx() / 2;
+  int yl = gcy - gCell->dy() / 2;
+  int xh = gcx + gCell->dx() / 2;
+  int yh = gcy + gCell->dy() / 2;
+
+  gui::Painter::Color color;
+  if (gCell->isInstance()) {
+    color = gCell->isLocked() ? gui::Painter::dark_cyan
+                              : gui::Painter::dark_green;
+  } else if (gCell->isFiller()) {
+    color = gui::Painter::dark_magenta;
+  }
+
+  if (gCell == selected_) {
+    color = gui::Painter::yellow;
+  }
+
+  color.a = 180;
+  painter.setBrush(color);
+  painter.drawRect({xl, yl, xh, yh});
+}
+
 void Graphics::drawNesterov(gui::Painter& painter)
 {
-  // TODO: Support graphics for multiple Nesterov instances
   drawBounds(painter);
   if (draw_bins_) {
     // Draw the bins
-    painter.setPen(gui::Painter::white, /* cosmetic */ true);
+    painter.setPen(gui::Painter::transparent);
 
-    for (auto& bin : nbVec_[0]->bins()) {
-      int color = bin.density() * 50 + 20;
+    for (const auto& nb : nbVec_) {
+      for (auto& bin : nb->bins()) {
+        int density = bin.density() * 50 + 20;
+        gui::Painter::Color color;
+        if (density > 255) {
+          color = {255, 165, 0, 180};  // orange = out of the range
+        } else {
+          density = 255 - std::max(density, 20);
+          color = {density, density, density, 180};
+        }
 
-      color = (color > 255) ? 255 : (color < 20) ? 20 : color;
-      color = 255 - color;
-
-      painter.setBrush({color, color, color, 180});
-      painter.drawRect({bin.lx(), bin.ly(), bin.ux(), bin.uy()});
+        painter.setBrush(color);
+        painter.drawRect({bin.lx(), bin.ly(), bin.ux(), bin.uy()});
+      }
     }
   }
 
   // Draw the placeable objects
   painter.setPen(gui::Painter::white);
-  for (auto* gCell : nbc_->gCells()) {
-    const int gcx = gCell->dCx();
-    const int gcy = gCell->dCy();
-
-    int xl = gcx - gCell->dx() / 2;
-    int yl = gcy - gCell->dy() / 2;
-    int xh = gcx + gCell->dx() / 2;
-    int yh = gcy + gCell->dy() / 2;
-
-    gui::Painter::Color color;
-    if (gCell->isInstance()) {
-      color = gCell->instance()->isLocked() ? gui::Painter::dark_cyan
-                                            : gui::Painter::dark_green;
-    } else if (gCell->isFiller()) {
-      color = gui::Painter::dark_magenta;
-    }
-    if (gCell == selected_) {
-      color = gui::Painter::yellow;
-    }
-
-    color.a = 180;
-    painter.setBrush(color);
-    painter.drawRect({xl, yl, xh, yh});
+  drawCells(nbc_->getGCells(), painter);
+  for (const auto& nb : nbVec_) {
+    drawCells(nb->getGCells(), painter);
   }
 
   painter.setBrush(gui::Painter::Color(gui::Painter::light_gray, 50));
-  for (auto& inst : pbVec_[0]->nonPlaceInsts()) {
-    painter.drawRect({inst->lx(), inst->ly(), inst->ux(), inst->uy()});
+  for (const auto& pb : pbVec_) {
+    for (auto& inst : pb->nonPlaceInsts()) {
+      painter.drawRect({inst->lx(), inst->ly(), inst->ux(), inst->uy()});
+    }
   }
 
   // Draw lines to neighbors
@@ -227,28 +281,7 @@ void Graphics::drawNesterov(gui::Painter& painter)
 
   // Draw force direction lines
   if (draw_bins_) {
-    float efMax = 0;
-    int max_len = std::numeric_limits<int>::max();
-    for (auto& bin : nbVec_[0]->bins()) {
-      efMax = std::max(efMax,
-                       std::hypot(bin.electroForceX(), bin.electroForceY()));
-      max_len = std::min({max_len, bin.dx(), bin.dy()});
-    }
-
-    for (auto& bin : nbVec_[0]->bins()) {
-      float fx = bin.electroForceX();
-      float fy = bin.electroForceY();
-      float f = std::hypot(fx, fy);
-      float ratio = f / efMax;
-      float dx = fx / f * max_len * ratio;
-      float dy = fy / f * max_len * ratio;
-
-      int cx = bin.cx();
-      int cy = bin.cy();
-
-      painter.setPen(gui::Painter::red, true);
-      painter.drawLine(cx, cy, cx + dx, cy + dy);
-    }
+    drawForce(painter);
   }
 }
 
@@ -257,6 +290,11 @@ void Graphics::drawMBFF(gui::Painter& painter)
   painter.setPen(gui::Painter::yellow, /* cosmetic */ true);
   for (const auto& [start, end] : mbff_edges_) {
     painter.drawLine(start, end);
+  }
+
+  for (odb::dbInst* inst : mbff_cluster_) {
+    odb::Rect bbox = inst->getBBox()->getBox();
+    painter.drawRect(bbox);
   }
 }
 
@@ -280,8 +318,7 @@ void Graphics::reportSelected()
   if (!selected_) {
     return;
   }
-  auto instance = selected_->instance();
-  logger_->report("Inst: {}", instance->dbInst()->getName());
+  logger_->report("Inst: {}", selected_->name());
 
   if (np_) {
     auto wlCoeffX = np_->getWireLengthCoefX();
@@ -324,11 +361,20 @@ void Graphics::cellPlot(bool pause)
   }
 }
 
-void Graphics::mbff_mapping(const LineSegs& segs)
+void Graphics::mbffMapping(const LineSegs& segs)
 {
   mbff_edges_ = segs;
   gui::Gui::get()->redraw();
   gui::Gui::get()->pause();
+  mbff_edges_.clear();
+}
+
+void Graphics::mbffFlopClusters(const std::vector<odb::dbInst*>& ffs)
+{
+  mbff_cluster_ = ffs;
+  gui::Gui::get()->redraw();
+  gui::Gui::get()->pause();
+  mbff_cluster_.clear();
 }
 
 gui::SelectionSet Graphics::select(odb::dbTechLayer* layer,
@@ -340,7 +386,7 @@ gui::SelectionSet Graphics::select(odb::dbTechLayer* layer,
     return gui::SelectionSet();
   }
 
-  for (GCell* cell : nbc_->gCells()) {
+  for (GCell* cell : nbc_->getGCells()) {
     const int gcx = cell->dCx();
     const int gcy = cell->dCy();
 
@@ -358,7 +404,11 @@ gui::SelectionSet Graphics::select(odb::dbTechLayer* layer,
     gui::Gui::get()->redraw();
     if (cell->isInstance()) {
       reportSelected();
-      return {gui::Gui::get()->makeSelected(cell->instance()->dbInst())};
+      gui::SelectionSet selected;
+      for (Instance* inst : cell->insts()) {
+        selected.insert(gui::Gui::get()->makeSelected(inst->dbInst()));
+      }
+      return selected;
     }
   }
   return gui::SelectionSet();
@@ -389,15 +439,13 @@ odb::Rect Graphics::getBounds() const
 bool Graphics::populateMap()
 {
   BinGrid& grid = nbVec_[0]->getBinGrid();
-  for (const Bin& bin : grid.bins()) {
-    odb::Rect box(bin.lx(), bin.ly(), bin.ux(), bin.uy());
-    if (heatmap_type_ == Density) {
-      const double value = bin.density() * 100.0;
-      addToMap(box, value);
-    } else {
-      // Overflow isn't stored per bin so we recompute it here
-      // (see BinGrid::updateBinsGCellDensityArea).
+  odb::dbBlock* block = pbc_->db()->getChip()->getBlock();
 
+  double min_value = std::numeric_limits<double>::max();
+  double max_value = std::numeric_limits<double>::lowest();
+
+  if (heatmap_type_ == OverflowMinMax) {
+    for (const Bin& bin : grid.bins()) {
       int64_t binArea = bin.binArea();
       const float scaledBinArea
           = static_cast<float>(binArea * bin.targetDensity());
@@ -406,11 +454,68 @@ bool Graphics::populateMap()
           0.0f,
           static_cast<float>(bin.instPlacedAreaUnscaled())
               + static_cast<float>(bin.nonPlaceAreaUnscaled()) - scaledBinArea);
-      addToMap(box, value);
+      value = block->dbuAreaToMicrons(value);
+
+      min_value = std::min(min_value, value);
+      max_value = std::max(max_value, value);
     }
   }
 
+  for (const Bin& bin : grid.bins()) {
+    odb::Rect box(bin.lx(), bin.ly(), bin.ux(), bin.uy());
+    double value = 0.0;
+
+    if (heatmap_type_ == Density) {
+      value = bin.density() * 100.0;
+    } else if (heatmap_type_ == Overflow || heatmap_type_ == OverflowMinMax) {
+      int64_t binArea = bin.binArea();
+      const float scaledBinArea
+          = static_cast<float>(binArea * bin.targetDensity());
+
+      double raw_value = std::max(
+          0.0f,
+          static_cast<float>(bin.instPlacedAreaUnscaled())
+              + static_cast<float>(bin.nonPlaceAreaUnscaled()) - scaledBinArea);
+      raw_value = block->dbuAreaToMicrons(raw_value);
+
+      if (heatmap_type_ == OverflowMinMax && max_value > min_value) {
+        value = (raw_value - min_value) / (max_value - min_value) * 100.0;
+      } else {
+        value = raw_value;
+      }
+    }
+
+    addToMap(box, value);
+  }
+
   return true;
+}
+
+void Graphics::populateXYGrid()
+{
+  BinGrid& grid = nbVec_[0]->getBinGrid();
+  std::vector<Bin>& bin = grid.bins();
+  int x_grid = grid.binCntX();
+  int y_grid = grid.binCntY();
+
+  std::vector<int> x_grid_set, y_grid_set;
+  x_grid_set.reserve(x_grid + 1);
+  y_grid_set.reserve(y_grid + 1);
+
+  x_grid_set.push_back(bin[0].lx());
+  y_grid_set.push_back(bin[0].ly());
+
+  for (int x = 0; x < x_grid && x < static_cast<int>(bin.size()); x++) {
+    x_grid_set.push_back(bin[x].ux());
+  }
+
+  for (int y = 0; y < y_grid; y++) {
+    size_t index = static_cast<size_t>(y) * static_cast<size_t>(x_grid);
+    if (index < bin.size()) {
+      y_grid_set.push_back(bin[index].uy());
+    }
+  }
+  setXYMapGrid(x_grid_set, y_grid_set);
 }
 
 void Graphics::combineMapData(bool base_has_value,
@@ -427,6 +532,54 @@ void Graphics::combineMapData(bool base_has_value,
 bool Graphics::guiActive()
 {
   return gui::Gui::enabled();
+}
+
+void Graphics::addFrameLabel(gui::Gui* gui,
+                             const odb::Rect& bbox,
+                             const std::string& label,
+                             const std::string& label_name,
+                             int image_width_px)
+{
+  int label_x = bbox.xMin() + 300;
+  int label_y = bbox.yMin() + 300;
+
+  gui::Painter::Color color = gui::Painter::yellow;
+  gui::Painter::Anchor anchor = gui::Painter::BOTTOM_LEFT;
+
+  int font_size = std::clamp(image_width_px / 50, 15, 24);
+
+  gui->addLabel(label_x, label_y, label, color, font_size, anchor, label_name);
+}
+
+void Graphics::saveLabeledImage(const std::string& path,
+                                const std::string& label,
+                                bool select_buffers,
+                                const std::string& heatmap_control,
+                                int image_width_px)
+{
+  gui::Gui* gui = getGuiObjectFromGraphics();
+  odb::Rect bbox = pbc_->db()->getChip()->getBlock()->getBBox()->getBox();
+
+  if (!heatmap_control.empty()) {
+    gui->setDisplayControlsVisible(heatmap_control, true);
+  }
+
+  if (select_buffers) {
+    gui->select("Inst", "", "Description", "Timing Repair Buffer", true, -1);
+  }
+
+  static int label_id = 0;
+  std::string label_name = fmt::format("auto_label_{}", label_id++);
+
+  addFrameLabel(gui, bbox, label, label_name, image_width_px);
+  gui->saveImage(path);
+  gui->deleteLabel(label_name);
+
+  if (!heatmap_control.empty()) {
+    gui->setDisplayControlsVisible(heatmap_control, false);
+  }
+
+  gui->clearSelections();
 }
 
 }  // namespace gpl

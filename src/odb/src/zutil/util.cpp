@@ -1,42 +1,18 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #include "odb/util.h"
 
+#include <algorithm>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "odb/db.h"
+#include "odb/dbCCSegSet.h"
 #include "odb/dbShape.h"
 #include "utl/Logger.h"
 
@@ -259,20 +235,13 @@ std::string generateMacroPlacementString(dbBlock* block)
 {
   std::string macro_placement;
 
-  const float dbu = block->getTech()->getDbUnitsPerMicron();
-  float x = 0.0f;
-  float y = 0.0f;
-
   for (odb::dbInst* inst : block->getInsts()) {
     if (inst->isBlock()) {
-      x = (inst->getLocation().x()) / dbu;
-      y = (inst->getLocation().y()) / dbu;
-
       macro_placement += fmt::format(
           "place_macro -macro_name {} -location {{{} {}}} -orientation {}\n",
           inst->getName(),
-          x,
-          y,
+          block->dbuToMicrons(inst->getLocation().x()),
+          block->dbuToMicrons(inst->getLocation().y()),
           inst->getOrient().getString());
     }
   }
@@ -280,23 +249,101 @@ std::string generateMacroPlacementString(dbBlock* block)
   return macro_placement;
 }
 
+void set_bterm_top_layer_grid(dbBlock* block,
+                              dbTechLayer* layer,
+                              int x_step,
+                              int y_step,
+                              Rect region,
+                              int width,
+                              int height,
+                              int keepout)
+{
+  Polygon polygon_region(region);
+  dbBlock::dbBTermTopLayerGrid top_layer_grid
+      = {layer, x_step, y_step, polygon_region, width, height, keepout};
+  block->setBTermTopLayerGrid(top_layer_grid);
+}
+
+bool hasOneSiteMaster(dbDatabase* db)
+{
+  for (dbLib* lib : db->getLibs()) {
+    for (dbMaster* master : lib->getMasters()) {
+      if (master->isBlock() || master->isPad() || master->isCover()) {
+        continue;
+      }
+
+      // Ignore IO corner cells
+      dbMasterType type = master->getType();
+      if (type == dbMasterType::ENDCAP_TOPLEFT
+          || type == dbMasterType::ENDCAP_TOPRIGHT
+          || type == dbMasterType::ENDCAP_BOTTOMLEFT
+          || type == dbMasterType::ENDCAP_BOTTOMRIGHT) {
+        continue;
+      }
+
+      dbSite* site = master->getSite();
+      if (site == nullptr) {
+        continue;
+      }
+
+      if (site->getClass() == dbSiteClass::PAD) {
+        continue;
+      }
+
+      if (site->getWidth() == master->getWidth()) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 int64_t WireLengthEvaluator::hpwl() const
 {
   int64_t hpwl_sum = 0;
   for (dbNet* net : block_->getNets()) {
-    hpwl_sum += hpwl(net);
+    int64_t net_hpwl_x, net_hpwl_y;
+    hpwl_sum += hpwl(net, net_hpwl_x, net_hpwl_y);
   }
   return hpwl_sum;
 }
 
-int64_t WireLengthEvaluator::hpwl(dbNet* net) const
+int64_t WireLengthEvaluator::hpwl(int64_t& hpwl_x, int64_t& hpwl_y) const
 {
-  if (net->getSigType().isSupply()) {
+  int64_t hpwl_sum = 0;
+  for (dbNet* net : block_->getNets()) {
+    int64_t net_hpwl_x = 0;
+    int64_t net_hpwl_y = 0;
+    hpwl_sum += hpwl(net, net_hpwl_x, net_hpwl_y);
+    hpwl_x += net_hpwl_x;
+    hpwl_y += net_hpwl_y;
+  }
+  return hpwl_sum;
+}
+
+int64_t WireLengthEvaluator::hpwl(dbNet* net,
+                                  int64_t& hpwl_x,
+                                  int64_t& hpwl_y) const
+{
+  if (net->getSigType().isSupply() || net->isSpecial()) {
     return 0;
   }
 
   Rect bbox = net->getTermBBox();
-  return bbox.dx() + bbox.dy();
+  hpwl_x = bbox.dx();
+  hpwl_y = bbox.dy();
+  return hpwl_x + hpwl_y;
+}
+
+void WireLengthEvaluator::report(utl::Logger* logger) const
+{
+  for (dbNet* net : block_->getNets()) {
+    int64_t tmp;
+    logger->report("{} {}",
+                   net->getConstName(),
+                   block_->dbuToMicrons(hpwl(net, tmp, tmp)));
+  }
 }
 
 }  // namespace odb

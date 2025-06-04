@@ -1,36 +1,9 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "dbBox.h"
+
+#include <vector>
 
 #include "dbBPin.h"
 #include "dbBTerm.h"
@@ -44,6 +17,7 @@
 #include "dbMaster.h"
 #include "dbNet.h"
 #include "dbObstruction.h"
+#include "dbPolygon.h"
 #include "dbRegion.h"
 #include "dbSWire.h"
 #include "dbTable.h"
@@ -94,10 +68,10 @@ bool _dbBox::operator==(const _dbBox& rhs) const
   if (_flags._octilinear != rhs._flags._octilinear) {
     return false;
   }
-  if (isOct() && _shape._oct != _shape._oct) {
+  if (isOct() && _shape._oct != rhs._shape._oct) {
     return false;
   }
-  if (_shape._rect != _shape._rect) {
+  if (_shape._rect != rhs._shape._rect) {
     return false;
   }
 
@@ -163,10 +137,10 @@ int _dbBox::equal(const _dbBox& rhs) const
   if (design_rule_width_ != rhs.design_rule_width_) {
     return false;
   }
-  if (isOct() && _shape._oct != _shape._oct) {
+  if (isOct() && _shape._oct != rhs._shape._oct) {
     return false;
   }
-  if (_shape._rect != _shape._rect) {
+  if (_shape._rect != rhs._shape._rect) {
     return false;
   }
 
@@ -253,101 +227,6 @@ bool _dbBox::operator<(const _dbBox& rhs) const
   return false;
 }
 
-void _dbBox::differences(dbDiff& diff,
-                         const char* field,
-                         const _dbBox& rhs) const
-{
-  if (diff.deepDiff()) {
-    return;
-  }
-
-  DIFF_BEGIN
-  DIFF_FIELD(_flags._owner_type);
-  DIFF_FIELD(_flags._is_tech_via);
-  DIFF_FIELD(_flags._is_block_via);
-  DIFF_FIELD(_flags._layer_id);
-  DIFF_FIELD(_flags._via_id);
-  DIFF_FIELD(_flags._octilinear);
-  DIFF_FIELD(_flags._layer_mask);
-
-  if (isOct()) {
-    DIFF_FIELD(_shape._oct);
-  } else {
-    DIFF_FIELD(_shape._rect);
-  }
-  DIFF_FIELD(_owner);
-  DIFF_FIELD(_next_box);
-  DIFF_FIELD(design_rule_width_);
-  DIFF_END
-}
-
-void _dbBox::out(dbDiff& diff, char side, const char* field) const
-{
-  if (!diff.deepDiff()) {
-    DIFF_OUT_BEGIN
-    DIFF_OUT_FIELD(_flags._owner_type);
-    DIFF_OUT_FIELD(_flags._is_tech_via);
-    DIFF_OUT_FIELD(_flags._is_block_via);
-    DIFF_OUT_FIELD(_flags._layer_id);
-    DIFF_OUT_FIELD(_flags._via_id);
-    DIFF_OUT_FIELD(_flags._octilinear);
-    DIFF_OUT_FIELD(_flags._layer_mask);
-    if (isOct()) {
-      DIFF_OUT_FIELD(_shape._oct);
-    } else {
-      DIFF_OUT_FIELD(_shape._rect);
-    }
-    DIFF_OUT_FIELD(_owner);
-    DIFF_OUT_FIELD(_next_box);
-    DIFF_OUT_FIELD(design_rule_width_);
-    DIFF_END
-  } else {
-    DIFF_OUT_BEGIN
-
-    switch (getType()) {
-      case BLOCK_VIA: {
-        int x, y;
-        getViaXY(x, y);
-        _dbVia* via = getBlockVia();
-        diff.report("%c BLOCK-VIA %s (%d %d)\n", side, via->_name, x, y);
-        break;
-      }
-
-      case TECH_VIA: {
-        int x, y;
-        getViaXY(x, y);
-        _dbTechVia* via = getTechVia();
-        diff.report("%c TECH-VIA %s (%d %d)\n", side, via->_name, x, y);
-        break;
-      }
-
-      case BOX: {
-        if (_flags._layer_id != 0) {
-          _dbTechLayer* lay = getTechLayer();
-          diff.report("%c BOX %s (%d %d) (%d %d)\n",
-                      side,
-                      lay->_name,
-                      _shape._rect.xMin(),
-                      _shape._rect.yMin(),
-                      _shape._rect.xMax(),
-                      _shape._rect.yMax());
-        } else {
-          diff.report("%c BOX (%d %d) (%d %d)\n",
-                      side,
-                      _shape._rect.xMin(),
-                      _shape._rect.yMin(),
-                      _shape._rect.xMax(),
-                      _shape._rect.yMax());
-        }
-
-        break;
-      }
-    }
-
-    DIFF_END
-  }
-}
-
 _dbTechLayer* _dbBox::getTechLayer() const
 {
   if (_flags._layer_id == 0) {
@@ -373,7 +252,8 @@ _dbTechLayer* _dbBox::getTechLayer() const
     }
 
     case dbBoxOwner::MASTER:
-    case dbBoxOwner::MPIN: {
+    case dbBoxOwner::MPIN:
+    case dbBoxOwner::PBOX: {
       _dbMaster* master = (_dbMaster*) getOwner();
       _dbLib* lib = (_dbLib*) master->getOwner();
       _dbTech* tech = lib->getTech();
@@ -401,6 +281,7 @@ _dbTechVia* _dbBox::getTechVia() const
     case dbBoxOwner::BLOCKAGE:
     case dbBoxOwner::OBSTRUCTION:
     case dbBoxOwner::REGION:
+    case dbBoxOwner::PBOX:
       return nullptr;
 
     case dbBoxOwner::BLOCK:
@@ -441,6 +322,7 @@ _dbVia* _dbBox::getBlockVia() const
   switch (_flags._owner_type) {
     case dbBoxOwner::UNKNOWN:
     case dbBoxOwner::REGION:
+    case dbBoxOwner::PBOX:
       return nullptr;
 
     case dbBoxOwner::BLOCK:
@@ -762,6 +644,10 @@ dbObject* dbBox::getBoxOwner()
       return master->_mpin_tbl->getPtr(box->_owner);
     }
 
+    case dbBoxOwner::PBOX: {
+      return owner;
+    }
+
     case dbBoxOwner::TECH_VIA: {
       _dbTech* tech = (_dbTech*) owner;
       return tech->_via_tbl->getPtr(box->_owner);
@@ -948,6 +834,23 @@ dbBox* dbBox::create(dbMaster* master_, dbTechVia* via_, int x, int y)
   return (dbBox*) box;
 }
 
+dbBox* dbBox::create(dbPolygon* pbox, int x1, int y1, int x2, int y2)
+{
+  _dbPolygon* pbox_ = (_dbPolygon*) pbox;
+  _dbMaster* master = (_dbMaster*) pbox_->getOwner();
+  _dbBox* box = master->_box_tbl->create();
+  box->_flags._octilinear = false;
+  box->_flags._layer_id = pbox_->flags_.layer_id_;
+  box->_flags._owner_type = dbBoxOwner::PBOX;
+  box->_owner = pbox_->getOID();
+  box->_shape._rect.init(x1, y1, x2, y2);
+
+  // link box to pin
+  box->_next_box = pbox_->boxes_;
+  pbox_->boxes_ = box->getOID();
+  return (dbBox*) box;
+}
+
 dbBox* dbBox::create(dbMPin* pin_,
                      dbTechLayer* layer_,
                      int x1,
@@ -1118,6 +1021,12 @@ void dbBox::setVisited(bool value)
 {
   _dbBox* box = (_dbBox*) this;
   box->_flags._visited = (value == true) ? 1 : 0;
+}
+
+void _dbBox::collectMemInfo(MemInfo& info)
+{
+  info.cnt++;
+  info.size += sizeof(*this);
 }
 
 }  // namespace odb

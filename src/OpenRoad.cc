@@ -1,43 +1,15 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2019, The Regents of the University of California
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "ord/OpenRoad.hh"
 
+#include <boost/iostreams/filter/gzip.hpp>
+#include <boost/iostreams/filtering_streambuf.hpp>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <thread>
+#include <vector>
 
 #include "ord/Version.hh"
 #ifdef ENABLE_PYTHON3
@@ -53,15 +25,16 @@
 #include "db_sta/dbSta.hh"
 #include "dft/MakeDft.hh"
 #include "dpl/MakeOpendp.h"
-#include "dpo/MakeOptdp.h"
 #include "dst/MakeDistributed.h"
+#include "exa/MakeExample.h"
 #include "fin/MakeFinale.h"
 #include "gpl/MakeReplace.h"
+#include "grt/GlobalRouter.h"
 #include "grt/MakeGlobalRouter.h"
 #include "gui/MakeGui.h"
-#include "ifp//MakeInitFloorplan.hh"
+#include "ifp/MakeInitFloorplan.hh"
 #include "mpl/MakeMacroPlacer.h"
-#include "mpl2/MakeMacroPlacer.h"
+#include "odb/MakeOdb.h"
 #include "odb/cdl.h"
 #include "odb/db.h"
 #include "odb/defin.h"
@@ -77,30 +50,26 @@
 #include "rcx/MakeOpenRCX.h"
 #include "rmp/MakeRestructure.h"
 #include "rsz/MakeResizer.hh"
-#include "sta/StaMain.hh"
+#include "sta/VerilogReader.hh"
 #include "sta/VerilogWriter.hh"
 #include "stt/MakeSteinerTreeBuilder.h"
 #include "tap/MakeTapcell.h"
 #include "triton_route/MakeTritonRoute.h"
+#include "upf/MakeUpf.h"
 #include "utl/Logger.h"
 #include "utl/MakeLogger.h"
+#include "utl/Progress.h"
 #include "utl/ScopedTemporaryFile.h"
+#include "utl/decode.h"
 
-namespace sta {
-extern const char* openroad_swig_tcl_inits[];
-extern const char* upf_tcl_inits[];
-}  // namespace sta
+namespace ord {
+extern const char* ord_tcl_inits[];
+}  // namespace ord
 
 // Swig uses C linkage for init functions.
 extern "C" {
-extern int Openroad_swig_Init(Tcl_Interp* interp);
-extern int Odbtcl_Init(Tcl_Interp* interp);
-extern int Upf_Init(Tcl_Interp* interp);
+extern int Ord_Init(Tcl_Interp* interp);
 }
-
-// Main.cc set by main()
-extern const char* log_filename;
-extern const char* metrics_filename;
 
 namespace ord {
 
@@ -109,11 +78,10 @@ using odb::dbChip;
 using odb::dbDatabase;
 using odb::dbLib;
 using odb::dbTech;
-using odb::Rect;
-
-using sta::evalTclInit;
 
 using utl::ORD;
+
+OpenRoad* OpenRoad::app_ = nullptr;
 
 OpenRoad::OpenRoad()
 {
@@ -129,16 +97,16 @@ OpenRoad::~OpenRoad()
   deleteIoplacer(ioPlacer_);
   deleteResizer(resizer_);
   deleteOpendp(opendp_);
-  deleteOptdp(optdp_);
   deleteGlobalRouter(global_router_);
   deleteRestructure(restructure_);
   deleteTritonCts(tritonCts_);
   deleteTapcell(tapcell_);
   deleteMacroPlacer(macro_placer_);
-  deleteMacroPlacer2(macro_placer2_);
+  deleteExample(example_);
   deleteOpenRCX(extractor_);
   deleteTritonRoute(detailed_router_);
   deleteReplace(replace_);
+  deletePDNSim(pdnsim_);
   deleteFinale(finale_);
   deleteAntennaChecker(antenna_checker_);
   odb::dbDatabase::destroy(db_);
@@ -149,6 +117,7 @@ OpenRoad::~OpenRoad()
   deleteSteinerTreeBuilder(stt_builder_);
   dft::deleteDft(dft_);
   delete logger_;
+  delete verilog_reader_;
 }
 
 sta::dbNetwork* OpenRoad::getDbNetwork()
@@ -159,85 +128,131 @@ sta::dbNetwork* OpenRoad::getDbNetwork()
 /* static */
 OpenRoad* OpenRoad::openRoad()
 {
-  // This will be destroyed at application exit
-  static OpenRoad o;
-  return &o;
+  return app_;
+}
+
+/* static */
+void OpenRoad::setOpenRoad(OpenRoad* app, bool reinit_ok)
+{
+  if (!reinit_ok && app_) {
+    std::cerr << "Attempt to reinitialize the application." << std::endl;
+    exit(1);
+  }
+  app_ = app;
 }
 
 ////////////////////////////////////////////////////////////////
 
-void initOpenRoad(Tcl_Interp* interp)
+void initOpenRoad(Tcl_Interp* interp,
+                  const char* log_filename,
+                  const char* metrics_filename,
+                  const bool batch_mode)
 {
-  OpenRoad::openRoad()->init(interp);
+  OpenRoad::openRoad()->init(
+      interp, log_filename, metrics_filename, batch_mode);
 }
 
-void OpenRoad::init(Tcl_Interp* tcl_interp)
+void OpenRoad::init(Tcl_Interp* tcl_interp,
+                    const char* log_filename,
+                    const char* metrics_filename,
+                    const bool batch_mode)
 {
   tcl_interp_ = tcl_interp;
 
   // Make components.
-  logger_ = makeLogger(log_filename, metrics_filename);
+  utl::Progress::setBatchMode(batch_mode);
+  logger_ = utl::makeLogger(log_filename, metrics_filename);
   db_->setLogger(logger_);
-  sta_ = makeDbSta();
+  sta_ = sta::makeDbSta();
   verilog_network_ = makeDbVerilogNetwork();
-  ioPlacer_ = makeIoplacer();
-  resizer_ = makeResizer();
-  opendp_ = makeOpendp();
-  optdp_ = makeOptdp();
-  finale_ = makeFinale();
-  global_router_ = makeGlobalRouter();
-  restructure_ = makeRestructure();
-  tritonCts_ = makeTritonCts();
-  tapcell_ = makeTapcell();
-  macro_placer_ = makeMacroPlacer();
-  macro_placer2_ = makeMacroPlacer2();
-  extractor_ = makeOpenRCX();
-  detailed_router_ = makeTritonRoute();
-  replace_ = makeReplace();
-  pdnsim_ = makePDNSim();
-  antenna_checker_ = makeAntennaChecker();
-  partitionMgr_ = makePartitionMgr();
-  pdngen_ = makePdnGen();
-  icewall_ = makeICeWall();
-  distributer_ = makeDistributed();
-  stt_builder_ = makeSteinerTreeBuilder();
+  ioPlacer_ = ppl::makeIoplacer();
+  resizer_ = rsz::makeResizer();
+  opendp_ = dpl::makeOpendp();
+  finale_ = fin::makeFinale();
+  global_router_ = grt::makeGlobalRouter();
+  restructure_ = rmp::makeRestructure();
+  tritonCts_ = cts::makeTritonCts();
+  tapcell_ = tap::makeTapcell();
+  macro_placer_ = mpl::makeMacroPlacer();
+  example_ = exa::makeExample();
+  extractor_ = rcx::makeOpenRCX();
+  detailed_router_ = drt::makeTritonRoute();
+  replace_ = gpl::makeReplace();
+  pdnsim_ = psm::makePDNSim();
+  antenna_checker_ = ant::makeAntennaChecker();
+  partitionMgr_ = par::makePartitionMgr();
+  pdngen_ = pdn::makePdnGen();
+  icewall_ = pad::makeICeWall();
+  distributer_ = dst::makeDistributed();
+  stt_builder_ = stt::makeSteinerTreeBuilder();
   dft_ = dft::makeDft();
 
   // Init components.
-  Openroad_swig_Init(tcl_interp);
+  Ord_Init(tcl_interp);
   // Import TCL scripts.
-  evalTclInit(tcl_interp, sta::openroad_swig_tcl_inits);
+  utl::evalTclInit(tcl_interp, ord::ord_tcl_inits);
 
   initLogger(logger_, tcl_interp);
-  initGui(this);  // first so we can register our sink with the logger
-  Odbtcl_Init(tcl_interp);
-  Upf_Init(tcl_interp);
-  evalTclInit(tcl_interp, sta::upf_tcl_inits);
-  initInitFloorplan(this);
-  initDbSta(this);
-  initResizer(this);
-  initDbVerilogNetwork(this);
-  initIoplacer(this);
-  initReplace(this);
-  initOpendp(this);
-  initOptdp(this);
-  initFinale(this);
-  initGlobalRouter(this);
-  initTritonCts(this);
-  initTapcell(this);
-  initMacroPlacer(this);
-  initMacroPlacer2(this);
-  initOpenRCX(this);
-  initICeWall(this);
-  initRestructure(this);
-  initTritonRoute(this);
-  initPDNSim(this);
-  initAntennaChecker(this);
-  initPartitionMgr(this);
-  initPdnGen(this);
-  initDistributed(this);
-  initSteinerTreeBuilder(this);
-  dft::initDft(this);
+  // GUI first so we can register our sink with the logger
+  gui::initGui(tcl_interp, db_, sta_, logger_);
+  odb::initOdb(tcl_interp);
+  upf::initUpf(tcl_interp);
+  ifp::initInitFloorplan(tcl_interp);
+  initDbSta(sta_, logger_, tcl_interp, db_);
+  initResizer(resizer_,
+              tcl_interp,
+              logger_,
+              db_,
+              sta_,
+              stt_builder_,
+              global_router_,
+              opendp_);
+  initDbVerilogNetwork(verilog_network_, sta_);
+  initIoplacer(ioPlacer_, db_, logger_, tcl_interp);
+  initReplace(
+      replace_, db_, sta_, resizer_, global_router_, logger_, tcl_interp);
+  initOpendp(opendp_, db_, logger_, tcl_interp);
+  initFinale(finale_, db_, logger_, tcl_interp);
+  initGlobalRouter(global_router_,
+                   db_,
+                   sta_,
+                   resizer_,
+                   antenna_checker_,
+                   opendp_,
+                   stt_builder_,
+                   logger_,
+                   tcl_interp);
+  initTritonCts(tritonCts_,
+                db_,
+                getDbNetwork(),
+                sta_,
+                stt_builder_,
+                resizer_,
+                logger_,
+                tcl_interp);
+  initTapcell(tapcell_, db_, logger_, tcl_interp);
+  initMacroPlacer(macro_placer_,
+                  getDbNetwork(),
+                  db_,
+                  sta_,
+                  logger_,
+                  partitionMgr_,
+                  tcl_interp);
+  initExample(example_, db_, logger_, tcl_interp);
+  initOpenRCX(extractor_, db_, logger_, getVersion(), tcl_interp);
+  initICeWall(icewall_, db_, logger_, tcl_interp);
+  initRestructure(restructure_, logger_, sta_, db_, resizer_, tcl_interp);
+  initTritonRoute(
+      detailed_router_, db_, logger_, distributer_, stt_builder_, tcl_interp);
+  initPDNSim(pdnsim_, logger_, db_, sta_, resizer_, opendp_, tcl_interp);
+  initAntennaChecker(
+      antenna_checker_, db_, global_router_, logger_, tcl_interp);
+  initPartitionMgr(
+      partitionMgr_, db_, getDbNetwork(), sta_, logger_, tcl_interp);
+  initPdnGen(pdngen_, db_, logger_, tcl_interp);
+  initDistributed(distributer_, logger_, tcl_interp);
+  initSteinerTreeBuilder(stt_builder_, db_, logger_, tcl_interp);
+  dft::initDft(dft_, db_, sta_, logger_, tcl_interp);
 
   // Import exported commands to global namespace.
   Tcl_Eval(tcl_interp, "sta::define_sta_cmds");
@@ -261,14 +276,12 @@ void OpenRoad::readLef(const char* filename,
                        bool make_library)
 {
   odb::lefin lef_reader(db_, logger_, false);
-  dbLib* lib = nullptr;
-  dbTech* tech = nullptr;
   if (make_tech && make_library) {
-    lib = lef_reader.createTechAndLib(tech_name, lib_name, filename);
-    tech = db_->findTech(tech_name);
+    lef_reader.createTechAndLib(tech_name, lib_name, filename);
   } else if (make_tech) {
-    tech = lef_reader.createTech(tech_name, filename);
+    lef_reader.createTech(tech_name, filename);
   } else if (make_library) {
+    dbTech* tech;
     if (tech_name[0] != '\0') {
       tech = db_->findTech(tech_name);
     } else {
@@ -277,14 +290,7 @@ void OpenRoad::readLef(const char* filename,
     if (!tech) {
       logger_->error(ORD, 51, "Technology {} not found", tech_name);
     }
-    lib = lef_reader.createLib(tech, lib_name, filename);
-  }
-
-  // both are null on parser failure
-  if (lib != nullptr || tech != nullptr) {
-    for (OpenRoadObserver* observer : observers_) {
-      observer->postReadLef(tech, lib);
-    }
+    lef_reader.createLib(tech, lib_name, filename);
   }
 }
 
@@ -314,20 +320,11 @@ void OpenRoad::readDef(const char* filename,
   if (continue_on_errors) {
     def_reader.continueOnErrors();
   }
-  dbBlock* block = nullptr;
   if (child) {
     auto parent = db_->getChip()->getBlock();
-    block = def_reader.createBlock(parent, search_libs, filename, tech);
+    def_reader.createBlock(parent, search_libs, filename, tech);
   } else {
-    dbChip* chip = def_reader.createChip(search_libs, filename, tech);
-    if (chip) {
-      block = chip->getBlock();
-    }
-  }
-  if (block) {
-    for (OpenRoadObserver* observer : observers_) {
-      observer->postReadDef(block);
-    }
+    def_reader.createChip(search_libs, filename, tech);
   }
 }
 
@@ -360,9 +357,18 @@ void OpenRoad::writeDef(const char* filename, const string& version)
   if (chip) {
     odb::dbBlock* block = chip->getBlock();
     if (block) {
+      sta::dbSta* sta = getSta();
+      // def names are flat hierachical
+      bool hierarchy_set = sta->getDbNetwork()->hasHierarchy();
+      if (hierarchy_set) {
+        sta->getDbNetwork()->disableHierarchy();
+      }
       odb::defout def_writer(logger_);
       def_writer.setVersion(stringToDefVersion(version));
       def_writer.writeBlock(block, filename);
+      if (hierarchy_set) {
+        sta->getDbNetwork()->setHierarchy();
+      }
     }
   }
 }
@@ -388,6 +394,11 @@ void OpenRoad::writeAbstractLef(const char* filename,
 
 void OpenRoad::writeLef(const char* filename)
 {
+  sta::dbSta* sta = getSta();
+  bool hierarchy_set = sta->getDbNetwork()->hasHierarchy();
+  if (hierarchy_set) {
+    sta->getDbNetwork()->disableHierarchy();
+  }
   auto libs = db_->getLibs();
   int num_libs = libs.size();
   if (num_libs > 0) {
@@ -395,7 +406,6 @@ void OpenRoad::writeLef(const char* filename)
       logger_->info(
           ORD, 34, "More than one lib exists, multiple files will be written.");
     }
-
     int cnt = 0;
     for (auto lib : libs) {
       std::string name(filename);
@@ -406,7 +416,7 @@ void OpenRoad::writeLef(const char* filename)
         } else {
           name += "_" + std::to_string(cnt);
         }
-        utl::StreamHandler stream_handler(filename);
+        utl::StreamHandler stream_handler(name.c_str());
         odb::lefout lef_writer(logger_, stream_handler.getStream());
         lef_writer.writeLib(lib);
       } else {
@@ -420,6 +430,9 @@ void OpenRoad::writeLef(const char* filename)
     utl::StreamHandler stream_handler(filename);
     odb::lefout lef_writer(logger_, stream_handler.getStream());
     lef_writer.writeTech(db_->getTech());
+  }
+  if (hierarchy_set) {
+    sta->getDbNetwork()->setHierarchy();
   }
 }
 
@@ -437,90 +450,109 @@ void OpenRoad::writeCdl(const char* outFilename,
   }
 }
 
-void OpenRoad::readDb(const char* filename)
+void OpenRoad::readDb(const char* filename, bool hierarchy)
+{
+  std::ifstream stream;
+  stream.open(filename, std::ios::binary);
+
+  try {
+    const std::string name(filename);
+    if (name.length() >= 3 && name.compare(name.length() - 3, 3, ".gz") == 0) {
+      boost::iostreams::filtering_streambuf<boost::iostreams::input> inbuf;
+      inbuf.push(boost::iostreams::gzip_decompressor());
+      inbuf.push(stream);
+      std::istream zstd_uncompressed(&inbuf);
+
+      readDb(zstd_uncompressed);
+    } else {
+      readDb(stream);
+    }
+  } catch (const std::ios_base::failure& f) {
+    logger_->error(ORD, 54, "odb file {} is invalid: {}", filename, f.what());
+  }
+  // treat this as a hierarchical network.
+  if (hierarchy) {
+    sta::dbSta* sta = getSta();
+    // After streaming in the last thing we do is build the hashes
+    // we cannot rely on orders to do this during stream in
+    sta->getDbNetwork()->setHierarchy();
+  }
+}
+
+void OpenRoad::readDb(std::istream& stream)
 {
   if (db_->getChip() && db_->getChip()->getBlock()) {
     logger_->error(
         ORD, 47, "You can't load a new db file as the db is already populated");
   }
 
-  std::ifstream stream;
   stream.exceptions(std::ifstream::failbit | std::ifstream::badbit
                     | std::ios::eofbit);
-  stream.open(filename, std::ios::binary);
 
-  try {
-    db_->read(stream);
-  } catch (const std::ios_base::failure& f) {
-    logger_->error(ORD, 54, "odb file {} is invalid: {}", filename, f.what());
-  }
+  db_->read(stream);
+}
 
-  for (OpenRoadObserver* observer : observers_) {
-    observer->postReadDb(db_);
-  }
+void OpenRoad::writeDb(std::ostream& stream)
+{
+  stream.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+  db_->write(stream);
 }
 
 void OpenRoad::writeDb(const char* filename)
 {
   utl::StreamHandler stream_handler(filename, true);
 
-  db_->write(stream_handler.getStream());
-}
+  const std::string name(filename);
+  if (name.length() >= 3 && name.compare(name.length() - 3, 3, ".gz") == 0) {
+    boost::iostreams::filtering_streambuf<boost::iostreams::output> outbuf;
+    outbuf.push(boost::iostreams::gzip_compressor());
+    outbuf.push(stream_handler.getStream());
+    std::ostream zstd_compressed(&outbuf);
 
-void OpenRoad::diffDbs(const char* filename1,
-                       const char* filename2,
-                       const char* diffs)
-{
-  std::ifstream stream1;
-  stream1.exceptions(std::ifstream::failbit | std::ifstream::badbit
-                     | std::ios::eofbit);
-  stream1.open(filename1, std::ios::binary);
-
-  std::ifstream stream2;
-  stream2.exceptions(std::ifstream::failbit | std::ifstream::badbit
-                     | std::ios::eofbit);
-  stream2.open(filename2, std::ios::binary);
-
-  FILE* out = fopen(diffs, "w");
-  if (out == nullptr) {
-    logger_->error(ORD, 105, "Can't open {}", diffs);
+    writeDb(zstd_compressed);
+  } else {
+    writeDb(stream_handler.getStream());
   }
-
-  auto db1 = odb::dbDatabase::create();
-  auto db2 = odb::dbDatabase::create();
-
-  db1->read(stream1);
-  db2->read(stream2);
-
-  odb::dbDatabase::diff(db1, db2, out, 2);
-
-  fclose(out);
 }
 
 void OpenRoad::readVerilog(const char* filename)
 {
   verilog_network_->deleteTopInstance();
-  dbReadVerilog(filename, verilog_network_);
+
+  if (verilog_reader_ == nullptr) {
+    verilog_reader_ = new sta::VerilogReader(verilog_network_);
+  }
+  setDbNetworkLinkFunc(getVerilogNetwork(), verilog_reader_);
+  verilog_reader_->read(filename);
 }
 
-void OpenRoad::linkDesign(const char* design_name, bool hierarchy)
+void OpenRoad::linkDesign(const char* design_name,
+                          bool hierarchy,
+                          bool omit_filename_prop)
 
 {
-  dbLinkDesign(design_name, verilog_network_, db_, logger_, hierarchy);
+  bool success = dbLinkDesign(design_name,
+                              verilog_network_,
+                              db_,
+                              logger_,
+                              hierarchy,
+                              omit_filename_prop);
+
+  if (success) {
+    delete verilog_reader_;
+    verilog_reader_ = nullptr;
+  }
+
   if (hierarchy) {
     sta::dbSta* sta = getSta();
     sta->getDbNetwork()->setHierarchy();
   }
-  for (OpenRoadObserver* observer : observers_) {
-    observer->postReadDb(db_);
-  }
+  db_->triggerPostReadDb();
 }
 
 void OpenRoad::designCreated()
 {
-  for (OpenRoadObserver* observer : observers_) {
-    observer->postReadDb(db_);
-  }
+  db_->triggerPostReadDb();
 }
 
 bool OpenRoad::unitsInitialized()
@@ -532,19 +564,6 @@ bool OpenRoad::unitsInitialized()
 odb::Rect OpenRoad::getCore()
 {
   return db_->getChip()->getBlock()->getCoreArea();
-}
-
-void OpenRoad::addObserver(OpenRoadObserver* observer)
-{
-  observer->set_unregister_observer(
-      [this, observer] { removeObserver(observer); });
-  observers_.insert(observer);
-}
-
-void OpenRoad::removeObserver(OpenRoadObserver* observer)
-{
-  observer->set_unregister_observer(nullptr);
-  observers_.erase(observer);
 }
 
 void OpenRoad::setThreadCount(int threads, bool printInfo)
@@ -595,6 +614,40 @@ int OpenRoad::getThreadCount()
   return threads_;
 }
 
+std::string OpenRoad::getExePath() const
+{
+  // use tcl since it already has a cross platform implementation of this
+  if (Tcl_Eval(tcl_interp_, "file normalize [info nameofexecutable]")
+      == TCL_OK) {
+    std::string path = Tcl_GetStringResult(tcl_interp_);
+    Tcl_ResetResult(tcl_interp_);
+    return path;
+  }
+  return "";
+}
+
+std::string OpenRoad::getDocsPath() const
+{
+  const std::string exe = getExePath();
+
+  if (exe.empty()) {
+    return "";
+  }
+
+  std::filesystem::path path(exe);
+
+  // remove binary name
+  path = path.parent_path();
+
+  if (path.stem() == "src") {
+    // remove build
+    return path.parent_path().parent_path() / "docs";
+  }
+
+  // remove bin
+  return path.parent_path() / "share" / "openroad" / "man";
+}
+
 const char* OpenRoad::getVersion()
 {
   return OPENROAD_VERSION;
@@ -618,11 +671,6 @@ bool OpenRoad::getPythonCompileOption()
 bool OpenRoad::getGUICompileOption()
 {
   return BUILD_GUI;
-}
-
-bool OpenRoad::getChartsCompileOption()
-{
-  return ENABLE_CHARTS;
 }
 
 }  // namespace ord

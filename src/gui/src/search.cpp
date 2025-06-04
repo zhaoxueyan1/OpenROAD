@@ -1,39 +1,11 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2020-2025, The OpenROAD Authors
 
 #include "search.h"
 
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "odb/dbShape.h"
 
@@ -126,6 +98,11 @@ void Search::inDbSWireRemoveSBox(odb::dbSBox* box)
 }
 
 void Search::inDbBlockageCreate(odb::dbBlockage* blockage)
+{
+  clearBlockages();
+}
+
+void Search::inDbBlockageDestroy(odb::dbBlockage* blockage)
 {
   clearBlockages();
 }
@@ -361,6 +338,9 @@ void Search::updateBlockages(odb::dbBlock* block)
 
   std::vector<odb::dbBlockage*> blockages;
   for (odb::dbBlockage* blockage : block->getBlockages()) {
+    if (blockage->isSystemReserved()) {
+      continue;
+    }
     blockages.push_back(blockage);
   }
   data.blockages_
@@ -381,6 +361,9 @@ void Search::updateObstructions(odb::dbBlock* block)
 
   LayerMap<std::vector<odb::dbObstruction*>> obstructions;
   for (odb::dbObstruction* obs : block->getObstructions()) {
+    if (obs->isSystemReserved()) {
+      continue;
+    }
     odb::dbBox* bbox = obs->getBBox();
     obstructions[bbox->getTechLayer()].push_back(obs);
   }
@@ -452,18 +435,11 @@ void Search::addSNet(
         }
         via_shapes[layer].emplace_back(box, net);
       } else {
-        std::vector<odb::Point> points;
         if (box->getDirection() == odb::dbSBox::OCTILINEAR) {
-          points = box->getOct().getPoints();
+          net_shapes[box->getTechLayer()].emplace_back(box, box->getOct(), net);
         } else {
-          const odb::Rect rect = box->getBox();
-          points = rect.getPoints();
+          net_shapes[box->getTechLayer()].emplace_back(box, box->getBox(), net);
         }
-        Polygon poly;
-        for (const auto& point : points) {
-          bg::append(poly.outer(), point);
-        }
-        net_shapes[box->getTechLayer()].emplace_back(box, poly, net);
       }
     }
   }
@@ -532,6 +508,32 @@ class Search::MinSizePredicate
 
  private:
   int min_size_;
+};
+
+template <typename T>
+class Search::PolygonIntersectPredicate
+{
+ public:
+  PolygonIntersectPredicate(const odb::Rect& region) : region_(region) {}
+  bool operator()(const SNetValue<T>& o) const
+  {
+    return checkPolygon(std::get<1>(o));
+  }
+
+  bool operator()(const RectValue<T>& o) const { return checkPolygon(o.first); }
+
+  bool operator()(const RouteBoxValue<T>& o) const
+  {
+    return checkPolygon(std::get<0>(o));
+  }
+
+  bool checkPolygon(const odb::Polygon& poly) const
+  {
+    return boost::geometry::intersects(region_, poly);
+  }
+
+ private:
+  odb::Rect region_;
 };
 
 template <typename T>
@@ -656,11 +658,16 @@ Search::SNetShapeRange Search::searchSNetShapes(odb::dbBlock* block,
     return SNetShapeRange(
         rtree.qbegin(
             bgi::intersects(query)
-            && bgi::satisfies(MinSizePredicate<odb::dbNet*>(min_size))),
+            && bgi::satisfies(MinSizePredicate<odb::dbNet*>(min_size))
+            && bgi::satisfies(PolygonIntersectPredicate<odb::dbNet*>(query))),
         rtree.qend());
   }
 
-  return SNetShapeRange(rtree.qbegin(bgi::intersects(query)), rtree.qend());
+  return SNetShapeRange(
+      rtree.qbegin(
+          bgi::intersects(query)
+          && bgi::satisfies(PolygonIntersectPredicate<odb::dbNet*>(query))),
+      rtree.qend());
 }
 
 Search::FillRange Search::searchFills(odb::dbBlock* block,

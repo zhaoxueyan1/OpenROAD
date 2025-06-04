@@ -1,13 +1,14 @@
-// Copyright 2024 Google LLC
-//
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file or at
-// https://developers.google.com/open-source/licenses/bsd
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2024-2025, The OpenROAD Authors
 
 #include "abc_library_factory.h"
 
 #include <cmath>
+#include <cstddef>
+#include <optional>
+#include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "db_sta/dbNetwork.hh"
@@ -19,7 +20,10 @@
 #include "misc/util/utilNam.h"
 #include "map/scl/sclCon.h"
 // clang-format on
+#include "map/scl/sclLib.h"
+#include "sta/Corner.hh"
 #include "sta/FuncExpr.hh"
+#include "sta/LeakagePower.hh"
 #include "sta/Liberty.hh"
 #include "sta/PortDirection.hh"
 #include "sta/Sta.hh"
@@ -78,7 +82,8 @@ static bool isCompatibleWithAbc(sta::LibertyCell* cell)
     return false;
   }
 
-  if (CountOutputPins(cell) != 1) {
+  // ABC requires at least one output pin.
+  if (CountOutputPins(cell) == 0) {
     return false;
   }
 
@@ -208,7 +213,7 @@ std::vector<abc::SC_Pin*> AbcLibraryFactory::CreateAbcOutputPins(
       output_pin->max_out_slew = time_unit->staToUser(max_output_slew);
     }
 
-    output_pin->func_text = strdup(cell_port->function()->asString());
+    output_pin->func_text = strdup(cell_port->function()->to_string().c_str());
 
     // Get list of input ports
     abc::Vec_Ptr_t* input_names_abc = abc::Vec_PtrAlloc(input_names.size());
@@ -233,6 +238,13 @@ std::vector<abc::SC_Pin*> AbcLibraryFactory::CreateAbcOutputPins(
     std::unordered_set<std::string> pins;
     for (sta::TimingArcSet* arc_set :
          cell_port->libertyCell()->timingArcSets(nullptr, cell_port)) {
+      // If the from pin is an output it means that this is
+      // an output to output timing arc, and not something we
+      // care about or can represent in ABC. Skip it.
+      if (arc_set->from()->direction()->isOutput()) {
+        continue;
+      }
+
       std::string arc_pin_name = arc_set->from()->name();
       if (pins.find(arc_pin_name) != pins.end()) {
         continue;
@@ -300,32 +312,72 @@ AbcLibraryFactory& AbcLibraryFactory::AddDbSta(sta::dbSta* db_sta)
   return *this;
 }
 
-utl::deleted_unique_ptr<abc::SC_Lib> AbcLibraryFactory::Build()
+AbcLibraryFactory& AbcLibraryFactory::SetCorner(sta::Corner* corner)
+{
+  corner_ = corner;
+  return *this;
+}
+
+AbcLibrary AbcLibraryFactory::Build()
 {
   if (!db_sta_) {
     logger_->error(utl::RMP, 15, "Build called with null sta library");
   }
 
-  abc::SC_Lib* abc_library = abc::Abc_SclLibAlloc();
-  std::unique_ptr<sta::LibertyLibraryIterator> library_iter(
-      db_sta_->network()->libertyLibraryIterator());
-  while (library_iter->hasNext()) {
-    sta::LibertyLibrary* library = library_iter->next();
-    PopulateAbcSclLibFromSta(abc_library, library);
+  if (db_sta_->corners()->count() > 1 && !corner_) {
+    logger_->error(utl::RMP,
+                   1031,
+                   "More than one corner is loaded, and no corner was set");
   }
-  abc::Abc_SclLibNormalize(abc_library);
 
-  return utl::deleted_unique_ptr<abc::SC_Lib>(
-      abc_library, [](abc::SC_Lib* lib) { abc::Abc_SclLibFree(lib); });
+  if (!corner_) {
+    corner_ = db_sta_->corners()->corners()[0];
+  }
+
+  // Populate units from default liberty
+  abc::SC_Lib* abc_library = abc::Abc_SclLibAlloc();
+  sta::LibertyLibrary* default_library
+      = db_sta_->network()->defaultLibertyLibrary();
+  PopulateLibraryDetails(abc_library, default_library);
+
+  // Grab cells from requested corner.
+  std::vector<sta::LibertyCell*> liberty_cells
+      = GetLibertyCellsFromCorner(corner_);
+
+  PopulateAbcSclLibFromSta(
+      abc_library, liberty_cells, default_library->units());
+
+  abc::Abc_SclLibNormalize(abc_library);
+  abc::Abc_SclHashCells(abc_library);
+  abc::Abc_SclLinkCells(abc_library);
+
+  return AbcLibrary(utl::UniquePtrWithDeleter<abc::SC_Lib>(
+      abc_library, [](abc::SC_Lib* lib) { abc::Abc_SclLibFree(lib); }));
 }
 
-void AbcLibraryFactory::PopulateAbcSclLibFromSta(abc::SC_Lib* sc_library,
-                                                 sta::LibertyLibrary* library)
+std::vector<sta::LibertyCell*> AbcLibraryFactory::GetLibertyCellsFromCorner(
+    sta::Corner* corner)
+{
+  std::vector<sta::LibertyCell*> result;
+  const sta::LibertySeq& libraries
+      = corner->libertyLibraries(sta::MinMax::max());
+  for (sta::LibertyLibrary* library : libraries) {
+    sta::LibertyCellIterator cell_iterator(library);
+    while (cell_iterator.hasNext()) {
+      sta::LibertyCell* liberty_cell = cell_iterator.next();
+      result.push_back(liberty_cell);
+    }
+  }
+
+  return result;
+}
+
+void AbcLibraryFactory::PopulateLibraryDetails(abc::SC_Lib* sc_library,
+                                               sta::LibertyLibrary* library)
 {
   sta::Units* units = library->units();
   sta::Unit* time_unit = units->timeUnit();
   sta::Unit* cap_unit = units->capacitanceUnit();
-  sta::Unit* power_unit = units->powerUnit();
 
   if (!sc_library->pName) {
     sc_library->pName = strdup(library->name());
@@ -356,13 +408,16 @@ void AbcLibraryFactory::PopulateAbcSclLibFromSta(abc::SC_Lib* sc_library,
   } else {
     sc_library->default_max_out_slew = -1.0;
   }
+}
 
+void AbcLibraryFactory::PopulateAbcSclLibFromSta(
+    abc::SC_Lib* sc_library,
+    std::vector<sta::LibertyCell*>& cells,
+    sta::Units* units)
+{
   // Loop through all of the cells in STA and create equivalents in
   // the ABC structure.
-  sta::LibertyCellIterator cell_iterator(library);
-  while (cell_iterator.hasNext()) {
-    sta::LibertyCell* cell = cell_iterator.next();
-
+  for (sta::LibertyCell* cell : cells) {
     if (!isCompatibleWithAbc(cell)) {
       continue;
     }
@@ -375,11 +430,29 @@ void AbcLibraryFactory::PopulateAbcSclLibFromSta(abc::SC_Lib* sc_library,
     abc_cell->area = cell->area();
     abc_cell->drive_strength = 0;
 
+    // These are conditional leakages. Just average them
+    // since abc can only accept a single value.
+    sta::LeakagePowerSeq* leakage_powers = cell->leakagePowers();
+    std::optional<float> average_leakage;
+    for (sta::LeakagePower* power : *leakage_powers) {
+      if (!average_leakage) {
+        average_leakage = power->power();
+        continue;
+      }
+      average_leakage = average_leakage.value() + power->power();
+    }
+
     bool leakage_power_exists;
     float leakage_power = 0;
     cell->leakagePower(leakage_power, leakage_power_exists);
+    sta::Unit* power_unit = units->powerUnit();
     if (leakage_power_exists) {
       abc_cell->leakage = power_unit->staToUser(leakage_power);
+    } else if (average_leakage) {
+      // We know we'll always have at least one leakage power since average
+      // is present.
+      abc_cell->leakage = power_unit->staToUser(average_leakage.value()
+                                                / leakage_powers->size());
     } else {
       logger_->warn(utl::RMP,
                     22,
@@ -450,6 +523,137 @@ int AbcLibraryFactory::ScaleAbbreviationToExponent(
 
   logger_->error(
       utl::RMP, 13, "Can't convert scale abbreviation {}", scale_abbreviation);
+}
+
+bool AbcLibrary::IsSupportedCell(const std::string& cell_name)
+{
+  if (supported_cells_.empty()) {
+    int num_gates = abc::SC_LibCellNum(abc_library_.get());
+    for (int i = 0; i < num_gates; i++) {
+      abc::SC_Cell* cell = abc::SC_LibCell(abc_library_.get(), i);
+      if (cell->n_outputs != 1) {
+        continue;
+      }
+      supported_cells_.insert(cell->pName);
+    }
+  }
+  return supported_cells_.find(cell_name) != supported_cells_.end();
+}
+
+void AbcLibrary::InitializeConstGates()
+{
+  const_gates_initalized_ = true;
+  for (int i = 0; i < abc::SC_LibCellNum(abc_library_.get()); i++) {
+    abc::SC_Cell* current_cell = abc::SC_LibCell(abc_library_.get(), i);
+    if (current_cell->n_inputs != 0) {
+      continue;
+    }
+    for (int i = current_cell->n_inputs;
+         i < current_cell->n_inputs + current_cell->n_outputs;
+         i++) {
+      abc::SC_Pin* pin = abc::SC_CellPin(current_cell, 0);
+      // In ABC land we store the right hand side of the truth
+      // table in a bit vector sort of thing. Since the const
+      // cell has less than 6 inputs its truth table should be
+      // in entry zero.
+      abc::word constant_0 = 0;
+      abc::word constant_1 = ~constant_0;
+      abc::word truth_table = abc::Vec_WrdEntry(&pin->vFunc, 0);
+      if (truth_table == constant_0) {
+        const0_gates_.insert(current_cell->pName);
+      }
+
+      if (truth_table == constant_1) {
+        const1_gates_.insert(current_cell->pName);
+      }
+    }
+  }
+}
+
+// Find cell matching truth table for constant cells either 0 or 1
+// where 1 is represented as all 1s in binary.
+std::pair<abc::SC_Cell*, abc::SC_Pin*> FindConstantCell(abc::SC_Lib* library,
+                                                        abc::word constant)
+{
+  std::pair<abc::SC_Cell*, abc::SC_Pin*> result = {nullptr, nullptr};
+  std::optional<float> min_area;
+  for (int i = 0; i < abc::SC_LibCellNum(library); i++) {
+    abc::SC_Cell* current_cell = abc::SC_LibCell(library, i);
+    if (current_cell->n_inputs != 0) {
+      continue;
+    }
+
+    for (int i = current_cell->n_inputs;
+         i < current_cell->n_inputs + current_cell->n_outputs;
+         i++) {
+      abc::SC_Pin* pin = abc::SC_CellPin(current_cell, i);
+      // In ABC land we store the right hand side of the truth
+      // table in a bit vector sort of thing. Since the const
+      // cell has less than 6 inputs its truth table should be
+      // in entry zero.
+      abc::word truth_table = abc::Vec_WrdEntry(&pin->vFunc, 0);
+
+      // If the truth table matches the constant value then this is
+      // the cell we are looking for. Try to choose the cell with the
+      // smallest area.
+      if (truth_table == constant) {
+        if (min_area.has_value()) {
+          if (current_cell->area < min_area.value()) {
+            result.first = current_cell;
+            result.second = pin;
+            min_area = current_cell->area;
+          }
+        } else {
+          result.first = current_cell;
+          result.second = pin;
+          min_area = current_cell->area;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+std::pair<abc::SC_Cell*, abc::SC_Pin*> AbcLibrary::ConstantZeroCell()
+{
+  if (const0_cell_) {
+    return const0_cell_.value();
+  }
+  abc::word constant_0 = 0;
+  const0_cell_ = FindConstantCell(abc_library_.get(), constant_0);
+  return const0_cell_.value();
+}
+
+std::pair<abc::SC_Cell*, abc::SC_Pin*> AbcLibrary::ConstantOneCell()
+{
+  if (const1_cell_) {
+    return const1_cell_.value();
+  }
+  abc::word constant_0 = 0;
+  abc::word constant_1 = ~constant_0;
+  const1_cell_ = FindConstantCell(abc_library_.get(), constant_1);
+  return const1_cell_.value();
+}
+
+bool AbcLibrary::IsConst0Cell(const std::string& cell_name)
+{
+  if (!const_gates_initalized_) {
+    InitializeConstGates();
+  }
+  return const0_gates_.find(cell_name) != const0_gates_.end();
+}
+bool AbcLibrary::IsConst1Cell(const std::string& cell_name)
+{
+  if (!const_gates_initalized_) {
+    InitializeConstGates();
+  }
+  return const1_gates_.find(cell_name) != const1_gates_.end();
+}
+
+bool AbcLibrary::IsConstCell(const std::string& cell_name)
+{
+  return IsConst1Cell(cell_name) || IsConst0Cell(cell_name);
 }
 
 }  // namespace rmp

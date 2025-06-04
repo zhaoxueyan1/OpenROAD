@@ -1,34 +1,5 @@
-////////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2018, Iowa State University All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice,
-// this list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-// this list of conditions and the following disclaimer in the documentation
-// and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its contributors
-// may be used to endorse or promote products derived from this software
-// without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-////////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2018-2025, The OpenROAD Authors
 
 #pragma once
 
@@ -55,7 +26,7 @@ enum class RouteType
   MazeRoute
 };
 
-std::ostream& operator<<(std::ostream& os, RouteType type);
+std::ostream& operator<<(std::ostream& os, const RouteType& type);
 
 enum class Direction
 {
@@ -138,15 +109,15 @@ struct FrNet  // A Net is a set of connected MazePoints
 struct Edge  // An Edge is the routing track holder between two adjacent
              // MazePoints
 {
-  short congCNT;
-  unsigned short cap;    // the capacity of the edge
-  unsigned short usage;  // the usage of the edge
-  unsigned short red;
-  short last_usage;
-  float est_usage;  // the estimated usage of the edge
+  int16_t congCNT;
+  uint16_t cap;    // the capacity of the edge
+  uint16_t usage;  // the usage of the edge
+  uint16_t red;
+  int16_t last_usage;
+  double est_usage;  // the estimated usage of the edge
 
-  unsigned short usage_red() const { return usage + red; }
-  float est_usage_red() const { return est_usage + red; }
+  uint16_t usage_red() const { return usage + red; }
+  double est_usage_red() const { return est_usage + red; }
 };
 
 struct Edge3D
@@ -160,14 +131,15 @@ struct TreeNode
 {
   bool assigned;
 
-  short status;
-  short conCNT;
-  short botL, topL;
+  int16_t status = 0;
+  int16_t conCNT = 0;
+  int16_t botL = -1;
+  int16_t topL = -1;
   // heights and eID arrays size were increased after using PD
   // to create the tree topologies.
   static constexpr int max_connections = 10;
-  short heights[max_connections];
-  int eID[max_connections];
+  int16_t heights[max_connections] = {0};
+  int eID[max_connections] = {0};
 
   int16_t x, y;  // position in the grid graph
   int nbr_count = 0;
@@ -192,10 +164,10 @@ struct Route
 
   // valid for ZRoute:
   // true - the route is HVH shape, false - VHV shape
-  bool HVH;
+  bool HVH = false;
 
   // valid for ZRoute: the position of turn point for Z-shape
-  short Zpoint;
+  int16_t Zpoint = -1;
 
   // valid for MazeRoute: a list of grids (n=routelen+1) the route
   // passes, (x1, y1) is the first one, but (x2, y2) is the lastone
@@ -234,14 +206,14 @@ struct OrderNetPin
 {
   int treeIndex;
   int minX;
-  float npv;  // net length over pin
+  float length_per_pin;  // net length over pin count
 };
 
 struct OrderTree
 {
   int length;
   int treeIndex;
-  int xmin;
+  int16_t xmin;
 };
 
 struct OrderNetEdge

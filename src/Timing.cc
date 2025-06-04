@@ -1,54 +1,27 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2023, The Regents of the University of California
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2023-2025, The OpenROAD Authors
 
 #include "ord/Timing.h"
 
 #include <tcl.h>
 
+#include <algorithm>
+#include <set>
+#include <utility>
+#include <vector>
+
 #include "db_sta/dbNetwork.hh"
 #include "db_sta/dbSta.hh"
 #include "odb/db.h"
-#include "ord/OpenRoad.hh"
-#include "sta/MinMax.hh"
-#include "sta/Search.hh"
-// #include "ord/Tech.h"
 #include "ord/Design.h"
+#include "ord/OpenRoad.hh"
+#include "ord/Tech.h"
 #include "rsz/Resizer.hh"
 #include "sta/Corner.hh"
 #include "sta/Liberty.hh"
+#include "sta/MinMax.hh"
 #include "sta/Property.hh"
+#include "sta/Search.hh"
 #include "sta/TimingArc.hh"
 #include "sta/TimingRole.hh"
 #include "sta/Transition.hh"
@@ -62,19 +35,16 @@ Timing::Timing(Design* design) : design_(design)
 
 sta::dbSta* Timing::getSta()
 {
-  auto app = OpenRoad::openRoad();
-  return app->getSta();
+  return design_->getTech()->getSta();
 }
 
 std::pair<odb::dbITerm*, odb::dbBTerm*> Timing::staToDBPin(const sta::Pin* pin)
 {
-  ord::OpenRoad* openroad = ord::OpenRoad::openRoad();
-  sta::dbNetwork* db_network = openroad->getDbNetwork();
+  sta::dbNetwork* db_network = getSta()->getDbNetwork();
   odb::dbITerm* iterm;
   odb::dbBTerm* bterm;
   odb::dbModITerm* moditerm;
-  odb::dbModBTerm* modbterm;
-  db_network->staToDb(pin, iterm, bterm, moditerm, modbterm);
+  db_network->staToDb(pin, iterm, bterm, moditerm);
   return std::make_pair(iterm, bterm);
 }
 
@@ -103,8 +73,8 @@ bool Timing::isEndpoint(sta::Pin* sta_pin)
 }
 
 float Timing::slewAllCorners(sta::Vertex* vertex,
-                             sta::RiseFall* rf,
-                             sta::MinMax* minmax)
+                             const sta::RiseFall* rf,
+                             const sta::MinMax* minmax)
 {
   auto sta = getSta();
   bool max = (minmax == sta::MinMax::max());
@@ -329,7 +299,7 @@ std::vector<odb::dbMTerm*> Timing::getTimingFanoutFrom(odb::dbMTerm* input)
 
   std::set<odb::dbMTerm*> outputs;
   for (auto arc_set : lib_cell->timingArcSets(lib_port, /* to */ nullptr)) {
-    sta::TimingRole* role = arc_set->role();
+    const sta::TimingRole* role = arc_set->role();
     if (role->isTimingCheck() || role->isAsyncTimingCheck()
         || role->isNonSeqTimingCheck() || role->isDataCheck()) {
       continue;
@@ -343,11 +313,11 @@ std::vector<odb::dbMTerm*> Timing::getTimingFanoutFrom(odb::dbMTerm* input)
   return {outputs.begin(), outputs.end()};
 }
 
-sta::MinMax* Timing::getMinMax(MinMax type)
+const sta::MinMax* Timing::getMinMax(MinMax type)
 {
   return type == Max ? sta::MinMax::max() : sta::MinMax::min();
 }
-sta::RiseFall* Timing::getRiseFall(RiseFall type)
+const sta::RiseFall* Timing::getRiseFall(RiseFall type)
 {
   return type == Rise ? sta::RiseFall::rise() : sta::RiseFall::fall();
 }
@@ -436,8 +406,7 @@ float Timing::dynamicPower(odb::dbInst* inst, sta::Corner* corner)
 
 void Timing::makeEquivCells()
 {
-  auto app = OpenRoad::openRoad();
-  rsz::Resizer* resizer = app->getResizer();
+  rsz::Resizer* resizer = design_->getResizer();
   resizer->makeEquivCells();
 }
 

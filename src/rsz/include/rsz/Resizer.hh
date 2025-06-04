@@ -1,46 +1,18 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2019, The Regents of the University of California
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #pragma once
 
 #include <array>
 #include <optional>
 #include <string>
+#include <vector>
 
+#include "db_sta/dbNetwork.hh"
 #include "db_sta/dbSta.hh"
 #include "dpl/Opendp.h"
+#include "grt/GlobalRouter.h"
+#include "rsz/OdbCallBack.hh"
 #include "sta/Path.hh"
 #include "sta/UnorderedSet.hh"
 #include "utl/Logger.h"
@@ -54,11 +26,11 @@ namespace stt {
 class SteinerTreeBuilder;
 }
 
-namespace rsz {
+namespace sta {
+class SpefWriter;
+}
 
-using std::array;
-using std::string;
-using std::vector;
+namespace rsz {
 
 using utl::Logger;
 
@@ -80,6 +52,7 @@ using sta::ArcDelay;
 using sta::Cell;
 using sta::Corner;
 using sta::dbNetwork;
+using sta::dbNetworkObserver;
 using sta::dbSta;
 using sta::dbStaState;
 using sta::DcalcAnalysisPt;
@@ -110,6 +83,7 @@ using sta::Required;
 using sta::RiseFall;
 using sta::Slack;
 using sta::Slew;
+using sta::SpefWriter;
 using sta::TimingArc;
 using sta::UnorderedSet;
 using sta::Vector;
@@ -119,6 +93,7 @@ using sta::VertexSet;
 
 using LibertyPortTuple = std::tuple<LibertyPort*, LibertyPort*>;
 using InstanceTuple = std::tuple<Instance*, Instance*>;
+using InputSlews = std::array<Slew, RiseFall::index_count>;
 
 class AbstractSteinerRenderer;
 class SteinerTree;
@@ -134,6 +109,16 @@ class RecoverPower;
 class RepairDesign;
 class RepairSetup;
 class RepairHold;
+class ResizerObserver;
+
+class CloneMove;
+class BufferMove;
+class SplitLoadMove;
+class SizeDownMove;
+class SizeUpMove;
+class SwapPinsMove;
+class UnbufferMove;
+class RegisterOdbCallbackGuard;
 
 class NetHash
 {
@@ -142,13 +127,14 @@ class NetHash
 };
 
 using CellTargetLoadMap = Map<LibertyCell*, float>;
-using TgtSlews = array<Slew, RiseFall::index_count>;
+using TgtSlews = std::array<Slew, RiseFall::index_count>;
 
 enum class ParasiticsSrc
 {
   none,
   placement,
-  global_routing
+  global_routing,
+  detailed_routing
 };
 
 struct ParasiticsResistance
@@ -163,7 +149,21 @@ struct ParasiticsCapacitance
   double v_cap;
 };
 
-class Resizer : public dbStaState
+enum class MoveType
+{
+  BUFFER,
+  UNBUFFER,
+  SWAP,
+  SIZE,
+  SIZEUP,
+  SIZEDOWN,
+  CLONE,
+  SPLIT
+};
+
+class OdbCallBack;
+
+class Resizer : public dbStaState, public dbNetworkObserver
 {
  public:
   Resizer();
@@ -221,9 +221,13 @@ class Resizer : public dbStaState
   double wireClkHCapacitance(const Corner* corner) const;
   double wireClkVCapacitance(const Corner* corner) const;
   void estimateParasitics(ParasiticsSrc src);
-  void estimateWireParasitics();
-  void estimateWireParasitic(const Net* net);
-  void estimateWireParasitic(const Pin* drvr_pin, const Net* net);
+  void estimateParasitics(ParasiticsSrc src,
+                          std::map<Corner*, std::ostream*>& spef_streams_);
+  void estimateWireParasitics(SpefWriter* spef_writer = nullptr);
+  void estimateWireParasitic(const Net* net, SpefWriter* spef_writer = nullptr);
+  void estimateWireParasitic(const Pin* drvr_pin,
+                             const Net* net,
+                             SpefWriter* spef_writer = nullptr);
   bool haveEstimatedParasitics() const;
   void parasiticsInvalid(const Net* net);
   void parasiticsInvalid(const dbNet* net);
@@ -237,17 +241,27 @@ class Resizer : public dbStaState
   double maxArea() const;
 
   void setDontUse(LibertyCell* cell, bool dont_use);
-  bool dontUse(LibertyCell* cell);
+  void resetDontUse();
+  bool dontUse(const LibertyCell* cell);
+  void reportDontUse() const;
   void setDontTouch(const Instance* inst, bool dont_touch);
   bool dontTouch(const Instance* inst);
   void setDontTouch(const Net* net, bool dont_touch);
   bool dontTouch(const Net* net);
+  bool dontTouch(const Pin* pin);
+  void reportDontTouch();
+
+  void reportFastBufferSizes();
 
   void setMaxUtilization(double max_utilization);
   // Remove all or selected buffers from the netlist.
   void removeBuffers(InstanceSeq insts);
+  void unbufferNet(Net* net);
   void bufferInputs();
   void bufferOutputs();
+
+  // from sta::dbNetworkObserver callbacks
+  void postReadLiberty() override;
 
   // Balance the usage of hybrid rows
   void balanceRowUsage();
@@ -260,13 +274,19 @@ class Resizer : public dbStaState
   float targetLoadCap(LibertyCell* cell);
 
   ////////////////////////////////////////////////////////////////
-  void repairSetup(double setup_margin,
+  bool repairSetup(double setup_margin,
                    double repair_tns_end_percent,
                    int max_passes,
+                   int max_repairs_per_pass,
+                   bool match_cell_footprint,
                    bool verbose,
+                   const std::vector<MoveType>& sequence,
                    bool skip_pin_swap,
                    bool skip_gate_cloning,
-                   bool skip_buffer_removal);
+                   bool skip_size_down,
+                   bool skip_buffering,
+                   bool skip_buffer_removal,
+                   bool skip_last_gasp);
   // For testing.
   void repairSetup(const Pin* end_pin);
   // For testing.
@@ -277,12 +297,13 @@ class Resizer : public dbStaState
 
   ////////////////////////////////////////////////////////////////
 
-  void repairHold(double setup_margin,
+  bool repairHold(double setup_margin,
                   double hold_margin,
                   bool allow_setup_violations,
                   // Max buffer count as percent of design instance count.
                   float max_buffer_percent,
                   int max_passes,
+                  bool match_cell_footprint,
                   bool verbose);
   void repairHold(const Pin* end_pin,
                   double setup_margin,
@@ -293,7 +314,9 @@ class Resizer : public dbStaState
   int holdBufferCount() const;
 
   ////////////////////////////////////////////////////////////////
-  void recoverPower(float recover_power_percent);
+  bool recoverPower(float recover_power_percent,
+                    bool match_cell_footprint,
+                    bool verbose);
 
   ////////////////////////////////////////////////////////////////
   // Area of the design in meter^2.
@@ -303,6 +326,7 @@ class Resizer : public dbStaState
   // Caller owns return value.
   NetSeq* findFloatingNets();
   PinSet* findFloatingPins();
+  NetSeq* findOverdrivenNets(bool include_parallel_driven);
   void repairTieFanout(LibertyPort* tie_port,
                        double separation,  // meters
                        bool verbose);
@@ -312,6 +336,8 @@ class Resizer : public dbStaState
                        Slew& slew);
   void setDebugPin(const Pin* pin);
   void setWorstSlackNetsPercent(float);
+  void annotateInputSlews(Instance* inst, const DcalcAnalysisPt* dcalc_ap);
+  void resetInputSlews();
 
   ////////////////////////////////////////////////////////////////
 
@@ -320,6 +346,8 @@ class Resizer : public dbStaState
       double max_wire_length,  // max_wire_length zero for none (meters)
       double slew_margin,      // 0.0-1.0
       double cap_margin,       // 0.0-1.0
+      double buffer_gain,
+      bool match_cell_footprint,
       bool verbose);
   int repairDesignBufferCount() const;
   // for debugging
@@ -334,6 +362,10 @@ class Resizer : public dbStaState
   // Use max_wire_length zero for none (meters)
   void repairClkNets(
       double max_wire_length);  // max_wire_length zero for none (meters)
+  void setClockBuffersList(const LibertyCellSeq& clk_buffers)
+  {
+    clk_buffers_ = clk_buffers;
+  }
   // Clone inverters next to the registers they drive to remove them
   // from the clock network.
   // yosys is too stupid to use the inverted clock registers
@@ -359,13 +391,13 @@ class Resizer : public dbStaState
   //  restore resized gates
   // resizeSlackPreamble must be called before the first findResizeSlacks.
   void resizeSlackPreamble();
-  void findResizeSlacks();
+  void findResizeSlacks(bool run_journal_restore);
   // Return nets with worst slack.
   NetSeq& resizeWorstSlackNets();
   // Return net slack, if any (indicated by the bool).
   std::optional<Slack> resizeNetSlack(const Net* net);
   // db flavor
-  vector<dbNet*> resizeWorstSlackDbNets();
+  std::vector<dbNet*> resizeWorstSlackDbNets();
   std::optional<Slack> resizeNetSlack(const dbNet* db_net);
 
   ////////////////////////////////////////////////////////////////
@@ -378,14 +410,33 @@ class Resizer : public dbStaState
 
   dbNetwork* getDbNetwork() { return db_network_; }
   ParasiticsSrc getParasiticsSrc() { return parasitics_src_; }
+  void setParasiticsSrc(ParasiticsSrc src);
   dbBlock* getDbBlock() { return block_; };
   double dbuToMeters(int dist) const;
   int metersToDbu(double dist) const;
   void makeEquivCells();
+  std::pair<int, std::string> cellVTType(dbMaster* master);
+
+  ////////////////////////////////////////////////////////////////
+  void initBlock();
+  void journalBeginTest();
+  void journalRestoreTest();
+  Logger* logger() const { return logger_; }
+  void eraseParasitics(const Net* net);
+  void eliminateDeadLogic(bool clean_nets);
+  std::optional<float> cellLeakage(LibertyCell* cell);
+  // For debugging - calls getSwappableCells
+  void reportEquivalentCells(LibertyCell* base_cell,
+                             bool match_cell_footprint,
+                             bool report_all_cells);
+  void setDebugGraphics(std::shared_ptr<ResizerObserver> graphics);
+
+  static MoveType parseMove(const std::string& s);
+  static std::vector<MoveType> parseMoveSequence(const std::string& sequence);
 
 //  protected:
   void init();
-  void initBlock();
+  double computeDesignArea();
   void initDesignArea();
   void ensureLevelDrvrVertices();
   Instance* bufferInput(const Pin* top_pin, LibertyCell* buffer_cell);
@@ -393,17 +444,23 @@ class Resizer : public dbStaState
   bool hasTristateOrDontTouchDriver(const Net* net);
   bool isTristateDriver(const Pin* pin);
   void checkLibertyForAllCorners();
+  void copyDontUseFromLiberty();
+  bool bufferSizeOutmatched(LibertyCell* worse,
+                            LibertyCell* better,
+                            float max_drive_resist);
   void findBuffers();
-  bool isLinkCell(LibertyCell* cell);
+  void findFastBuffers();
+  bool isLinkCell(LibertyCell* cell) const;
   void findTargetLoads();
-  void balanceBin(const vector<odb::dbInst*>& bin);
+  void balanceBin(const std::vector<odb::dbInst*>& bin,
+                  const std::set<odb::dbSite*>& base_sites);
 
   //==============================
   // APIs for gate cloning
   LibertyCell* halfDrivingPowerCell(Instance* inst);
   LibertyCell* halfDrivingPowerCell(LibertyCell* cell);
   LibertyCell* closestDriver(LibertyCell* cell,
-                             LibertyCellSeq* candidates,
+                             const LibertyCellSeq& candidates,
                              float scale);
   std::vector<sta::LibertyPort*> libraryPins(Instance* inst) const;
   std::vector<sta::LibertyPort*> libraryPins(LibertyCell* cell) const;
@@ -433,9 +490,16 @@ class Resizer : public dbStaState
   bool hasMultipleOutputs(const Instance* inst);
 
   void resizePreamble();
+  LibertyCellSeq getSwappableCells(LibertyCell* source_cell);
+
+  bool getCin(const LibertyCell* cell, float& cin);
   // Resize drvr_pin instance to target slew.
   // Return 1 if resized.
   int resizeToTargetSlew(const Pin* drvr_pin);
+
+  // Resize drvr_pin instance to target cap ratio.
+  // Return 1 if resized.
+  int resizeToCapRatio(const Pin* drvr_pin, bool upsize_only);
 
   ////////////////////////////////////////////////////////////////
 
@@ -443,6 +507,8 @@ class Resizer : public dbStaState
   int findMaxSteinerDist(Vertex* drvr, const Corner* corner);
   float driveResistance(const Pin* drvr_pin);
   float bufferDriveResistance(const LibertyCell* buffer) const;
+  float cellDriveResistance(const LibertyCell* cell) const;
+
   // Max distance from driver to load (in dbu).
   int maxLoadManhattenDistance(Vertex* drvr);
 
@@ -467,6 +533,13 @@ class Resizer : public dbStaState
                   // Return values.
                   ArcDelay delays[RiseFall::index_count],
                   Slew slews[RiseFall::index_count]);
+  void gateDelays(const LibertyPort* drvr_port,
+                  float load_cap,
+                  const Slew in_slews[RiseFall::index_count],
+                  const DcalcAnalysisPt* dcalc_ap,
+                  // Return values.
+                  ArcDelay delays[RiseFall::index_count],
+                  Slew out_slews[RiseFall::index_count]);
   ArcDelay gateDelay(const LibertyPort* drvr_port,
                      float load_cap,
                      const DcalcAnalysisPt* dcalc_ap);
@@ -490,6 +563,7 @@ class Resizer : public dbStaState
   void cellWireDelay(LibertyPort* drvr_port,
                      LibertyPort* load_port,
                      double wire_length,  // meters
+                     std::unique_ptr<dbSta>& sta,
                      // Return values.
                      Delay& delay,
                      Slew& slew);
@@ -499,21 +573,28 @@ class Resizer : public dbStaState
                          double wire_length,  // meters
                          const Corner* corner,
                          Parasitics* parasitics);
-  string makeUniqueNetName();
+  std::string makeUniqueNetName(Instance* parent = nullptr);
   Net* makeUniqueNet();
-  string makeUniqueInstName(const char* base_name);
-  string makeUniqueInstName(const char* base_name, bool underscore);
+  std::string makeUniqueInstName(const char* base_name);
+  std::string makeUniqueInstName(const char* base_name, bool underscore);
   bool overMaxArea();
   bool bufferBetweenPorts(Instance* buffer);
   bool hasPort(const Net* net);
   Point location(Instance* inst);
   double area(dbMaster* master);
   double area(Cell* cell);
-  double splitWireDelayDiff(double wire_length, LibertyCell* buffer_cell);
+  double splitWireDelayDiff(double wire_length,
+                            LibertyCell* buffer_cell,
+                            std::unique_ptr<dbSta>& sta);
   double maxSlewWireDiff(LibertyPort* drvr_port,
                          LibertyPort* load_port,
                          double wire_length,
                          double max_slew);
+  void bufferWireDelay(LibertyCell* buffer_cell,
+                       double wire_length,  // meters
+                       std::unique_ptr<dbSta>& sta,
+                       Delay& delay,
+                       Slew& slew);
   void findCellInstances(LibertyCell* cell,
                          // Return value.
                          InstanceSeq& insts);
@@ -522,6 +603,7 @@ class Resizer : public dbStaState
   bool hasPins(Net* net);
   void getPins(Net* net, PinVector& pins) const;
   void getPins(Instance* inst, PinVector& pins) const;
+  void SwapNetNames(odb::dbITerm* iterm_to, odb::dbITerm* iterm_from);
   Point tieLocation(const Pin* load, int separation);
   bool hasFanout(Vertex* drvr);
   InstanceSeq findClkInverters();
@@ -533,12 +615,14 @@ class Resizer : public dbStaState
   void updateParasitics(bool save_guides = false);
   void ensureWireParasitic(const Pin* drvr_pin);
   void ensureWireParasitic(const Pin* drvr_pin, const Net* net);
-  void estimateWireParasiticSteiner(const Pin* drvr_pin, const Net* net);
+  void estimateWireParasiticSteiner(const Pin* drvr_pin,
+                                    const Net* net,
+                                    SpefWriter* spef_writer);
   float totalLoad(SteinerTree* tree) const;
   float subtreeLoad(SteinerTree* tree,
                     float cap_per_micron,
                     SteinerPt pt) const;
-  void makePadParasitic(const Net* net);
+  void makePadParasitic(const Net* net, SpefWriter* spef_writer);
   bool isPadNet(const Net* net) const;
   bool isPadPin(const Pin* pin) const;
   bool isPad(const Instance* inst) const;
@@ -554,11 +638,17 @@ class Resizer : public dbStaState
                    bool journal);
 
   void findResizeSlacks1();
-  bool removeBuffer(Instance* buffer, bool honorDontTouchFixed = true);
+  bool removeBufferIfPossible(Instance* buffer,
+                              bool honorDontTouchFixed = true,
+                              bool recordJournal = false);
+  bool canRemoveBuffer(Instance* buffer, bool honorDontTouchFixed = true);
+  void removeBuffer(Instance* buffer, bool recordJournal = false);
   Instance* makeInstance(LibertyCell* cell,
                          const char* name,
                          Instance* parent,
                          const Point& loc);
+  void getBufferPins(Instance* buffer, Pin*& ip_pin, Pin*& op_pin);
+
   Instance* makeBuffer(LibertyCell* cell,
                        const char* name,
                        Instance* parent,
@@ -587,24 +677,14 @@ class Resizer : public dbStaState
                       const Corner*& corner);
   void warnBufferMovedIntoCore();
   bool isLogicStdCell(const Instance* inst);
-  void invalidateParasitics(const Pin* pin, const Net* net);
   ////////////////////////////////////////////////////////////////
   // Jounalling support for checkpointing and backing out changes
   // during repair timing.
   void journalBegin();
   void journalEnd();
-  void journalRestore(int& resize_count,
-                      int& inserted_buffer_count,
-                      int& cloned_gate_count);
-  void journalUndoGateCloning(int& cloned_gate_count);
-  void journalSwapPins(Instance* inst, LibertyPort* port1, LibertyPort* port2);
-  void journalInstReplaceCellBefore(Instance* inst);
+  void journalRestore();
   void journalMakeBuffer(Instance* buffer);
-  Instance* journalCloneInstance(LibertyCell* cell,
-                                 const char* name,
-                                 Instance* original_inst,
-                                 Instance* parent,
-                                 const Point& loc);
+
   ////////////////////////////////////////////////////////////////
   // API for logic resynthesis
   VertexSet findFaninFanouts(VertexSet& ends);
@@ -614,8 +694,6 @@ class Resizer : public dbStaState
   bool isRegister(Vertex* vertex);
   ////////////////////////////////////////////////////////////////
 
-  Logger* logger() const { return logger_; }
-
   // Components
   RecoverPower* recover_power_;
   RepairDesign* repair_design_;
@@ -624,14 +702,14 @@ class Resizer : public dbStaState
   std::unique_ptr<AbstractSteinerRenderer> steiner_renderer_;
 
   // Layer RC per wire length indexed by layer->getNumber(), corner->index
-  vector<vector<double>> layer_res_;  // ohms/meter
-  vector<vector<double>> layer_cap_;  // Farads/meter
+  std::vector<std::vector<double>> layer_res_;  // ohms/meter
+  std::vector<std::vector<double>> layer_cap_;  // Farads/meter
   // Signal wire RC indexed by corner->index
-  vector<ParasiticsResistance> wire_signal_res_;   // ohms/metre
-  vector<ParasiticsCapacitance> wire_signal_cap_;  // Farads/meter
+  std::vector<ParasiticsResistance> wire_signal_res_;   // ohms/metre
+  std::vector<ParasiticsCapacitance> wire_signal_cap_;  // Farads/meter
   // Clock wire RC.
-  vector<ParasiticsResistance> wire_clk_res_;   // ohms/metre
-  vector<ParasiticsCapacitance> wire_clk_cap_;  // Farads/meter
+  std::vector<ParasiticsResistance> wire_clk_res_;   // ohms/metre
+  std::vector<ParasiticsCapacitance> wire_clk_cap_;  // Farads/meter
   LibertyCellSet dont_use_;
   double max_area_ = 0.0;
 
@@ -650,12 +728,20 @@ class Resizer : public dbStaState
 
   ParasiticsSrc parasitics_src_ = ParasiticsSrc::none;
   UnorderedSet<const Net*, NetHash> parasitics_invalid_;
+  bool incremental_parasitics_enabled_ = false;
 
   double design_area_ = 0.0;
   const MinMax* min_ = MinMax::min();
   const MinMax* max_ = MinMax::max();
   LibertyCellSeq buffer_cells_;
   LibertyCell* buffer_lowest_drive_ = nullptr;
+  std::set<LibertyCell*> buffer_fast_sizes_;
+  // Buffer list created by CTS kept here so that we use the
+  // exact same buffers when reparing clock nets.
+  LibertyCellSeq clk_buffers_;
+
+  // Cache results of getSwappableCells() as this is expensive for large PDKs.
+  std::unordered_map<LibertyCell*, LibertyCellSeq> swappable_cells_cache_;
 
   CellTargetLoadMap* target_load_map_ = nullptr;
   VertexSeq level_drvr_vertices_;
@@ -667,10 +753,13 @@ class Resizer : public dbStaState
   InstanceSet resized_multi_output_insts_;
   int unique_net_index_ = 1;
   int unique_inst_index_ = 1;
-  int resize_count_ = 0;
   int inserted_buffer_count_ = 0;
   int cloned_gate_count_ = 0;
+  int swap_pin_count_ = 0;
+  int removed_buffer_count_ = 0;
+  bool exclude_clock_buffers_ = true;
   bool buffer_moved_into_core_ = false;
+  bool match_cell_footprint_ = false;
   // Slack map variables.
   // This is the minimum length of wire that is worth while to split and
   // insert a buffer in the middle of. Theoretically computed using the smallest
@@ -680,26 +769,55 @@ class Resizer : public dbStaState
   Map<const Net*, Slack> net_slack_map_;
   NetSeq worst_slack_nets_;
 
-  // Journal to roll back changes (OpenDB not up to the task).
-  Map<Instance*, LibertyCell*> resized_inst_map_;
-  InstanceSeq inserted_buffers_;
-  InstanceSet inserted_buffer_set_;
-  Map<Instance*, LibertyPortTuple> swapped_pins_;
-  std::stack<InstanceTuple> cloned_gates_;
-  std::unordered_set<Instance*> cloned_inst_set_;
+  std::unordered_map<LibertyCell*, std::optional<float>> cell_leakage_cache_;
 
-  // Need to track all changes for buffer removal
-  InstanceSet all_sized_inst_set_;
+  InstanceSet inserted_buffer_set_;
   InstanceSet all_inserted_buffer_set_;
-  InstanceSet all_swapped_pin_inst_set_;
-  InstanceSet all_cloned_inst_set_;
+  InstanceSet removed_buffer_set_;
 
   dpl::Opendp* opendp_ = nullptr;
 
   // "factor debatable"
   static constexpr float tgt_slew_load_cap_factor = 10.0;
-  // Prim/Dijkstra gets out of hand with bigger nets.
-  static constexpr int max_steiner_pin_count_ = 200000;
+
+  // Use actual input slews for accurate delay/slew estimation
+  sta::UnorderedMap<LibertyPort*, InputSlews> input_slew_map_;
+
+  std::unique_ptr<OdbCallBack> db_cbk_;
+
+  // Restrict default sizing such that one sizing move cannot increase area or
+  // leakage by more than 4X.  Subsequent sizing moves can exceed the 4X limit.
+  std::optional<double> sizing_area_limit_ = 4.0;
+  std::optional<double> sizing_leakage_limit_ = 4.0;
+  bool default_sizing_area_limit_set_ = true;
+  bool default_sizing_leakage_limit_set_ = true;
+  bool sizing_keep_site_ = false;
+  bool sizing_keep_vt_ = false;
+
+  // Sizing
+  const double default_sizing_cap_ratio_ = 4.0;
+  const double default_buffer_sizing_cap_ratio_ = 9.0;
+  double sizing_cap_ratio_;
+  double buffer_sizing_cap_ratio_;
+
+  // VT layer hash
+  std::unordered_map<dbMaster*, std::pair<int, std::string>> vt_map_;
+  std::unordered_map<size_t, int>
+      vt_hash_map_;  // maps hash value to unique int
+
+  std::shared_ptr<ResizerObserver> graphics_;
+
+  // Optimization moves
+  // Will eventually be replaced with a getter method and some "recipes"
+  CloneMove* clone_move = nullptr;
+  SplitLoadMove* split_load_move = nullptr;
+  BufferMove* buffer_move = nullptr;
+  SizeDownMove* size_down_move = nullptr;
+  SizeUpMove* size_up_move = nullptr;
+  SwapPinsMove* swap_pins_move = nullptr;
+  UnbufferMove* unbuffer_move = nullptr;
+  int accepted_move_count_ = 0;
+  int rejected_move_count_ = 0;
 
   friend class BufferedNet;
   friend class GateCloner;
@@ -709,6 +827,26 @@ class Resizer : public dbStaState
   friend class RepairSetup;
   friend class RepairHold;
   friend class SteinerTree;
+  friend class BaseMove;
+  friend class BufferMove;
+  friend class SizeDownMove;
+  friend class SizeUpMove;
+  friend class SplitLoadMove;
+  friend class CloneMove;
+  friend class SwapPinsMove;
+  friend class UnbufferMove;
+  friend class IncrementalParasiticsGuard;
+};
+
+class IncrementalParasiticsGuard
+{
+ public:
+  IncrementalParasiticsGuard(Resizer* resizer);
+  ~IncrementalParasiticsGuard();
+
+ private:
+  Resizer* resizer_;
+  bool need_unregister_;
 };
 
 }  // namespace rsz

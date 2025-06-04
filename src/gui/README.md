@@ -139,6 +139,55 @@ save_clocktree_image
 |`-height`| height of the image in pixels, defaults to the height of the GUI widget. |
 |`-width`| width of the image in pixels, defaults to the width of the GUI widget. |
 
+### Save Timing Histogram Image
+
+This command saves the screenshot of timing histogram given options
+to `filename`.
+
+```tcl
+save_histogram_image
+    filename
+    [-mode mode]
+    [-width width]
+    [-height height]
+```
+
+#### Options
+
+| Switch Name | Description |
+| ---- | ---- |
+|`filename`| path to save the image to. |
+|`-mode`| chart mode to save, defaults to "setup". |
+|`-height`| height of the image in pixels, defaults to 500px. |
+|`-width`| width of the image in pixels, defaults to 500px. |
+
+### Generate animated images
+
+This command can be used to generate an animated gif.
+
+```tcl
+save_animated_gif
+    -start|-add|-end
+    [-resolution microns_per_pixel]
+    [-area {x0 y0 x1 y1}]
+    [-width width]
+    [-delay delay]
+    [filename]
+```
+
+#### Options
+
+| Switch Name | Description |
+| ---- | ---- |
+| `-start` | start a new animation. |
+| `-add` | add a new frame to the animation. |
+| `-end` | terminate the animtion and save file. |
+| `filename` | path to save the animation to. |
+| `-area` | x0, y0 - first corner of the layout area (in microns) to be saved, default is to save what is visible on the screen unless called when gui is not active and then it selected the whole block. x1, y1 - second corner of the layout area (in microns) to be saved, default is to save what is visible on the screen unless called when gui is not active and then it selected the whole block.|
+| `-resolution`| resolution in microns per pixel to use when saving the image, default will match what the GUI has selected.|
+| `-width`| width of the output image in pixels, default will be computed from the resolution. Cannot be used with ``-resolution``.|
+| `-delay`| delay between frames in the GIF.|
+
 ### Select Objects
 
 This command selects object based on options.
@@ -157,7 +206,7 @@ select
 
 | Switch Name | Description |
 | ---- | ---- |
-|`-type`| name of the object type. For example, ``Inst`` for instances, ``Net`` for nets, and ``DRC`` for DRC violations.|
+|`-type`| name of the object type. For example, ``Inst`` for instances, ``Net`` for nets, and ``Marker`` for database markers.|
 |`-name`| (optional) filter selection by the specified name. For example, to only select clk nets ``*clk*``. Use ``-case_insensitive`` to filter based on case insensitive instead of case sensitive.|
 |`-filter`| (optional) filter selection based on the objects' properties. ``attribute`` represents the property's name and ``value`` the property's value. In case the property holds a collection (e. g. BTerms in a Net) or a table (e. g. Layers in a Generate Via Rule) ``value`` can be any element within those. A special case exists for checking whether a collection is empty or not by using the value ``CONNECTED``. This can be useful to select a specific group of elements (e. g. BTerms=CONNECTED will select only Nets connected to Input/Output Pins).|
 |`-highlight`| (optional) add the selection to the specific highlighting group. Values can be 0 to 7. |
@@ -221,20 +270,20 @@ Announce to the GUI that a design was loaded
 gui::design_created
 ```
 
-### Load DRC Result
+### Load Database Markers Result
 
-To load the results of a DRC report:
+To select a marker category
 
 ```tcl
-gui::load_drc 
-    filename
+gui::select_marker_category 
+    category
 ```
 
 #### Options
 
 | Switch Name | Description |
 | ---- | ---- |
-| `filename` | Filename for DRC report. |
+| `category` | Database marker category. |
 
 ### Show GUI
 
@@ -253,12 +302,42 @@ gui::show
 | `script` | TCL script to evaluate in the GUI. |
 | `interactive` | Boolean if true, the GUI should open in an interactive session (default), or if false that the GUI would execute the script and return to the terminal.|
 
+### Set GUI Title
+
+To set the title of the main GUI window:
+
+```tcl
+gui::set_title title
+```
+
+#### Options
+
+| Switch Name | Description |
+| ---- | ---- |
+| `title` | window title to use for the main GUI window |
+
 ### Hide GUI
 
 To close the GUI and return to the command-line:
 
 ```tcl
 gui::hide
+```
+
+### Minimize the GUI
+
+To minimize the GUI window to an icon:
+
+```tcl
+gui::minimize
+```
+
+### Unminimize the GUI
+
+To unminimize the GUI window from an icon:
+
+```tcl
+gui::unminimize
 ```
 
 ### Layout Fit
@@ -592,11 +671,76 @@ To remove all the rulers:
 gui::clear_rulers
 ```
 
+### Add Label to Layout
+
+To add a label to the layout use the following command:
+
+Returns: name of the newly created label.
+
+```tcl
+add_label -position {x y}
+          [-anchor anchor]
+          [-color color]
+          [-size size]
+          [-name name]
+          text
+```
+
+#### Options
+
+| Switch Name | Description |
+| ---- | ---- |
+| `-position` | point of the label in microns. |
+| `-anchor` | anchor point for text, default is center. |
+| `-color` | color to use for the label, default is white. |
+| `size` | size of the label, default is determined by the default GUI font. |
+| `name` | name of the label, one will be generated if not provided. |
+| `text` | text for the label. |
+
+### Delete a single label
+
+To remove a single label:
+
+```tcl
+gui::delete_label
+    name
+```
+
+#### Options
+
+| Switch Name | Description |
+| ---- | ---- |
+| `name` | name of the label. |
+
+### Clear All Labels
+
+To remove all the labels:
+
+```tcl
+gui::clear_labels
+```
+
+### Display help
+
+To display the help for a specific command or messasge.
+
+```tcl
+gui::show_help
+    cmd_msg
+```
+
+#### Options
+
+| Switch Name | Description |
+| ---- | ---- |
+| `cmd_msg`| command or message ID. |
+
 ### Set Heatmap
 
 To control the settings in the heat maps:
 
 The currently availble heat maps are:
+- ``Pin``
 - ``Power``
 - ``Routing``
 - ``Placement``
@@ -640,6 +784,21 @@ gui::dump_heatmap
 [^RUDY]: RUDY means Rectangular Uniform wire DensitY, which can predict the routing density very rough and quickly. You can see this notion in [this paper](https://past.date-conference.com/proceedings-archive/2007/DATE07/PDFFILES/08.7_1.PDF) 
 
 
+### Clocktree Selection
+
+Select a clock in the clock viewer:
+
+```tcl
+gui::select_clockviewer_clock
+    name
+```
+
+#### Options
+
+| Switch Name | Description |
+| ---- | ---- |
+| `name` |  name of clock to select |
+
 ### GUI Display Controls
 
 Control the visible and selected elements in the layout:
@@ -656,8 +815,8 @@ gui::set_display_controls
 | Switch Name | Description |
 | ---- | ---- |
 | `name` |  is the name of the control. For example, for the power nets option this would be ``Signals/Power`` or could be ``Layers/*`` to set the option for all the layers. |
-| `display_type` | is either ``visible`` or ``selectable`` |
-| `value` |is either ``true`` or ``false`` |
+| `display_type` | is either ``visible``, ``selectable``, ``color`` |
+| `value` | is either ``true`` or ``false`` for ``visible`` or ``selectable`` or the name of the color |
 
 ### Check Display Controls
 
@@ -756,6 +915,28 @@ gui::hide_widget
 | ---- | ---- |
 | `name` | of the widget. For example, the display controls would be "Display Control". |
 
+### Select chart
+
+To select a specific chart in the charts widget:
+
+```tcl
+gui::select_chart
+    name
+```
+
+#### Options
+
+| Switch Name | Description |
+| ---- | ---- |
+| `name` | of the chart. For example, "Endpoint Slack". |
+
+### Update timing report
+
+Update the paths in the Timing Report widget:
+
+```tcl
+gui::update_timing_report
+```
 
 ## License
 

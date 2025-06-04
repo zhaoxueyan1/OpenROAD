@@ -1,39 +1,14 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2018-2020, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE
-// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2018-2025, The OpenROAD Authors
 
 #include "initialPlace.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <limits>
+#include <memory>
 #include <utility>
+#include <vector>
 
 #include "placerBase.h"
 #include "solver.h"
@@ -55,7 +30,6 @@ void InitialPlaceVars::reset()
   maxFanout = 200;
   netWeightScale = 800.0;
   debug = false;
-  forceCPU = false;
 }
 
 InitialPlace::InitialPlace(InitialPlaceVars ipVars,
@@ -66,10 +40,9 @@ InitialPlace::InitialPlace(InitialPlaceVars ipVars,
 {
 }
 
-void InitialPlace::doBicgstabPlace()
+void InitialPlace::doBicgstabPlace(int threads)
 {
   ResidualError error;
-  bool run_cpu = true;
 
   std::unique_ptr<Graphics> graphics;
   if (ipVars_.debug && Graphics::guiActive()) {
@@ -84,45 +57,23 @@ void InitialPlace::doBicgstabPlace()
   for (size_t iter = 1; iter <= ipVars_.maxIter; iter++) {
     updatePinInfo();
     createSparseMatrix();
-#ifdef ENABLE_GPU
-    if (!ipVars_.forceCPU) {
-      int gpu_count = 0;
-      cudaGetDeviceCount(&gpu_count);
-      if (gpu_count != 0) {
-        run_cpu = false;
-        // CUSOLVER based on sparse matrix and QR decomposition for initial
-        // place
-        error = cudaSparseSolve(iter,
-                                placeInstForceMatrixX_,
-                                fixedInstForceVecX_,
-                                instLocVecX_,
-                                placeInstForceMatrixY_,
-                                fixedInstForceVecY_,
-                                instLocVecY_,
-                                log_);
-      } else
-        log_->warn(GPL, 250, "GPU is not available. CPU solve is being used.");
-    }
-#endif
-    if (run_cpu) {
-      if (ipVars_.forceCPU) {
-        log_->warn(GPL, 251, "CPU solver is forced to be used.");
-      }
-      error = cpuSparseSolve(ipVars_.maxSolverIter,
-                             iter,
-                             placeInstForceMatrixX_,
-                             fixedInstForceVecX_,
-                             instLocVecX_,
-                             placeInstForceMatrixY_,
-                             fixedInstForceVecY_,
-                             instLocVecY_,
-                             log_);
-    }
+    error = cpuSparseSolve(ipVars_.maxSolverIter,
+                           iter,
+                           placeInstForceMatrixX_,
+                           fixedInstForceVecX_,
+                           instLocVecX_,
+                           placeInstForceMatrixY_,
+                           fixedInstForceVecY_,
+                           instLocVecY_,
+                           log_,
+                           threads);
     float error_max = std::max(error.x, error.y);
-    log_->report("[InitialPlace]  Iter: {} CG residual: {:0.8f} HPWL: {}",
-                 iter,
-                 error_max,
-                 pbc_->hpwl());
+    log_->report(
+        "[InitialPlace]  Iter: {} conjugate gradient residual: {:0.8f} HPWL: "
+        "{}",
+        iter,
+        error_max,
+        pbc_->hpwl());
     updateCoordi();
 
     if (graphics) {
@@ -143,7 +94,8 @@ void InitialPlace::placeInstsCenter()
 
   for (auto& inst : pbc_->placeInsts()) {
     if (!inst->isLocked()) {
-      auto group = inst->dbInst()->getGroup();
+      const auto db_inst = inst->dbInst();
+      const auto group = db_inst->getGroup();
       if (group && group->getType() == odb::dbGroupType::POWER_DOMAIN) {
         auto domain_region = group->getRegion();
         int domain_xMin = std::numeric_limits<int>::max();
@@ -158,6 +110,12 @@ void InitialPlace::placeInstsCenter()
         }
         inst->setCenterLocation(domain_xMax - (domain_xMax - domain_xMin) / 2,
                                 domain_yMax - (domain_yMax - domain_yMin) / 2);
+      } else if (ipVars_.maxIter == 0 && db_inst->isPlaced()) {
+        // It is helpful to pick up the placement from mpl if available,
+        // particularly when you are going to skip initial placement
+        // (eg skip_io).
+        const auto bbox = db_inst->getBBox()->getBox();
+        inst->setCenterLocation(bbox.xCenter(), bbox.yCenter());
       } else {
         inst->setCenterLocation(centerX, centerY);
       }

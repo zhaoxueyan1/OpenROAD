@@ -1,44 +1,18 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2018-2020, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE
-// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2018-2025, The OpenROAD Authors
 
 #include "placerBase.h"
 
-#include <odb/db.h>
-
+#include <algorithm>
 #include <iostream>
+#include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "nesterovBase.h"
+#include "odb/db.h"
+#include "odb/dbTransform.h"
 #include "utl/Logger.h"
 
 namespace gpl {
@@ -68,8 +42,6 @@ static std::pair<int, int> getMinMaxIdx(int ll,
                                         int siteSize,
                                         int minIdx,
                                         int maxIdx);
-
-static utl::Logger* slog_;
 
 static bool isCoreAreaOverlap(Die& die, Instance& inst);
 
@@ -327,11 +299,11 @@ Pin::Pin(odb::dbITerm* iTerm) : Pin()
   updateCoordi(iTerm);
 }
 
-Pin::Pin(odb::dbBTerm* bTerm) : Pin()
+Pin::Pin(odb::dbBTerm* bTerm, utl::Logger* logger) : Pin()
 {
   setBTerm();
   term_ = (void*) bTerm;
-  updateCoordi(bTerm);
+  updateCoordi(bTerm, logger);
 }
 
 std::string Pin::name() const
@@ -456,35 +428,35 @@ odb::dbBTerm* Pin::dbBTerm() const
 
 void Pin::updateCoordi(odb::dbITerm* iTerm)
 {
-  int offsetLx = INT_MAX;
-  int offsetLy = INT_MAX;
-  int offsetUx = INT_MIN;
-  int offsetUy = INT_MIN;
+  Rect pin_bbox;
+  pin_bbox.mergeInit();
 
   for (dbMPin* mPin : iTerm->getMTerm()->getMPins()) {
     for (dbBox* box : mPin->getGeometry()) {
-      offsetLx = std::min(box->xMin(), offsetLx);
-      offsetLy = std::min(box->yMin(), offsetLy);
-      offsetUx = std::max(box->xMax(), offsetUx);
-      offsetUy = std::max(box->yMax(), offsetUy);
+      pin_bbox.merge(box->getBox());
     }
   }
 
-  int lx = iTerm->getInst()->getBBox()->xMin();
-  int ly = iTerm->getInst()->getBBox()->yMin();
+  odb::dbInst* inst = iTerm->getInst();
+  const int lx = inst->getBBox()->xMin();
+  const int ly = inst->getBBox()->yMin();
 
-  int instCenterX = iTerm->getInst()->getMaster()->getWidth() / 2;
-  int instCenterY = iTerm->getInst()->getMaster()->getHeight() / 2;
+  odb::dbMaster* master = iTerm->getInst()->getMaster();
+  const int instCenterX = master->getWidth() / 2;
+  const int instCenterY = master->getHeight() / 2;
 
-  // Pin SHAPE is NOT FOUND;
-  // (may happen on OpenDB bug case)
-  if (offsetLx == INT_MAX || offsetLy == INT_MAX || offsetUx == INT_MIN
-      || offsetUy == INT_MIN) {
-    // offset is center of instances
-    offsetCx_ = offsetCy_ = 0;
-  }
-  // usual case
-  else {
+  // Pin has no shapes (rare/odd)
+  if (pin_bbox.isInverted()) {
+    offsetCx_ = offsetCy_ = 0;  // offset is center of the instance
+  } else {
+    // Rotate the pin's bbox in correspondence to the instance's orientation.
+    // Rotation consists of (1) shift the instance center to the origin
+    // (2) rotate (3) shift back.
+    const auto inst_orient = inst->getTransform().getOrient();
+    odb::dbTransform xfm({-instCenterX, -instCenterY});
+    xfm.concat(inst_orient);
+    xfm.concat(odb::dbTransform({instCenterX, instCenterY}));
+    xfm.apply(pin_bbox);
     // offset is Pin BBoxs' center, so
     // subtract the Origin coordinates (e.g. instCenterX, instCenterY)
     //
@@ -492,8 +464,8 @@ void Pin::updateCoordi(odb::dbITerm* iTerm)
     // from (origin: 0,0)
     // to (origin: instCenterX, instCenterY)
     //
-    offsetCx_ = (offsetLx + offsetUx) / 2 - instCenterX;
-    offsetCy_ = (offsetLy + offsetUy) / 2 - instCenterY;
+    offsetCx_ = pin_bbox.xCenter() - instCenterX;
+    offsetCy_ = pin_bbox.yCenter() - instCenterY;
   }
 
   cx_ = lx + instCenterX + offsetCx_;
@@ -503,7 +475,7 @@ void Pin::updateCoordi(odb::dbITerm* iTerm)
 //
 // for BTerm, offset* will hold bbox info.
 //
-void Pin::updateCoordi(odb::dbBTerm* bTerm)
+void Pin::updateCoordi(odb::dbBTerm* bTerm, utl::Logger* logger)
 {
   int lx = INT_MAX;
   int ly = INT_MAX;
@@ -519,11 +491,12 @@ void Pin::updateCoordi(odb::dbBTerm* bTerm)
   }
 
   if (lx == INT_MAX || ly == INT_MAX || ux == INT_MIN || uy == INT_MIN) {
-    std::string msg = std::string(bTerm->getConstName())
-                      + " toplevel port is not placed!\n";
-    msg += "       Replace will regard " + std::string(bTerm->getConstName())
-           + " is placed in (0, 0)";
-    slog_->warn(GPL, 1, msg);
+    logger->warn(GPL,
+                 1,
+                 "{} toplevel port is not placed!\n"
+                 "       Replace will regard {} is placed in (0, 0)",
+                 bTerm->getConstName(),
+                 bTerm->getConstName());
   }
 
   // Just center
@@ -773,8 +746,6 @@ PlacerBaseCommon::~PlacerBaseCommon()
 
 void PlacerBaseCommon::init()
 {
-  slog_ = log_;
-
   log_->info(GPL, 2, "DBU: {}", db_->getTech()->getDbUnitsPerMicron());
 
   dbBlock* block = db_->getChip()->getBlock();
@@ -890,7 +861,7 @@ void PlacerBaseCommon::init()
 
       if (pbVars_.skipIoMode == false) {
         for (dbBTerm* bTerm : net->getBTerms()) {
-          Pin myPin(bTerm);
+          Pin myPin(bTerm, log_);
           myPin.setNet(myNetPtr);
           pinStor_.push_back(myPin);
         }
@@ -1029,8 +1000,6 @@ PlacerBase::~PlacerBase()
 
 void PlacerBase::init()
 {
-  slog_ = log_;
-
   die_ = pbCommon_->die();
 
   // siteSize update
@@ -1161,7 +1130,7 @@ void PlacerBase::initInstsForUnusableSites()
           = "Blockages associated with moveable instances "
             " are unsupported and ignored [inst: "
             + inst->getName() + "]\n";
-      slog_->error(GPL, 3, msg);
+      log_->error(GPL, 3, msg);
       continue;
     }
     dbBox* bbox = blockage->getBBox();
@@ -1182,23 +1151,6 @@ void PlacerBase::initInstsForUnusableSites()
           ++filled;
         }
         ++cells;
-      }
-    }
-  }
-
-  // fill fixed instances' bbox
-  for (auto& inst : pbCommon_->insts()) {
-    if (!inst->isFixed()) {
-      continue;
-    }
-    std::pair<int, int> pairX = getMinMaxIdx(
-        inst->lx(), inst->ux(), die_.coreLx(), siteSizeX_, 0, siteCountX);
-    std::pair<int, int> pairY = getMinMaxIdx(
-        inst->ly(), inst->uy(), die_.coreLy(), siteSizeY_, 0, siteCountY);
-
-    for (int i = pairX.first; i < pairX.second; i++) {
-      for (int j = pairY.first; j < pairY.second; j++) {
-        siteGrid[j * siteCountX + i] = FixedInst;
       }
     }
   }
@@ -1231,6 +1183,23 @@ void PlacerBase::initInstsForUnusableSites()
             }
           }
         }
+      }
+    }
+  }
+
+  // fill fixed instances' bbox
+  for (auto& inst : pbCommon_->insts()) {
+    if (!inst->isFixed()) {
+      continue;
+    }
+    std::pair<int, int> pairX = getMinMaxIdx(
+        inst->lx(), inst->ux(), die_.coreLx(), siteSizeX_, 0, siteCountX);
+    std::pair<int, int> pairY = getMinMaxIdx(
+        inst->ly(), inst->uy(), die_.coreLy(), siteSizeY_, 0, siteCountY);
+
+    for (int i = pairX.first; i < pairX.second; i++) {
+      for (int j = pairY.first; j < pairY.second; j++) {
+        siteGrid[j * siteCountX + i] = FixedInst;
       }
     }
   }
@@ -1274,27 +1243,30 @@ void PlacerBase::printInfo() const
   dbBlock* block = db_->getChip()->getBlock();
   log_->info(GPL,
              6,
-             "{:20} {:10}",
-             "NumInstances:",
+             format_label_int,
+             "Number of instances:",
              placeInsts_.size() + fixedInsts_.size() + dummyInsts_.size());
-  log_->info(GPL, 7, "{:20} {:10}", "NumPlaceInstances:", placeInsts_.size());
-  log_->info(GPL, 8, "{:20} {:10}", "NumFixedInstances:", fixedInsts_.size());
-  log_->info(GPL, 9, "{:20} {:10}", "NumDummyInstances:", dummyInsts_.size());
-  log_->info(GPL, 10, "{:20} {:10}", "NumNets:", pbCommon_->nets().size());
-  log_->info(GPL, 11, "{:20} {:10}", "NumPins:", pbCommon_->pins().size());
+  log_->info(
+      GPL, 7, format_label_int, "Movable instances:", placeInsts_.size());
+  log_->info(GPL, 8, format_label_int, "Fixed instances:", fixedInsts_.size());
+  log_->info(GPL, 9, format_label_int, "Dummy instances:", dummyInsts_.size());
+  log_->info(
+      GPL, 10, format_label_int, "Number of nets:", pbCommon_->nets().size());
+  log_->info(
+      GPL, 11, format_label_int, "Number of pins:", pbCommon_->pins().size());
 
   log_->info(GPL,
              12,
-             "{:9} ( {:6.3f} {:6.3f} ) ( {:6.3f} {:6.3f} ) um",
-             "DieBBox:",
+             "{:10} ( {:6.3f} {:6.3f} ) ( {:6.3f} {:6.3f} ) um",
+             "Die BBox:",
              block->dbuToMicrons(die_.dieLx()),
              block->dbuToMicrons(die_.dieLy()),
              block->dbuToMicrons(die_.dieUx()),
              block->dbuToMicrons(die_.dieUy()));
   log_->info(GPL,
              13,
-             "{:9} ( {:6.3f} {:6.3f} ) ( {:6.3f} {:6.3f} ) um",
-             "CoreBBox:",
+             "{:10} ( {:6.3f} {:6.3f} ) ( {:6.3f} {:6.3f} ) um",
+             "Core BBox:",
              block->dbuToMicrons(die_.coreLx()),
              block->dbuToMicrons(die_.coreLy()),
              block->dbuToMicrons(die_.coreUx()),
@@ -1306,32 +1278,32 @@ void PlacerBase::printInfo() const
 
   log_->info(GPL,
              16,
-             "{:20} {:10.3f} um^2",
-             "CoreArea:",
+             format_label_um2,
+             "Core area:",
              block->dbuAreaToMicrons(coreArea));
   log_->info(GPL,
              17,
-             "{:20} {:10.3f} um^2",
-             "NonPlaceInstsArea:",
+             format_label_um2,
+             "Fixed instances area:",
              block->dbuAreaToMicrons(nonPlaceInstsArea_));
 
   log_->info(GPL,
              18,
-             "{:20} {:10.3f} um^2",
-             "PlaceInstsArea:",
+             format_label_um2,
+             "Movable instances area:",
              block->dbuAreaToMicrons(placeInstsArea_));
-  log_->info(GPL, 19, "{:20} {:10.3f} %", "Util:", util);
+  log_->info(GPL, 19, "{:27} {:10.3f} %", "Utilization:", util);
 
   log_->info(GPL,
              20,
-             "{:20} {:10.3f} um^2",
-             "StdInstsArea:",
+             format_label_um2,
+             "Standard cells area:",
              block->dbuAreaToMicrons(stdInstsArea_));
 
   log_->info(GPL,
              21,
-             "{:20} {:10.3f} um^2",
-             "MacroInstsArea:",
+             format_label_um2,
+             "Large instances area:",
              block->dbuAreaToMicrons(macroInstsArea_));
 
   if (util >= 100.1) {

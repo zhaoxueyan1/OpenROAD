@@ -53,6 +53,9 @@ list(APPEND CMAKE_PREFIX_PATH
   "/opt/or-tools/lib/cmake"
 )
 
+# Link to where ortools was found
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 include("openroad")
 
 
@@ -177,8 +180,14 @@ if (SWIG_VERSION VERSION_GREATER_EQUAL "4.1.0")
 endif()
 include(UseSWIG)
 
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED COMPONENTS iostreams)
 message(STATUS "boost: ${Boost_VERSION}")
+
+if (ENABLE_TESTS)
+  find_package(GTest REQUIRED)
+  message(STATUS "GTest: ${GTest_VERSION}")
+endif()
+
 find_package(Python3 COMPONENTS Development REQUIRED)
 option(BUILD_PYTHON "Build the Python3 interface" ON)
 
@@ -205,24 +214,39 @@ add_compile_options(
   $<$<BOOL:${ASAN}>:-fsanitize=address>
   $<$<BOOL:${ASAN}>:-fno-omit-frame-pointer>
   $<$<BOOL:${ASAN}>:-g>
+  $<$<BOOL:${TSAN}>:-fsanitize=thread>
+  $<$<BOOL:${TSAN}>:-g>
+  $<$<BOOL:${UBSAN}>:-fsanitize=undefined>
+  $<$<BOOL:${UBSAN}>:-g>
+  $<$<BOOL:${UBSAN}>:-fno-omit-frame-pointer>
 )
 
 if (ASAN)
   add_link_options(-fsanitize=address)
+  message(STATUS "Address Sanitizer is enabled")
+endif()
+
+if (TSAN)
+  add_link_options(-fsanitize=thread)
+  message(STATUS "Thread Sanitizer is enabled")
+endif()
+
+if (UBSAN)
+  add_link_options(-fsanitize=undefined)
+  message(STATUS "Undefined Behavior Sanitizer is enabled")
 endif()
 
 ################################################################
 
-swig_lib(NAME      openroad_swig
+swig_lib(NAME      ord
          NAMESPACE ord
          I_FILE    OpenRoad.i
          SCRIPTS   ${OPENSTA_HOME}/tcl/Util.tcl
                    OpenRoad.tcl
                    Metrics.tcl
-                   ${ODB_HOME}/src/db/odb.tcl
 )
 
-target_link_libraries(openroad_swig
+target_link_libraries(ord
   PRIVATE
     dbSta
     odb
@@ -263,6 +287,7 @@ if (NOT USE_SYSTEM_OPENSTA)
   if (TCL_READLINE_LIBRARY AND TCL_READLINE_H)
     # Pass along tcl readline enablement to OpenSTA build
     set(USE_TCL_READLINE ON)
+    set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
   endif()
   add_subdirectory(sta)
 endif()
@@ -271,14 +296,13 @@ add_subdirectory(rsz)
 add_subdirectory(stt)
 add_subdirectory(gpl)
 add_subdirectory(dpl)
-add_subdirectory(dpo)
+add_subdirectory(exa)
 add_subdirectory(fin)
 add_subdirectory(ppl)
 add_subdirectory(rmp)
 add_subdirectory(cts)
 add_subdirectory(grt)
 add_subdirectory(tap)
-add_subdirectory(mpl)
 add_subdirectory(rcx)
 add_subdirectory(psm)
 add_subdirectory(ant)
@@ -289,7 +313,7 @@ add_subdirectory(utl)
 add_subdirectory(dst)
 add_subdirectory(pdn)
 add_subdirectory(dft)
-add_subdirectory(mpl2)
+add_subdirectory(mpl)
 add_subdirectory(par)
 # add_subdirectory(TritonSizer)
 ################################################################
@@ -325,10 +349,10 @@ target_include_directories(openroad
 target_link_libraries(openroad
   ifp
   pad
-  openroad_swig
+  ord
   gpl
   dpl
-  dpo
+  exa
   fin
   rsz
   ppl
@@ -345,18 +369,18 @@ target_link_libraries(openroad
   gui
   drt
   dst
-  mpl
   psm
   ant
   upf
   utl
   pdn
   dft
-  mpl2
+  mpl
   par
   ${ABC_LIBRARY}
   ${TCL_LIBRARY}
   ${CMAKE_THREAD_LIBS_INIT}
+  ${Boost_LIBRARIES}
 )
 
 target_compile_definitions(openroad PRIVATE BUILD_TYPE="${CMAKE_BUILD_TYPE}")
@@ -393,21 +417,22 @@ if (Python3_FOUND AND BUILD_PYTHON)
   message(STATUS "Python3 enabled")
   target_compile_definitions(openroad PRIVATE ENABLE_PYTHON3)
 
-  swig_lib(NAME      openroad_swig_py
+  swig_lib(NAME      ord_py
            NAMESPACE ord
            LANGUAGE  python
            I_FILE    OpenRoad-py.i
-           SCRIPTS   ${CMAKE_CURRENT_BINARY_DIR}/openroad_swig_py.py
+           SCRIPTS   ${CMAKE_CURRENT_BINARY_DIR}/ord_py.py
   )
 
-  target_link_libraries(openroad_swig_py
+  target_link_libraries(ord_py
     PRIVATE
       dbSta
       odb
       OpenSTA
+      ifp
   )
   target_link_libraries(openroad
-    openroad_swig_py
+    ord_py
     odb_py
     ifp_py
     utl_py
@@ -415,12 +440,11 @@ if (Python3_FOUND AND BUILD_PYTHON)
     grt_py
     gpl_py
     dpl_py
-    mpl_py
+    exa_py
     ppl_py
     tap_py
     cts_py
     drt_py
-    dpo_py
     fin_py
     rcx_py
     rmp_py
@@ -442,13 +466,6 @@ messages(
   LOCAL
 )
 
-# pad isn't a proper module with its own CMakeLists.txt so it
-# is handled here (just like the tcl encoding).
-messages(
-  TARGET openroad
-  OUTPUT_DIR pad
-)
-
 # Ancient versions of glibc found on CentOS required librt.
 # OSX has an empty version of librt that causes a link error,
 # so this is protected from linking there.
@@ -464,11 +481,6 @@ endif()
 
 # executable
 install(TARGETS openroad DESTINATION bin)
-
-
-if(BUILD_MAN)
-  install(DIRECTORY ${MANPAGE_DIR} DESTINATION ${CMAKE_INSTALL_PREFIX}/share/man)
-endif()
 
 ################################################################
 

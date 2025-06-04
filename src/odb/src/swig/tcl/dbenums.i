@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
+
 %include "../../../../Exception.i"
 
 %typemap(out) odb::dbOrientType, dbOrientType {
@@ -331,9 +334,6 @@
 %typemap(out) odb::dbMasterType, dbMasterType {
 	Tcl_Obj *obj = nullptr;
 	switch ($1.getValue()) {
-		case odb::dbMasterType::Value::NONE:
-			obj = Tcl_NewStringObj("NONE", -1);
-			break;
 	 	case odb::dbMasterType::Value::COVER:
 			obj = Tcl_NewStringObj("COVER", -1);
 			break;
@@ -456,9 +456,7 @@
 }
 %typemap(in) odb::dbMasterType, dbMasterType {
 	char *str = Tcl_GetStringFromObj($input, 0);
-	if (strcasecmp(str, "NONE") == 0) {
-		$1 = odb::dbMasterType::Value::NONE;
-	} else if (strcasecmp(str, "COVER") == 0) {
+	if (strcasecmp(str, "COVER") == 0) {
 		$1 = odb::dbMasterType::Value::COVER;
 	} else if (strcasecmp(str, "COVER_BUMP") == 0) {
 		$1 = odb::dbMasterType::Value::COVER_BUMP;
@@ -542,9 +540,7 @@
 	char *str = Tcl_GetStringFromObj($input, 0);
 	bool found = false;
 	if (str) {
-		if (strcasecmp(str, "NONE") == 0) {
-			found = true;
-		} 	else if (strcasecmp(str, "COVER") == 0) {
+		if (strcasecmp(str, "COVER") == 0) {
 			found = true;
 		} 	else if (strcasecmp(str, "COVER_BUMP") == 0) {
 			found = true;
@@ -977,6 +973,9 @@
 	 	case odb::dbBoxOwner::Value::BPIN:
 			obj = Tcl_NewStringObj("BPIN", -1);
 			break;
+	 	case odb::dbBoxOwner::Value::PBOX:
+			obj = Tcl_NewStringObj("PBOX", -1);
+			break;
 	}
 	Tcl_SetObjResult(interp, obj);
 }
@@ -1008,6 +1007,8 @@
 		$1 = odb::dbBoxOwner::Value::REGION;
 	} else if (strcasecmp(str, "BPIN") == 0) {
 		$1 = odb::dbBoxOwner::Value::BPIN;
+	} else if (strcasecmp(str, "PBOX") == 0) {
+		$1 = odb::dbBoxOwner::Value::PBOX;
 	}
 }
 %typemap(typecheck) odb::dbBoxOwner, dbBoxOwner {
@@ -1039,6 +1040,8 @@
 		} 	else if (strcasecmp(str, "REGION") == 0) {
 			found = true;
 		} 	else if (strcasecmp(str, "BPIN") == 0) {
+			found = true;
+		} 	else if (strcasecmp(str, "PBOX") == 0) {
 			found = true;
 		}
 	}
@@ -1702,5 +1705,24 @@
 		$1 = 1;
 	} else {
 		$1 = 0;
+	}
+}
+%typemap(in) const odb::Direction2D&, const Direction2D& {
+	char *str = Tcl_GetStringFromObj($input, 0);
+        // Typecasts are needed as swig messes up and uses a non-const ptr
+        // even though it then casts it to const
+	if (strcasecmp(str, "west") == 0 || strcasecmp(str, "left") == 0) {
+          $1 = (Direction2D*) &odb::west;
+	} else if (strcasecmp(str, "east") == 0
+                   || strcasecmp(str, "right") == 0) {
+          $1 = (Direction2D*) &odb::east;
+	} else if (strcasecmp(str, "south") == 0
+                   || strcasecmp(str, "bottom") == 0) {
+          $1 = (Direction2D*) &odb::south;
+	} else if (strcasecmp(str, "north") == 0
+                   || strcasecmp(str, "top") == 0) {
+          $1 = (Direction2D*) &odb::north;
+        } else {
+                SWIG_exception(SWIG_ValueError, "Unknown direction2d");
 	}
 }

@@ -1,6 +1,10 @@
 # Helper functions common to multiple regressions.
 
-set test_dir [file dirname [file normalize [info script]]]
+if {[info exists ::env(TEST_TMPDIR)]} {
+  set test_dir $::env(TEST_TMPDIR)
+} else {
+  set test_dir [file dirname [file normalize [info script]]]
+}
 set result_dir [file join $test_dir "results"]
 
 proc make_result_file { filename } {
@@ -188,33 +192,16 @@ proc exit_summary {} {
   exit $::failing_checks
 }
 
-# Output voltage file is specified as ...
-suppress_message PSM 2
-# Output current file specified ...
-suppress_message PSM 3
-# Error file is specified as ...
-suppress_message PSM 83
-# Output spice file is specified as
-suppress_message PSM 5
-# SPICE file is written at
-suppress_message PSM 6
 # Reading DEF file
 suppress_message ODB 127
 # Finished DEF file
 suppress_message ODB 134
 
-# suppress ppl info messages. The ones defined in tcl can never
-# match between tcl and Python
-suppress_message PPL 41
-suppress_message PPL 48
-suppress_message PPL 49
-suppress_message PPL 60
-
 # suppress tap info messages
 suppress_message TAP 100
 suppress_message TAP 101
 
-# suppress par messages with files' names
+# suppress par messages with filenames
 suppress_message PAR 6
 suppress_message PAR 38
 

@@ -1,40 +1,7 @@
-############################################################################
-##
-## Copyright (c) 2019, The Regents of the University of California
-## All rights reserved.
-##
-## BSD 3-Clause License
-##
-## Redistribution and use in source and binary forms, with or without
-## modification, are permitted provided that the following conditions are met:
-##
-## * Redistributions of source code must retain the above copyright notice, this
-##   list of conditions and the following disclaimer.
-##
-## * Redistributions in binary form must reproduce the above copyright notice,
-##   this list of conditions and the following disclaimer in the documentation
-##   and/or other materials provided with the distribution.
-##
-## * Neither the name of the copyright holder nor the names of its
-##   contributors may be used to endorse or promote products derived from
-##   this software without specific prior written permission.
-##
-## THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-## AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-## ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-## LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-## CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-## SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-## POSSIBILITY OF SUCH DAMAGE.
-##
-############################################################################
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2019-2025, The OpenROAD Authors
 
 namespace eval sta {
-
 define_cmd_args "report_clock_skew_metric" {[-setup]|[-hold]}
 proc report_clock_skew_metric { args } {
   parse_key_args "report_clock_skew_metric" args keys {} flags {-setup -hold}
@@ -102,24 +69,24 @@ proc report_worst_negative_slack_metric { args } {
 }
 
 # From https://wiki.tcl-lang.org/page/Inf
-proc ::tcl::mathfunc::finite {x} {
-  expr {[string is double -strict $x] && $x == $x && $x + 1 != $x}
+proc ::tcl::mathfunc::finite { x } {
+  expr { [string is double -strict $x] && $x == $x && $x + 1 != $x }
 }
 
 define_cmd_args "report_erc_metrics" {}
 proc report_erc_metrics { } {
   # Avoid tcl errors from division involving Inf
-  if {[::tcl::mathfunc::finite [sta::max_slew_check_limit]]} {
+  if { [::tcl::mathfunc::finite [sta::max_slew_check_limit]] } {
     set max_slew_limit [sta::max_slew_check_slack_limit]
   } else {
     set max_slew_limit 0
   }
-  if {[::tcl::mathfunc::finite [sta::max_capacitance_check_limit]]} {
+  if { [::tcl::mathfunc::finite [sta::max_capacitance_check_limit]] } {
     set max_cap_limit [sta::max_capacitance_check_slack_limit]
   } else {
     set max_cap_limit 0
   }
-  if {[::tcl::mathfunc::finite [sta::max_fanout_check_limit]]} {
+  if { [::tcl::mathfunc::finite [sta::max_fanout_check_limit]] } {
     set max_fanout_limit [sta::max_fanout_check_limit]
   } else {
     set max_fanout_limit 0
@@ -158,7 +125,6 @@ proc report_power_metric { args } {
 
 define_cmd_args "report_units_metric" {}
 proc report_units_metric { args } {
-
   utl::push_metrics_stage "run__flow__platform__{}_units"
 
   foreach unit {"time" "capacitance" "resistance" "voltage" "current" "power" "distance"} {
@@ -170,7 +136,7 @@ proc report_units_metric { args } {
 
 
 define_cmd_args "report_design_area_metrics" {}
-proc report_design_area_metrics {args} {
+proc report_design_area_metrics { args } {
   set db [::ord::get_db]
   set dbu_per_uu [expr double([[$db getTech] getDbUnitsPerMicron])]
   set block [[$db getChip] getBlock]
@@ -195,7 +161,7 @@ proc report_design_area_metrics {args} {
 
   foreach inst [$block getInsts] {
     set inst_master [$inst getMaster]
-    if {[$inst_master isFiller]} {
+    if { [$inst_master isFiller] } {
       continue
     }
     set wid [$inst_master getWidth]
@@ -207,10 +173,10 @@ proc report_design_area_metrics {args} {
     if { [$inst_master isBlock] } {
       set num_macros [expr $num_macros + 1]
       set macro_area [expr $macro_area + $inst_area]
-    } elseif {[$inst_master isCover]} {
+    } elseif { [$inst_master isCover] } {
       set num_cover [expr $num_cover + 1]
       set cover_area [expr $cover_area + $inst_area]
-    } elseif {[$inst_master isPad]} {
+    } elseif { [$inst_master isPad] } {
       set num_padcells [expr $num_padcells + 1]
       set padcell_area [expr $padcell_area + $inst_area]
     } else {
@@ -229,9 +195,9 @@ proc report_design_area_metrics {args} {
 
   set total_active_area [expr $stdcell_area + $macro_area]
 
-  if {$core_area > 0} {
+  if { $core_area > 0 } {
     set core_util [expr $total_active_area / $core_area]
-    if {$core_area > $macro_area} {
+    if { $core_area > $macro_area } {
       set stdcell_util [expr $stdcell_area / [expr $core_area - $macro_area]]
     } else {
       set stdcell_util 0.0
@@ -239,6 +205,22 @@ proc report_design_area_metrics {args} {
   } else {
     set core_util -1.0
     set stdcell_util -1.0
+  }
+
+  set std_rows 0
+  set std_sites 0
+  set rows [dict create]
+  set sites [dict create]
+  foreach row [$block getRows] {
+    set site [$row getSite]
+
+    if { [$site getClass] == "NONE" || [$site getClass] == "CORE" } {
+      incr std_rows
+      set std_sites [expr { $std_sites + [$row getSiteCount] }]
+    }
+
+    dict incr rows [$site getName] 1
+    dict incr sites [$site getName] [$row getSiteCount]
   }
 
   utl::metric_int "design__io" $num_ios
@@ -250,8 +232,22 @@ proc report_design_area_metrics {args} {
   utl::metric_float "design__instance__area__stdcell" $stdcell_area
   utl::metric_int "design__instance__count__macros" $num_macros
   utl::metric_float "design__instance__area__macros" $macro_area
+  utl::metric_int "design__instance__count__padcells" $num_padcells
+  utl::metric_float "design__instance__area__padcells" $padcell_area
+  utl::metric_int "design__instance__count__cover" $num_cover
+  utl::metric_float "design__instance__area__cover" $cover_area
   utl::metric_float "design__instance__utilization" $core_util
   utl::metric_float "design__instance__utilization__stdcell" $stdcell_util
+
+  utl::metric_int "design__rows" $std_rows
+  dict for {site_name count} $rows {
+    utl::metric_int "design__rows:$site_name" $count
+  }
+
+  utl::metric_int "design__sites" $std_sites
+  dict for {site_name count} $sites {
+    utl::metric_int "design__sites:$site_name" $count
+  }
 }
 
 # namespace

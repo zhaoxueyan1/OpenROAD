@@ -1,39 +1,13 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2019, The Regents of the University of California
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
+
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <memory>
 
 #include "SteinerTree.hh"
+#include "db_sta/SpefWriter.hh"
 #include "db_sta/dbNetwork.hh"
 #include "grt/GlobalRouter.h"
 #include "rsz/Resizer.hh"
@@ -56,6 +30,7 @@ using sta::PinSet;
 
 using odb::dbInst;
 using odb::dbMasterType;
+using odb::dbModInst;
 
 ////////////////////////////////////////////////////////////////
 
@@ -206,10 +181,7 @@ double Resizer::wireClkResistance(const Corner* corner) const
   if (wire_clk_res_.empty()) {
     return 0.0;
   }
-  double h_clk_res = wire_clk_res_[corner->index()].h_res;
-  if (h_clk_res > 0.0) {
-    return h_clk_res;
-  }
+
   return (wire_clk_res_[corner->index()].h_res
           + wire_clk_res_[corner->index()].v_res)
          / 2;
@@ -273,13 +245,29 @@ void Resizer::ensureParasitics()
 
 void Resizer::estimateParasitics(ParasiticsSrc src)
 {
+  std::map<Corner*, std::ostream*> spef_streams;
+  estimateParasitics(src, spef_streams);
+}
+
+void Resizer::estimateParasitics(ParasiticsSrc src,
+                                 std::map<Corner*, std::ostream*>& spef_streams)
+{
+  std::unique_ptr<SpefWriter> spef_writer;
+  if (!spef_streams.empty()) {
+    spef_writer = std::make_unique<SpefWriter>(logger_, sta_, spef_streams);
+  }
+
   switch (src) {
     case ParasiticsSrc::placement:
-      estimateWireParasitics();
+      estimateWireParasitics(spef_writer.get());
       break;
     case ParasiticsSrc::global_routing:
-      global_router_->estimateRC();
+      global_router_->estimateRC(spef_writer.get());
       parasitics_src_ = ParasiticsSrc::global_routing;
+      break;
+    case ParasiticsSrc::detailed_routing:
+      // TODO: call rcx to extract parasitics and load them to STA
+      parasitics_src_ = ParasiticsSrc::detailed_routing;
       break;
     case ParasiticsSrc::none:
       break;
@@ -291,57 +279,41 @@ bool Resizer::haveEstimatedParasitics() const
   return parasitics_src_ != ParasiticsSrc::none;
 }
 
-void Resizer::incrementalParasiticsBegin()
-{
-  switch (parasitics_src_) {
-    case ParasiticsSrc::placement:
-      break;
-    case ParasiticsSrc::global_routing:
-      incr_groute_ = new IncrementalGRoute(global_router_, block_);
-      // Don't print verbose messages for incremental routing
-      global_router_->setVerbose(false);
-      break;
-    case ParasiticsSrc::none:
-      break;
-  }
-  parasitics_invalid_.clear();
-}
-
-void Resizer::incrementalParasiticsEnd()
-{
-  switch (parasitics_src_) {
-    case ParasiticsSrc::placement:
-      break;
-    case ParasiticsSrc::global_routing:
-      delete incr_groute_;
-      incr_groute_ = nullptr;
-      break;
-    case ParasiticsSrc::none:
-      break;
-  }
-  parasitics_invalid_.clear();
-}
-
 void Resizer::updateParasitics(bool save_guides)
 {
+  if (!incremental_parasitics_enabled_) {
+    logger_->error(
+        RSZ,
+        109,
+        "updateParasitics() called with incremental parasitics disabled");
+  }
+
   switch (parasitics_src_) {
     case ParasiticsSrc::placement:
       for (const Net* net : parasitics_invalid_) {
+        //
+        // TODO: remove this check (we expect all to be flat net)
+        //
+        if (!(db_network_->isFlat(net))) {
+          continue;
+        }
         estimateWireParasitic(net);
       }
-      parasitics_invalid_.clear();
       break;
-    case ParasiticsSrc::global_routing: {
+    case ParasiticsSrc::global_routing:
+    case ParasiticsSrc::detailed_routing: {
+      // TODO: update detailed route for modified nets
       incr_groute_->updateRoutes(save_guides);
       for (const Net* net : parasitics_invalid_) {
         global_router_->estimateRC(db_network_->staToDb(net));
       }
-      parasitics_invalid_.clear();
       break;
     }
     case ParasiticsSrc::none:
       break;
   }
+
+  parasitics_invalid_.clear();
 }
 
 bool Resizer::parasiticsValid() const
@@ -351,7 +323,8 @@ bool Resizer::parasiticsValid() const
 
 void Resizer::ensureWireParasitic(const Pin* drvr_pin)
 {
-  const Net* net = network_->net(drvr_pin);
+  const Net* net = db_network_->dbToSta(db_network_->flatNet(drvr_pin));
+
   if (net) {
     ensureWireParasitic(drvr_pin, net);
   }
@@ -378,6 +351,9 @@ void Resizer::ensureWireParasitic(const Pin* drvr_pin, const Net* net)
         parasitics_invalid_.erase(net);
         break;
       }
+      case ParasiticsSrc::detailed_routing:
+        // TODO: call incremental drt for the modified net
+        break;
       case ParasiticsSrc::none:
         break;
     }
@@ -386,37 +362,50 @@ void Resizer::ensureWireParasitic(const Pin* drvr_pin, const Net* net)
 
 ////////////////////////////////////////////////////////////////
 
-void Resizer::estimateWireParasitics()
+void Resizer::estimateWireParasitics(SpefWriter* spef_writer)
 {
   initBlock();
   if (!wire_signal_cap_.empty()) {
     sta_->ensureClkNetwork();
     // Make separate parasitics for each corner, same for min/max.
     sta_->setParasiticAnalysisPts(true);
+    LibertyLibrary* default_lib = network_->defaultLibertyLibrary();
+    // Call clearNetDrvrPinMap only without full blown ConcreteNetwork::clear()
+    // This is because netlist changes may invalidate cached net driver pin data
+    network_->Network::clear();
+    network_->setDefaultLibertyLibrary(default_lib);
 
-    NetIterator* net_iter = network_->netIterator(network_->topInstance());
-    while (net_iter->hasNext()) {
-      Net* net = net_iter->next();
-      estimateWireParasitic(net);
+    // Hierarchy flow change
+    // go through all nets, not just the ones in the instance
+    // Get the net set from the block
+    // old code:
+    // NetIterator* net_iter = network_->netIterator(network_->topInstance());
+    // Note that in hierarchy mode, this will not present all the nets,
+    // which is intent here. So get all flat nets from block
+    //
+    odb::dbSet<odb::dbNet> nets = block_->getNets();
+    for (auto db_net : nets) {
+      Net* cur_net = db_network_->dbToSta(db_net);
+      estimateWireParasitic(cur_net, spef_writer);
     }
-    delete net_iter;
-
     parasitics_src_ = ParasiticsSrc::placement;
     parasitics_invalid_.clear();
   }
 }
 
-void Resizer::estimateWireParasitic(const Net* net)
+void Resizer::estimateWireParasitic(const Net* net, SpefWriter* spef_writer)
 {
   PinSet* drivers = network_->drivers(net);
   if (drivers && !drivers->empty()) {
     PinSet::Iterator drvr_iter(drivers);
     const Pin* drvr_pin = drvr_iter.next();
-    estimateWireParasitic(drvr_pin, net);
+    estimateWireParasitic(drvr_pin, net, spef_writer);
   }
 }
 
-void Resizer::estimateWireParasitic(const Pin* drvr_pin, const Net* net)
+void Resizer::estimateWireParasitic(const Pin* drvr_pin,
+                                    const Net* net,
+                                    SpefWriter* spef_writer)
 {
   if (!network_->isPower(net) && !network_->isGround(net)
       && !sta_->isIdealClock(drvr_pin)
@@ -425,9 +414,9 @@ void Resizer::estimateWireParasitic(const Pin* drvr_pin, const Net* net)
       // When an input port drives a pad instance with huge input
       // cap the elmore delay is gigantic. Annotate with zero
       // wire capacitance to prevent wireload model parasitics from being used.
-      makePadParasitic(net);
+      makePadParasitic(net, spef_writer);
     } else {
-      estimateWireParasiticSteiner(drvr_pin, net);
+      estimateWireParasiticSteiner(drvr_pin, net, spef_writer);
     }
   }
 }
@@ -441,7 +430,7 @@ bool Resizer::isPadNet(const Net* net) const
              || (network_->isTopLevelPort(pin2) && isPadPin(pin1)));
 }
 
-void Resizer::makePadParasitic(const Net* net)
+void Resizer::makePadParasitic(const Net* net, SpefWriter* spef_writer)
 {
   const Pin *pin1, *pin2;
   net2Pins(net, pin1, pin2);
@@ -457,14 +446,18 @@ void Resizer::makePadParasitic(const Net* net)
 
     // Use a small resistor to keep the connectivity intact.
     parasitics_->makeResistor(parasitic, 1, .001, n1, n2);
+    if (spef_writer) {
+      spef_writer->writeNet(corner, net, parasitic);
+    }
     arc_delay_calc_->reduceParasitic(
         parasitic, net, corner, sta::MinMaxAll::all());
   }
   parasitics_->deleteParasiticNetworks(net);
 }
 
-// don't use this function
-void Resizer::estimateWireParasiticSteiner(const Pin* drvr_pin, const Net* net)
+void Resizer::estimateWireParasiticSteiner(const Pin* drvr_pin,
+                                           const Net* net,
+                                           SpefWriter* spef_writer)
 {
   SteinerTree* tree = makeSteinerTree(drvr_pin);
   if (tree) {
@@ -541,6 +534,9 @@ void Resizer::estimateWireParasiticSteiner(const Pin* drvr_pin, const Net* net)
         }
         parasiticNodeConnectPins(parasitic, n1, tree, steiner_pt1, resistor_id);
         parasiticNodeConnectPins(parasitic, n2, tree, steiner_pt2, resistor_id);
+      }
+      if (spef_writer) {
+        spef_writer->writeNet(corner, net, parasitic);
       }
       arc_delay_calc_->reduceParasitic(
           parasitic, net, corner, sta::MinMaxAll::all());
@@ -650,6 +646,7 @@ void Resizer::net2Pins(const Net* net, const Pin*& pin1, const Pin*& pin2) const
 {
   pin1 = nullptr;
   pin2 = nullptr;
+
   NetConnectedPinIterator* pin_iter = network_->connectedPinIterator(net);
   if (pin_iter->hasNext()) {
     pin1 = pin_iter->next();
@@ -668,7 +665,12 @@ bool Resizer::isPadPin(const Pin* pin) const
 
 bool Resizer::isPad(const Instance* inst) const
 {
-  dbInst* db_inst = db_network_->staToDb(inst);
+  dbInst* db_inst;
+  dbModInst* mod_inst;
+  db_network_->staToDb(inst, db_inst, mod_inst);
+  if (mod_inst) {
+    return false;
+  }
   const auto type = db_inst->getMaster()->getType().getValue();
   // Use switch so if new types are added we get a compiler warning.
   switch (type) {
@@ -712,7 +714,6 @@ bool Resizer::isPad(const Instance* inst) const
     case dbMasterType::PAD_INOUT:
     case dbMasterType::PAD_POWER:
     case dbMasterType::PAD_SPACER:
-    case dbMasterType::NONE:
       return true;
   }
   // gcc warniing
@@ -721,6 +722,7 @@ bool Resizer::isPad(const Instance* inst) const
 
 void Resizer::parasiticsInvalid(const Net* net)
 {
+  dbNet* db_net = db_network_->flatNet(net);
   if (haveEstimatedParasitics()) {
     debugPrint(logger_,
                RSZ,
@@ -728,7 +730,7 @@ void Resizer::parasiticsInvalid(const Net* net)
                2,
                "parasitics invalid {}",
                network_->pathName(net));
-    parasitics_invalid_.insert(net);
+    parasitics_invalid_.insert(db_network_->dbToSta(db_net));
   }
 }
 

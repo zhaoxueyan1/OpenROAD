@@ -1,37 +1,5 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2023, The Regents of the University of California
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2023-2025, The OpenROAD Authors
 
 #pragma once
 
@@ -39,25 +7,13 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "odb/db.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
 #include "odb/isotropy.h"
-
-namespace odb {
-class dbDatabase;
-class dbBlock;
-class dbInst;
-class dbITerm;
-class dbMaster;
-class dbNet;
-class dbRow;
-class dbSite;
-class dbTechLayer;
-class dbTechVia;
-class Point;
-}  // namespace odb
 
 namespace utl {
 class Logger;
@@ -111,6 +67,7 @@ class ICeWall
                 odb::dbRow* row,
                 int location,
                 bool mirror);
+  void placePads(const std::vector<odb::dbInst*>& insts, odb::dbRow* row);
   void placeCorner(odb::dbMaster* master, int ring_index);
   void placeFiller(const std::vector<odb::dbMaster*>& masters,
                    odb::dbRow* row,
@@ -131,8 +88,10 @@ class ICeWall
                 int width = 0,
                 int spacing = 0,
                 bool allow45 = false,
-                float turn_penalty = 2.0);
+                float turn_penalty = 2.0,
+                int max_iterations = 10);
   void routeRDLDebugGUI(bool enable);
+  void routeRDLDebugNet(const char* net);
 
   void connectByAbutment();
 
@@ -148,11 +107,11 @@ class ICeWall
   std::vector<odb::dbInst*> getPadInstsInRow(odb::dbRow* row) const;
   std::vector<odb::dbInst*> getPadInsts() const;
 
-  void placeInstance(odb::dbRow* row,
-                     int index,
-                     odb::dbInst* inst,
-                     const odb::dbOrientType& base_orient,
-                     bool allow_overlap = false) const;
+  int placeInstance(odb::dbRow* row,
+                    int index,
+                    odb::dbInst* inst,
+                    const odb::dbOrientType& base_orient,
+                    bool allow_overlap = false) const;
 
   void makeBTerm(odb::dbNet* net,
                  odb::dbTechLayer* layer,
@@ -169,6 +128,40 @@ class ICeWall
   std::string getRowName(const std::string& name, int ring_index) const;
   odb::Direction2D::Value getRowEdge(odb::dbRow* row) const;
 
+  int64_t estimateWirelengths(odb::dbInst* inst,
+                              const std::set<odb::dbITerm*>& iterms) const;
+  int64_t computePadBumpDistance(odb::dbInst* inst,
+                                 int inst_width,
+                                 odb::dbITerm* bump,
+                                 odb::dbRow* row,
+                                 int center_pos) const;
+  void placePadsUniform(const std::vector<odb::dbInst*>& insts,
+                        odb::dbRow* row,
+                        const std::map<odb::dbInst*, int>& inst_widths,
+                        int pads_width,
+                        int row_width,
+                        int row_start) const;
+  void placePadsBumpAligned(
+      const std::vector<odb::dbInst*>& insts,
+      odb::dbRow* row,
+      const std::map<odb::dbInst*, int>& inst_widths,
+      int pads_width,
+      int row_width,
+      int row_start,
+      const std::map<odb::dbInst*, std::set<odb::dbITerm*>>& iterm_connections)
+      const;
+  std::map<odb::dbInst*, odb::dbITerm*> getBumpAlignmentGroup(
+      odb::dbRow* row,
+      int offset,
+      const std::map<odb::dbInst*, int>& inst_widths,
+      const std::map<odb::dbInst*, std::set<odb::dbITerm*>>& iterm_connections,
+      const std::vector<odb::dbInst*>::const_iterator& itr,
+      const std::vector<odb::dbInst*>::const_iterator& inst_end) const;
+  void performPadFlip(odb::dbRow* row,
+                      odb::dbInst* inst,
+                      const std::map<odb::dbInst*, std::set<odb::dbITerm*>>&
+                          iterm_connections) const;
+
   // Data members
   odb::dbDatabase* db_ = nullptr;
   utl::Logger* logger_ = nullptr;
@@ -177,6 +170,7 @@ class ICeWall
 
   std::unique_ptr<RDLRouter> router_;
   std::unique_ptr<RDLGui> router_gui_;
+  odb::dbNet* rdl_net_debug_ = nullptr;
 
   constexpr static const char* fake_library_name_ = "FAKE_IO";
   constexpr static const char* row_north_ = "IO_NORTH";

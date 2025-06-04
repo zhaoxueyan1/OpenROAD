@@ -1,34 +1,5 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "rcx/extRCap.h"
 #include "rcx/extSpef.h"
@@ -109,8 +80,10 @@ uint extMain::getMultiples(uint cnt, uint base)
   return ((cnt / base) + 1) * base;
 }
 
-void extMain::setupMapping(uint itermCnt)
+void extMain::setupMapping(uint itermCnt1)
 {
+  uint itermCnt = 3 * _block->getNets().size();
+
   if (_btermTable) {
     return;
   }
@@ -133,6 +106,22 @@ void extMain::setupMapping(uint itermCnt)
 extMain::extMain()
 {
   _modelTable = new Ath__array1D<extRCModel*>(8);
+}
+extMain::~extMain()
+{
+  while (_modelTable->notEmpty()) {
+    delete _modelTable->pop();
+  }
+
+  delete _modelTable;
+  delete _btermTable;
+  delete _itermTable;
+  delete _nodeTable;
+  delete[] _tmpResTable;
+  delete[] _tmpSumResTable;
+  removeDgContextArray();
+  removeContextArray();
+  cleanCornerTables();
 }
 
 void extMain::initDgContextArray()
@@ -160,7 +149,7 @@ void extMain::initDgContextArray()
 
 void extMain::removeDgContextArray()
 {
-  if (!_dgContextPlanes || !_dgContextArray) {
+  if (!_dgContextArray) {
     return;
   }
   delete[] _dgContextBaseTrack;
@@ -183,18 +172,35 @@ void extMain::initContextArray()
   if (_ccContextArray) {
     return;
   }
-  uint layerCnt = getExtLayerCnt(_tech);
-  _ccContextArray = new Ath__array1D<int>*[layerCnt + 1];
+  _ccContextPlanes = getExtLayerCnt(_tech);
+  _ccContextArray = new Ath__array1D<int>*[_ccContextPlanes + 1];
   _ccContextArray[0] = nullptr;
   uint ii;
-  for (ii = 1; ii <= layerCnt; ii++) {
+  for (ii = 1; ii <= _ccContextPlanes; ii++) {
     _ccContextArray[ii] = new Ath__array1D<int>(1024);
   }
-  _ccMergedContextArray = new Ath__array1D<int>*[layerCnt + 1];
+  _ccMergedContextArray = new Ath__array1D<int>*[_ccContextPlanes + 1];
   _ccMergedContextArray[0] = nullptr;
-  for (ii = 1; ii <= layerCnt; ii++) {
+  for (ii = 1; ii <= _ccContextPlanes; ii++) {
     _ccMergedContextArray[ii] = new Ath__array1D<int>(1024);
   }
+}
+
+void extMain::removeContextArray()
+{
+  if (!_ccContextArray) {
+    return;
+  }
+
+  for (uint i = 0; i <= _ccContextPlanes; i++) {
+    delete _ccContextArray[i];
+    delete _ccMergedContextArray[i];
+  }
+
+  delete[] _ccContextArray;
+  delete[] _ccMergedContextArray;
+
+  _ccContextArray = nullptr;
 }
 
 uint extMain::getExtLayerCnt(dbTech* tech)
@@ -226,7 +232,6 @@ extRCModel* extMain::getRCmodel(uint n)
 
 uint extMain::getResCapTable()
 {
-  calcMinMaxRC();
   _currentModel = getRCmodel(0);
 
   extMeasure m(logger_);
@@ -238,7 +243,6 @@ uint extMain::getResCapTable()
     if (layer->getRoutingLevel() == 0) {
       continue;
     }
-
     const uint n = layer->getRoutingLevel();
 
     const uint w = layer->getWidth();  // nm
@@ -269,6 +273,8 @@ uint extMain::getResCapTable()
 
       extDistRC* rc = rcModel->getOverFringeRC(&m);
 
+      _capacitanceTable[jj][n] = _minCapTable[n][jj];
+
       if (rc != nullptr) {
         const double r1 = rc->getRes();
         _capacitanceTable[jj][n] = rc->getFringe();
@@ -288,7 +294,6 @@ uint extMain::getResCapTable()
                    r1,
                    resTable[jj]);
       }
-
       if (!_lef_res) {
         _resistanceTable[jj][n] = resTable[jj];
       } else {
@@ -410,25 +415,14 @@ double extMain::getFringe(const uint met,
                           double& areaCap)
 {
   areaCap = 0.0;
-  if (_noModelRC) {
-    return 0.0;
+  if (_noModelRC || _lefRC) {
+    return _capacitanceTable[0][met];
   }
 
   if (width == _minWidthTable[met]) {
     return _capacitanceTable[modelIndex][met];
   }
-
-  // just in case
-
-  extMeasure m(logger_);
-
-  m._met = met;
-  m._width = width;
-  m._underMet = 0;
-  m._ccContextArray = _ccContextArray;
-  m._ccMergedContextArray = _ccMergedContextArray;
-
-  extDistRC* rc = _metRCTable.get(modelIndex)->getOverFringeRC(&m);
+  extDistRC* rc = _metRCTable.get(modelIndex)->getOverFringeRC_last(met, width);
 
   if (rc == nullptr) {
     return 0.0;
@@ -557,9 +551,6 @@ void extMain::ccReportProgress()
   }
 }
 
-int ttttsrcnet = 66;
-int tttttgtnet = 66;
-int ttttm = 0;
 void extMain::printNet(dbNet* net, uint netId)
 {
   if (netId == net->getId()) {
@@ -625,10 +616,7 @@ void extMain::measureRC(CoupleOptions& options)
 
   uint totLenCovered = 0;
   if (_usingMetalPlanes) {
-    if (_ccContextArray
-        && ((!srcNet || (int) srcNet->getId() == ttttsrcnet)
-            || (!tgtNet || (int) tgtNet->getId() == tttttgtnet))
-        && (!ttttm || m._met == ttttm)) {
+    if (_ccContextArray && (!srcNet || !tgtNet)) {
       int pxy = m._dir ? m._ll[0] : m._ll[1];
       int pbase = m._dir ? m._ur[1] : m._ur[0];
       logger_->info(RCX,
@@ -725,7 +713,7 @@ void extMain::measureRC(CoupleOptions& options)
   ccReportProgress();
 }
 
-extern CoupleOptions coupleOptionsNull;
+const CoupleOptions coupleOptionsNull{};
 
 void extCompute1(CoupleOptions& options, void* computePtr)
 {

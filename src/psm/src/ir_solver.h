@@ -1,34 +1,5 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2024, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2024-2025, The OpenROAD Authors
 
 #pragma once
 
@@ -38,8 +9,11 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
+#include <string>
 #include <vector>
 
+#include "connection.h"
 #include "debug_gui.h"
 #include "ir_network.h"
 #include "node.h"
@@ -87,18 +61,20 @@ class IRSolver
     std::set<ITermNode*, Node::Compare> unconnected_iterms_;
   };
 
-  IRSolver(odb::dbNet* net,
-           bool floorplanning,
-           sta::dbSta* sta,
-           rsz::Resizer* resizer,
-           utl::Logger* logger,
-           const std::map<odb::dbNet*, std::map<sta::Corner*, Voltage>>&
-               user_voltages,
-           const PDNSim::GeneratedSourceSettings& generated_source_settings);
+  IRSolver(
+      odb::dbNet* net,
+      bool floorplanning,
+      sta::dbSta* sta,
+      rsz::Resizer* resizer,
+      utl::Logger* logger,
+      const std::map<odb::dbNet*, std::map<sta::Corner*, Voltage>>&
+          user_voltages,
+      const std::map<odb::dbInst*, std::map<sta::Corner*, Power>>& user_powers,
+      const PDNSim::GeneratedSourceSettings& generated_source_settings);
 
   odb::dbNet* getNet() const { return net_; };
 
-  bool check();
+  bool check(bool check_bterms);
 
   void solve(sta::Corner* corner,
              GeneratedSourceType source_type,
@@ -142,6 +118,7 @@ class IRSolver
   odb::dbNet* getPowerNet() const;
 
   Connection::ResistanceMap getResistanceMap(sta::Corner* corner) const;
+  void assertResistanceMap(sta::Corner* corner) const;
 
   IRNetwork* getNetwork() const { return network_.get(); }
 
@@ -153,14 +130,16 @@ class IRSolver
   odb::dbTech* getTech() const;
 
   bool checkOpen();
+  bool checkBTerms() const;
   bool checkShort() const;
 
   std::map<odb::dbInst*, Power> getInstancePower(sta::Corner* corner) const;
   Voltage getPowerNetVoltage(sta::Corner* corner) const;
 
-  std::map<Connection*, Current> generateCurrentMap(sta::Corner* corner) const;
+  Connection::ConnectionMap<Current> generateCurrentMap(
+      sta::Corner* corner) const;
 
-  std::map<Connection*, Connection::Conductance> generateConductanceMap(
+  Connection::ConnectionMap<Connection::Conductance> generateConductanceMap(
       sta::Corner* corner) const;
   Voltage generateSourceNodes(
       GeneratedSourceType source_type,
@@ -183,12 +162,13 @@ class IRSolver
       std::vector<std::unique_ptr<SourceNode>>& sources) const;
 
   void reportUnconnectedNodes() const;
+  void reportMissingBTerm() const;
   bool wasNodeVisited(const std::unique_ptr<ITermNode>& node) const;
   bool wasNodeVisited(const std::unique_ptr<Node>& node) const;
   bool wasNodeVisited(const Node* node) const;
 
   std::map<Node*, Connection::ConnectionSet> getNodeConnectionMap(
-      const std::map<psm::Connection*, Connection::Conductance>& conductance)
+      const Connection::ConnectionMap<Connection::Conductance>& conductance)
       const;
   void buildNodeCurrentMap(sta::Corner* corner,
                            ValueNodeMap<Current>& currents) const;
@@ -201,7 +181,7 @@ class IRSolver
       bool is_ground,
       const std::map<Node*, Connection::ConnectionSet>& node_connections,
       const ValueNodeMap<Current>& currents,
-      const std::map<psm::Connection*, Connection::Conductance>& conductance,
+      const Connection::ConnectionMap<Connection::Conductance>& conductance,
       const std::map<Node*, std::size_t>& node_index,
       Eigen::SparseMatrix<Connection::Conductance>& G,
       Eigen::VectorXd& J) const;
@@ -218,7 +198,7 @@ class IRSolver
   void dumpMatrix(const Eigen::SparseMatrix<Connection::Conductance>& matrix,
                   const std::string& name) const;
   void dumpConductance(
-      const std::map<Connection*, Connection::Conductance>& cond,
+      const Connection::ConnectionMap<Connection::Conductance>& cond,
       const std::string& name) const;
 
   odb::dbNet* net_;
@@ -232,6 +212,7 @@ class IRSolver
   std::unique_ptr<DebugGui> gui_;
 
   const std::map<odb::dbNet*, std::map<sta::Corner*, Voltage>>& user_voltages_;
+  const std::map<odb::dbInst*, std::map<sta::Corner*, Power>>& user_powers_;
   std::map<sta::Corner*, Voltage> solution_voltages_;
 
   const PDNSim::GeneratedSourceSettings& generated_source_settings_;

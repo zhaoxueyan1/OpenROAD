@@ -1,61 +1,21 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #pragma once
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/index/rtree.hpp>
+#include <functional>
 #include <map>
 #include <memory>
+#include <set>
+#include <string>
 #include <vector>
 
+#include "odb/db.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
 #include "odb/geom_boost.h"
-
-namespace odb {
-class dbBlock;
-class dbBox;
-class dbNet;
-class dbTechLayer;
-class dbViaVia;
-class dbTechVia;
-class dbTechViaGenerateRule;
-class dbTechViaLayerRule;
-class dbRow;
-class dbSWire;
-class dbVia;
-class dbViaParams;
-}  // namespace odb
 
 namespace utl {
 class Logger;
@@ -63,7 +23,6 @@ class Logger;
 
 namespace pdn {
 
-namespace bg = boost::geometry;
 namespace bgi = boost::geometry::index;
 
 class Shape;
@@ -165,8 +124,10 @@ class Shape
   bool isSquare() const { return rect_.dx() == rect_.dy(); }
   bool isVertical() const { return rect_.dx() < rect_.dy(); }
 
+  virtual odb::dbTechLayerDir getLayerDirection() const;
+
   // true if shape can be removed by trimming
-  virtual bool isRemovable() const;
+  virtual bool isRemovable(bool assume_bterm) const;
   // true if shape can be modified (cut or shortened) by trimming
   virtual bool isModifiable() const;
 
@@ -303,9 +264,11 @@ class FollowPinShape : public Shape
   void updateTermConnections() override;
 
   // followpins cannot be removed
-  bool isRemovable() const override { return false; }
+  bool isRemovable(bool assume_bterm) const override { return false; }
 
   void setAllowsNonPreferredDirectionChange() override {}
+
+  odb::dbTechLayerDir getLayerDirection() const override;
 
   bool cut(const ObstructionTree& obstructions,
            const Grid* ignore_grid,

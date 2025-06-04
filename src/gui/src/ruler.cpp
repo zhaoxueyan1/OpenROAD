@@ -1,38 +1,13 @@
-//////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2021, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2021-2025, The OpenROAD Authors
 
 #include "ruler.h"
 
 #include <boost/geometry.hpp>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "odb/db.h"
 
@@ -175,60 +150,50 @@ Descriptor::Properties RulerDescriptor::getProperties(std::any object) const
 Descriptor::Editors RulerDescriptor::getEditors(std::any object) const
 {
   auto ruler = std::any_cast<Ruler*>(object);
-  const int dbu_per_uu_ = db_->getChip()->getBlock()->getDbUnitsPerMicron();
-  return {
-      {"Name", makeEditor([this, ruler](std::any value) {
-         auto new_name = std::any_cast<const std::string>(value);
-         if (new_name.empty()) {
-           return false;
-         }
-         for (const auto& check_ruler : rulers_) {
-           if (check_ruler->getName() == new_name) {
-             return false;
-           }
-         }
-         ruler->setName(new_name);
-         return true;
-       })},
-      {"Label", makeEditor([ruler](std::any value) {
-         ruler->setLabel(std::any_cast<const std::string>(value));
-         return true;
-       })},
-      {"Point 0 - x", makeEditor([ruler, dbu_per_uu_](const std::any& value) {
-         return RulerDescriptor::editPoint(
-             value, dbu_per_uu_, ruler->getPt0(), true);
-       })},
-      {"Point 0 - y", makeEditor([ruler, dbu_per_uu_](const std::any& value) {
-         return RulerDescriptor::editPoint(
-             value, dbu_per_uu_, ruler->getPt0(), false);
-       })},
-      {"Point 1 - x", makeEditor([ruler, dbu_per_uu_](const std::any& value) {
-         return RulerDescriptor::editPoint(
-             value, dbu_per_uu_, ruler->getPt1(), true);
-       })},
-      {"Point 1 - y", makeEditor([ruler, dbu_per_uu_](const std::any& value) {
-         return RulerDescriptor::editPoint(
-             value, dbu_per_uu_, ruler->getPt1(), false);
-       })},
-      {"Euclidian", makeEditor([ruler](const std::any& value) {
-         bool euclidian = std::any_cast<bool>(value);
-         ruler->setEuclidian(euclidian);
-         return true;
-       })}};
+  return {{"Name", makeEditor([this, ruler](std::any value) {
+             auto new_name = std::any_cast<const std::string>(value);
+             if (new_name.empty()) {
+               return false;
+             }
+             for (const auto& check_ruler : rulers_) {
+               if (check_ruler->getName() == new_name) {
+                 return false;
+               }
+             }
+             ruler->setName(new_name);
+             return true;
+           })},
+          {"Label", makeEditor([ruler](std::any value) {
+             ruler->setLabel(std::any_cast<const std::string>(value));
+             return true;
+           })},
+          {"Point 0 - x", makeEditor([ruler](const std::any& value) {
+             return RulerDescriptor::editPoint(value, ruler->getPt0(), true);
+           })},
+          {"Point 0 - y", makeEditor([ruler](const std::any& value) {
+             return RulerDescriptor::editPoint(value, ruler->getPt0(), false);
+           })},
+          {"Point 1 - x", makeEditor([ruler](const std::any& value) {
+             return RulerDescriptor::editPoint(value, ruler->getPt1(), true);
+           })},
+          {"Point 1 - y", makeEditor([ruler](const std::any& value) {
+             return RulerDescriptor::editPoint(value, ruler->getPt1(), false);
+           })},
+          {"Euclidian", makeEditor([ruler](const std::any& value) {
+             bool euclidian = std::any_cast<bool>(value);
+             ruler->setEuclidian(euclidian);
+             return true;
+           })}};
 }
 
-bool RulerDescriptor::editPoint(std::any value,
-                                int dbu_per_uu,
-                                odb::Point& pt,
-                                bool is_x)
+bool RulerDescriptor::editPoint(std::any value, odb::Point& pt, bool is_x)
 {
-  double cast_value = 0;
-  try {
-    cast_value = std::any_cast<double>(value);
-  } catch (const std::bad_any_cast&) {
+  bool accept;
+  const int new_val = Descriptor::Property::convert_string(
+      std::any_cast<std::string>(value), &accept);
+  if (!accept) {
     return false;
   }
-  const int new_val = cast_value * dbu_per_uu;
   if (is_x) {
     pt.setX(new_val);
   } else {

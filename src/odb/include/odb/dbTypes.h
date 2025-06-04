@@ -1,39 +1,13 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #pragma once
 
 #include <optional>
+#include <string>
 
+#include "dbStream.h"
+#include "geom.h"
 #include "odb.h"
 
 namespace odb {
@@ -123,6 +97,59 @@ class dbOrientType
  private:
   Value _value;
 };
+
+class dbGDSSTrans
+{
+ public:
+  bool _flipX;
+  double _mag, _angle;
+
+  dbGDSSTrans();
+
+  dbGDSSTrans(bool flipX, double mag, double angle);
+
+  bool operator==(const dbGDSSTrans& rhs) const;
+
+  std::string to_string() const;
+
+  bool identity() const;
+};
+
+dbIStream& operator>>(dbIStream& stream, dbGDSSTrans& t);
+dbOStream& operator<<(dbOStream& stream, dbGDSSTrans t);
+
+class dbGDSTextPres
+{
+ public:
+  enum VPres
+  {
+    TOP = 0,
+    MIDDLE = 1,
+    BOTTOM = 2
+  };
+  enum HPres
+  {
+    LEFT = 0,
+    CENTER = 1,
+    RIGHT = 2
+  };
+
+  VPres _vPres;
+  HPres _hPres;
+
+  dbGDSTextPres();
+
+  dbGDSTextPres(VPres vPres, HPres hPres);
+
+  bool operator==(const dbGDSTextPres& rhs) const;
+
+  bool identity() const;
+
+  std::string to_string() const;
+};
+
+dbIStream& operator>>(dbIStream& stream, dbGDSTextPres& t);
+dbOStream& operator<<(dbOStream& stream, dbGDSTextPres t);
 
 ///
 /// The dbGroup's basis.
@@ -380,7 +407,6 @@ class dbMasterType
  public:
   enum Value
   {
-    NONE,                           /** */
     COVER,                          /** */
     COVER_BUMP,                     /** */
     RING,                           /** */
@@ -738,7 +764,8 @@ class dbBoxOwner
     MPIN,
     TECH_VIA,
     REGION,
-    BPIN
+    BPIN,
+    PBOX
   };
 
   ///
@@ -1222,13 +1249,13 @@ class dbSourceType
   Value _value;
 };
 
-constexpr uint64 MAX_UINT64 = 0xffffffffffffffffLL;
-constexpr uint64 MIN_UINT64 = 0;
+constexpr uint64_t MAX_UINT64 = 0xffffffffffffffffLL;
+constexpr uint64_t MIN_UINT64 = 0;
 constexpr uint MAX_UINT = 0xffffffff;
 constexpr uint MIN_UINT = 0;
 
-constexpr int64 MAX_INT64 = 0x7fffffffffffffffLL;
-constexpr int64 MIN_INT64 = 0x8000000000000000LL;
+constexpr int64_t MAX_INT64 = 0x7fffffffffffffffLL;
+constexpr int64_t MIN_INT64 = 0x8000000000000000LL;
 constexpr int MAX_INT = 0x7fffffff;
 constexpr int MIN_INT = 0x80000000;
 

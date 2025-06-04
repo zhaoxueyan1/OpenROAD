@@ -33,13 +33,13 @@
 
 #include "lefwWriter.hpp"
 
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 
 #include "crypt.hpp"
 
-BEGIN_LEFDEF_PARSER_NAMESPACE
+BEGIN_LEF_PARSER_NAMESPACE
 
 // States of the writer.
 #define LEFW_UNINIT 0
@@ -199,13 +199,13 @@ BEGIN_LEFDEF_PARSER_NAMESPACE
 // *****************************************************************************
 // Global Variables
 // *****************************************************************************
-typedef void (*LEFI_LOG_FUNCTION)(const char*);
-typedef void (*LEFI_WARNING_LOG_FUNCTION)(const char*);
+using LEFI_LOG_FUNCTION = void (*)(const char*);
+using LEFI_WARNING_LOG_FUNCTION = void (*)(const char*);
 
 LEFI_LOG_FUNCTION lefwErrorLogFunction;
 LEFI_WARNING_LOG_FUNCTION lefwWarningLogFunction;
 
-FILE* lefwFile = 0;               // File to write to.
+FILE* lefwFile = nullptr;         // File to write to.
 int lefwSynArray[MAXSYN];         // array of syntax
 int lefwLines = 0;                // number of lines written
 int lefwState = LEFW_UNINIT;      // Current state of writer
@@ -476,13 +476,6 @@ int lefwInit(FILE* f)
 {
   int i;
 
-  // Check if the user is valid
-  /* don't need anymore
-  if (!lefiValidUser())
-      exit(77);
-  */
-
-  // if (lefwFile) return LEFW_BAD_ORDER;
   lefwFile = f;
 
   if (lefwHasInitCbk == 1) {  // lefwInitCbk has already called, issue an error
@@ -706,7 +699,7 @@ int lefwBusBitChars(const char* busBitChars)
     return LEFW_BAD_ORDER;  // not of the ENDs
   if (lefwSynArray[LEFW_BUSBITCHARS])
     return LEFW_ALREADY_DEFINED;
-  if (busBitChars && busBitChars != 0 && *busBitChars != 0) {
+  if (busBitChars && busBitChars != nullptr && *busBitChars != 0) {
     if (lefwWriteEncrypt)
       encPrint(lefwFile, (char*) "BUSBITCHARS \"%s\" ;\n", busBitChars);
     else
@@ -727,7 +720,7 @@ int lefwDividerChar(const char* dividerChar)
     return LEFW_BAD_ORDER;  // not of the ENDs
   if (lefwSynArray[LEFW_DIVIDERCHAR])
     return LEFW_ALREADY_DEFINED;
-  if (dividerChar && dividerChar != 0 && *dividerChar != 0) {
+  if (dividerChar && dividerChar != nullptr && *dividerChar != 0) {
     if (lefwWriteEncrypt)
       encPrint(lefwFile, (char*) "DIVIDERCHAR \"%s\" ;\n", dividerChar);
     else
@@ -1085,7 +1078,7 @@ int lefwLayerCutSpacingAdjacent(int viaCuts,  // either 2, 3 or 4, optional
     return LEFW_BAD_ORDER;  // has to be after
   // lefwLayerCutSpacing is called
   if (lefwWriteEncrypt) {
-    if (viaCuts < 2 && viaCuts > 4)
+    if (viaCuts < 2 || viaCuts > 4)
       return LEFW_BAD_DATA;
     encPrint(lefwFile,
              (char*) "\n     ADJACENTCUTS %d WITHIN %.11g",
@@ -1095,7 +1088,7 @@ int lefwLayerCutSpacingAdjacent(int viaCuts,  // either 2, 3 or 4, optional
       encPrint(lefwFile, (char*) " EXCEPTSAMEPGNET");
 
   } else {
-    if (viaCuts < 2 && viaCuts > 4)
+    if (viaCuts < 2 || viaCuts > 4)
       return LEFW_BAD_DATA;
     fprintf(lefwFile, "\n     ADJACENTCUTS %d WITHIN %.11g", viaCuts, distance);
     if (except)
@@ -1586,7 +1579,7 @@ int lefwLayerRouting(const char* direction, double width)
     prtSemiColon = 0;
   }
   if (lefwWriteEncrypt) {
-    if (!direction || direction == 0 || *direction == 0) {
+    if (!direction || direction == nullptr || *direction == 0) {
       encPrint(lefwFile, (char*) "DIRECTION is required in Layer(Routing).\n");
       return LEFW_BAD_DATA;
     }
@@ -1600,7 +1593,7 @@ int lefwLayerRouting(const char* direction, double width)
     encPrint(lefwFile, (char*) "   DIRECTION %s ;\n", direction);
     encPrint(lefwFile, (char*) "   WIDTH %.11g ;\n", width);
   } else {
-    if (!direction || direction == 0 || *direction == 0) {
+    if (!direction || direction == nullptr || *direction == 0) {
       fprintf(lefwFile, "DIRECTION is required in Layer(Routing).\n");
       return LEFW_BAD_DATA;
     }
@@ -2371,7 +2364,7 @@ int lefwLayerRoutingResistance(const char* resistance)
     return LEFW_BAD_ORDER;
   if (!lefwIsRouting)
     return LEFW_BAD_DATA;  // only routing calls this func
-  if (!resistance || resistance == 0 || *resistance == 0)
+  if (!resistance || resistance == nullptr || *resistance == 0)
     return LEFW_BAD_DATA;
   if (prtSemiColon) {
     // the previous statement hasn't written the ; yet
@@ -2405,7 +2398,7 @@ int lefwLayerRoutingCapacitance(const char* capacitance)
       fprintf(lefwFile, ";\n");
     prtSemiColon = 0;
   }
-  if (!capacitance || capacitance == 0 || *capacitance == 0)
+  if (!capacitance || capacitance == nullptr || *capacitance == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   CAPACITANCE CPERSQDIST %s ;\n", capacitance);
@@ -3947,8 +3940,8 @@ int lefwIntPropDef(const char* objType,
   /*
     if ((! objType && ! *objType) || (! propName && ! *propName))
   */
-  if (((objType == 0) || (*objType == 0))
-      || ((propName == 0) || (*propName == 0)))
+  if (((objType == nullptr) || (*objType == 0))
+      || ((propName == nullptr) || (*propName == 0)))
     return LEFW_BAD_DATA;
 
   if (strcmp(objType, "LIBRARY") && strcmp(objType, "VIA")
@@ -3993,8 +3986,8 @@ int lefwRealPropDef(const char* objType,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_PROPERTYDEF_START && lefwState != LEFW_PROPERTYDEF)
     return LEFW_BAD_ORDER;
-  if (((objType == 0) || (*objType == 0))
-      || ((propName == 0) || (*propName == 0)))  // require
+  if (((objType == nullptr) || (*objType == 0))
+      || ((propName == nullptr) || (*propName == 0)))  // require
     return LEFW_BAD_DATA;
 
   if (strcmp(objType, "LIBRARY") && strcmp(objType, "VIA")
@@ -4039,8 +4032,8 @@ int lefwStringPropDef(const char* objType,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_PROPERTYDEF_START && lefwState != LEFW_PROPERTYDEF)
     return LEFW_BAD_ORDER;
-  if (((objType == 0) || (*objType == 0))
-      || ((propName == 0) || (*propName == 0)))
+  if (((objType == nullptr) || (*objType == 0))
+      || ((propName == nullptr) || (*propName == 0)))
     return LEFW_BAD_DATA;
 
   if (strcmp(objType, "LIBRARY") && strcmp(objType, "VIA")
@@ -4619,7 +4612,7 @@ int lefwViaRulePrtLayer(const char* layerName,
                         double metalOverhang)
 {
   lefwObsoleteNum = LEFW_VIARULEGENERATE;
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   LAYER %s ;\n", layerName);
@@ -4685,7 +4678,7 @@ int lefwStartViaRule(const char* viaRuleName)
   if (lefwState != LEFW_INIT && lefwState < LEFW_END)
     return LEFW_BAD_ORDER;  // not of the ENDs
 
-  if (!viaRuleName || viaRuleName == 0 || *viaRuleName == 0)
+  if (!viaRuleName || viaRuleName == nullptr || *viaRuleName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "VIARULE %s\n", viaRuleName);
@@ -4775,7 +4768,7 @@ int lefwStartViaRuleGen(const char* viaRuleName)
   if (lefwState != LEFW_INIT && lefwState < LEFW_END)
     return LEFW_BAD_ORDER;  // not of the ENDs
 
-  if (!viaRuleName || viaRuleName == 0 || *viaRuleName == 0)
+  if (!viaRuleName || viaRuleName == nullptr || *viaRuleName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "VIARULE %s GENERATE", viaRuleName);
@@ -4851,7 +4844,7 @@ int lefwViaRuleGenLayerEnclosure(const char* layerName,
   if (lefwNumViaRuleLayers >= 2)
     return LEFW_BAD_ORDER;
 
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "\n   LAYER %s ;\n", layerName);
@@ -4902,7 +4895,7 @@ int lefwViaRuleGenLayer3(const char* layerName,
     return LEFW_BAD_ORDER;
   if (lefwNumViaRuleLayers != 2)  // this routine has to be after two layers
     return LEFW_BAD_ORDER;        // be written
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile, (char*) "   LAYER %s ;\n", layerName);
@@ -4963,7 +4956,7 @@ int lefwStartNonDefaultRule(const char* ruleName)
   if (lefwState != LEFW_INIT && lefwState < LEFW_END)
     return LEFW_BAD_ORDER;  // not of the ENDs
 
-  if (!ruleName || ruleName == 0 || *ruleName == 0)
+  if (!ruleName || ruleName == nullptr || *ruleName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "NONDEFAULTRULE %s\n", ruleName);
@@ -5106,7 +5099,8 @@ int lefwNonDefaultRuleLayer(const char* routingLayerName,
   if (lefwState != LEFW_NONDEFAULTRULE_START
       && lefwState != LEFW_NONDEFAULTRULE)
     return LEFW_BAD_ORDER;
-  if (!routingLayerName || routingLayerName == 0 || *routingLayerName == 0)
+  if (!routingLayerName || routingLayerName == nullptr
+      || *routingLayerName == 0)
     return LEFW_BAD_DATA;
   if (versionNum >= 5.6 && (resist || capacitance || edgeCap))
     return LEFW_OBSOLETE;
@@ -5215,9 +5209,9 @@ int lefwSpacing(const char* layerName1,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_SPACING_START && lefwState != LEFW_SPACING)
     return LEFW_BAD_ORDER;
-  if (!layerName1 || layerName1 == 0 || *layerName1 == 0)
+  if (!layerName1 || layerName1 == nullptr || *layerName1 == 0)
     return LEFW_BAD_DATA;
-  if (!layerName2 || layerName2 == 0 || *layerName2 == 0)
+  if (!layerName2 || layerName2 == nullptr || *layerName2 == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile,
@@ -5602,9 +5596,9 @@ int lefwIrdropTable(const char* tableName, const char* currentsNvolts)
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_IRDROP_START && lefwState != LEFW_IRDROP)
     return LEFW_BAD_ORDER;
-  if (!tableName || tableName == 0 || *tableName == 0)
+  if (!tableName || tableName == nullptr || *tableName == 0)
     return LEFW_BAD_DATA;
-  if (!currentsNvolts || currentsNvolts == 0 || *currentsNvolts == 0)
+  if (!currentsNvolts || currentsNvolts == nullptr || *currentsNvolts == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   TABLE %s %s ;\n", tableName, currentsNvolts);
@@ -5647,7 +5641,7 @@ int lefwSite(const char* siteName,
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_INIT && lefwState < LEFW_END)
     return LEFW_BAD_ORDER;  // not of the ENDs
-  if (!siteName || siteName == 0 || *siteName == 0)
+  if (!siteName || siteName == nullptr || *siteName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile, (char*) "SITE %s\n", siteName);
@@ -5682,7 +5676,7 @@ int lefwSiteRowPattern(const char* siteName, int orient)
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_SITE)
     return LEFW_BAD_ORDER;
-  if (!siteName || siteName == 0 || *siteName == 0)
+  if (!siteName || siteName == nullptr || *siteName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile,
@@ -5702,9 +5696,9 @@ int lefwSiteRowPatternStr(const char* siteName, const char* orient)
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_SITE)
     return LEFW_BAD_ORDER;
-  if (!siteName || siteName == 0 || *siteName == 0)
+  if (!siteName || siteName == nullptr || *siteName == 0)
     return LEFW_BAD_DATA;
-  if (!orient || orient == 0 || *orient == 0)
+  if (!orient || orient == nullptr || *orient == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   ROWPATTERN %s %s ;\n", siteName, orient);
@@ -5741,7 +5735,7 @@ int lefwStartArray(const char* arrayName)
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_INIT && lefwState < LEFW_END)
     return LEFW_BAD_ORDER;  // not of the ENDs
-  if (!arrayName || arrayName == 0 || *arrayName == 0)
+  if (!arrayName || arrayName == nullptr || *arrayName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "ARRAY %s\n", arrayName);
@@ -5769,7 +5763,7 @@ int lefwArraySite(const char* name,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*)
@@ -5807,7 +5801,7 @@ int lefwArraySiteStr(const char* name,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*)
@@ -5845,7 +5839,7 @@ int lefwArrayCanplace(const char* name,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*)
@@ -5884,7 +5878,7 @@ int lefwArrayCanplaceStr(const char* name,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*)
@@ -5923,7 +5917,7 @@ int lefwArrayCannotoccupy(const char* name,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*)
@@ -5962,7 +5956,7 @@ int lefwArrayCannotoccupyStr(const char* name,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*)
@@ -5998,11 +5992,11 @@ int lefwArrayTracks(const char* xy,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!xy || xy == 0 || *xy == 0)
+  if (!xy || xy == nullptr || *xy == 0)
     return LEFW_BAD_DATA;
   if (strcmp(xy, "X") && strcmp(xy, "Y"))
     return LEFW_BAD_DATA;
-  if (!layers || layers == 0 || *layers == 0)
+  if (!layers || layers == nullptr || *layers == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile,
@@ -6036,7 +6030,7 @@ int lefwStartArrayFloorplan(const char* name)
     return LEFW_BAD_ORDER;
   if (lefwIsArrayFloorp)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   FLOORPLAN %s\n", name);
@@ -6145,7 +6139,7 @@ int lefwEndArrayFloorplan(const char* name)
     return LEFW_UNINITIALIZED;
   if (!lefwIsArrayFloorp)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   END %s\n\n", name);
@@ -6166,7 +6160,7 @@ int lefwArrayGcellgrid(const char* xy,
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!xy || xy == 0 || *xy == 0)
+  if (!xy || xy == nullptr || *xy == 0)
     return LEFW_BAD_DATA;
   if (strcmp(xy, "X") && strcmp(xy, "Y"))
     return LEFW_BAD_DATA;
@@ -6249,7 +6243,7 @@ int lefwEndArray(const char* arrayName)
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_ARRAY_START && lefwState != LEFW_ARRAY)
     return LEFW_BAD_ORDER;
-  if (!arrayName || arrayName == 0 || *arrayName == 0)
+  if (!arrayName || arrayName == nullptr || *arrayName == 0)
     return LEFW_BAD_DATA;
   if (lefwIsFloorp || lefwIsArrayDef)
     return LEFW_BAD_ORDER;
@@ -6269,7 +6263,7 @@ int lefwStartMacro(const char* macroName)
     return LEFW_UNINITIALIZED;
   if (lefwState == LEFW_MACRO_START || lefwState == LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!macroName || macroName == 0 || *macroName == 0)
+  if (!macroName || macroName == nullptr || *macroName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "MACRO %s\n", macroName);
@@ -6293,7 +6287,7 @@ int lefwMacroClass(const char* value1, const char* value2)
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!value1 || value1 == 0 || *value1 == 0)
+  if (!value1 || value1 == nullptr || *value1 == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     if (strcmp(value1, "RING") == 0)
@@ -6434,7 +6428,7 @@ int lefwMacroSource(const char* value1)
     return LEFW_BAD_ORDER;
   if (versionNum >= 5.6)
     return LEFW_OBSOLETE;
-  if (!value1 || value1 == 0 || *value1 == 0)
+  if (!value1 || value1 == nullptr || *value1 == 0)
     return LEFW_BAD_DATA;
   if (strcmp(value1, "USER") == 0 || strcmp(value1, "GENERATE") == 0
       || strcmp(value1, "BLOCK") == 0)
@@ -6458,7 +6452,7 @@ int lefwMacroForeign(const char* name, double xl, double yl, int orient)
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile, (char*) "   FOREIGN %s ", name);
@@ -6500,7 +6494,7 @@ int lefwMacroForeignStr(const char* name,
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile, (char*) "   FOREIGN %s ", name);
@@ -6557,7 +6551,7 @@ int lefwMacroEEQ(const char* macroName)
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!macroName || macroName == 0 || *macroName == 0)
+  if (!macroName || macroName == nullptr || *macroName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   EEQ %s ;\n", macroName);
@@ -6580,7 +6574,7 @@ int lefwMacroLEQ(const char* macroName)
     return LEFW_BAD_ORDER;
   if (versionNum >= 5.6)
     return LEFW_OBSOLETE;
-  if (!macroName || macroName == 0 || *macroName == 0)
+  if (!macroName || macroName == nullptr || *macroName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   LEQ %s ;\n", macroName);
@@ -6618,7 +6612,7 @@ int lefwMacroSymmetry(const char* symmetry)
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!symmetry || symmetry == 0 || *symmetry == 0)
+  if (!symmetry || symmetry == nullptr || *symmetry == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   SYMMETRY %s ;\n", symmetry);
@@ -6638,7 +6632,7 @@ int lefwMacroSite(const char* siteName)
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!siteName || siteName == 0 || *siteName == 0)
+  if (!siteName || siteName == nullptr || *siteName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   SITE %s ;\n", siteName);
@@ -6665,7 +6659,7 @@ int lefwMacroSitePattern(const char* name,
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile, (char*) "   SITE %s ", name);
@@ -6719,7 +6713,7 @@ int lefwMacroSitePatternStr(const char* name,
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile, (char*) "   SITE %s ", name);
@@ -6781,7 +6775,7 @@ int lefwEndMacro(const char* macroName)
     return LEFW_UNINITIALIZED;
   if (lefwState != LEFW_MACRO_START && lefwState != LEFW_MACRO)
     return LEFW_BAD_ORDER;
-  if (!macroName || macroName == 0 || *macroName == 0)
+  if (!macroName || macroName == nullptr || *macroName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "END %s\n\n", macroName);
@@ -6801,7 +6795,7 @@ int lefwStartMacroDensity(const char* layerName)
     return LEFW_BAD_ORDER;
   if (lefwIsMacroDensity)
     return LEFW_BAD_ORDER;
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   DENSITY %s\n", layerName);
@@ -6869,7 +6863,7 @@ int lefwStartMacroPin(const char* pinName)
     return LEFW_BAD_ORDER;
   if (lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!pinName || pinName == 0 || *pinName == 0)
+  if (!pinName || pinName == nullptr || *pinName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   PIN %s\n", pinName);
@@ -6893,7 +6887,7 @@ int lefwMacroPinTaperRule(const char* ruleName)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!ruleName || ruleName == 0 || *ruleName == 0)
+  if (!ruleName || ruleName == nullptr || *ruleName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      TAPERRULE %s ;\n", ruleName);
@@ -6916,7 +6910,7 @@ int lefwMacroPinForeign(const char* name, double xl, double yl, int orient)
     return LEFW_BAD_ORDER;
   if (versionNum >= 5.6)
     return LEFW_OBSOLETE;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile, (char*) "      FOREIGN %s ", name);
@@ -6961,7 +6955,7 @@ int lefwMacroPinForeignStr(const char* name,
     return LEFW_BAD_ORDER;
   if (versionNum >= 5.6)
     return LEFW_OBSOLETE;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt) {
     encPrint(lefwFile, (char*) "      FOREIGN %s ", name);
@@ -7003,7 +6997,7 @@ int lefwMacroPinLEQ(const char* pinName)
     return LEFW_BAD_ORDER;
   if (versionNum >= 5.6)
     return LEFW_OBSOLETE;
-  if (!pinName || pinName == 0 || *pinName == 0)
+  if (!pinName || pinName == nullptr || *pinName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      LEQ %s ;\n", pinName);
@@ -7023,7 +7017,7 @@ int lefwMacroPinDirection(const char* direction)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!direction || direction == 0 || *direction == 0)
+  if (!direction || direction == nullptr || *direction == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      DIRECTION %s ;\n", direction);
@@ -7043,7 +7037,7 @@ int lefwMacroPinUse(const char* use)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!use || use == 0 || *use == 0)
+  if (!use || use == nullptr || *use == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      USE %s ;\n", use);
@@ -7064,12 +7058,12 @@ int lefwMacroPinShape(const char* name)
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
   if (lefwWriteEncrypt) {
-    if (!name || name == 0 || *name == 0)
+    if (!name || name == nullptr || *name == 0)
       encPrint(lefwFile, (char*) "      SHAPE ;\n");
     else
       encPrint(lefwFile, (char*) "      SHAPE %s ;\n", name);
   } else {
-    if (!name || name == 0 || *name == 0)
+    if (!name || name == nullptr || *name == 0)
       fprintf(lefwFile, "      SHAPE ;\n");
     else
       fprintf(lefwFile, "      SHAPE %s ;\n", name);
@@ -7088,7 +7082,7 @@ int lefwMacroPinMustjoin(const char* name)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      MUSTJOIN %s ;\n", name);
@@ -7108,7 +7102,7 @@ int lefwMacroPinNetExpr(const char* name)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      NETEXPR \"%s\" ;\n", name);
@@ -7128,7 +7122,7 @@ int lefwMacroPinSupplySensitivity(const char* pinName)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!pinName || pinName == 0 || *pinName == 0)
+  if (!pinName || pinName == nullptr || *pinName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      SUPPLYSENSITIVITY %s ;\n", pinName);
@@ -7148,7 +7142,7 @@ int lefwMacroPinGroundSensitivity(const char* pinName)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!pinName || pinName == 0 || *pinName == 0)
+  if (!pinName || pinName == nullptr || *pinName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      GROUNDSENSITIVITY %s ;\n", pinName);
@@ -7526,7 +7520,7 @@ int lefwMacroPinCurrentsource(const char* name)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (versionNum >= 5.4)
     return LEFW_OBSOLETE;
@@ -7553,9 +7547,9 @@ int lefwMacroPinIV_Tables(const char* lowName, const char* highName)
     return LEFW_BAD_ORDER;
   if (versionNum >= 5.4)
     return LEFW_OBSOLETE;
-  if (!lowName || lowName == 0 || *lowName == 0)
+  if (!lowName || lowName == nullptr || *lowName == 0)
     return LEFW_BAD_DATA;
-  if (!highName || highName == 0 || *highName == 0)
+  if (!highName || highName == nullptr || *highName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "      IV_TABLES %s %s ;\n", lowName, highName);
@@ -7935,7 +7929,7 @@ int lefwEndMacroPin(const char* pinName)
 {
   if (!lefwIsMacroPin)
     return LEFW_BAD_ORDER;
-  if (!pinName || pinName == 0 || *pinName == 0)
+  if (!pinName || pinName == nullptr || *pinName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "   END %s\n\n", pinName);
@@ -7989,7 +7983,7 @@ int lefwMacroPinPortLayer(const char* layerName, double spacing)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPinPort)
     return LEFW_BAD_ORDER;
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwWidthVal)
     return LEFW_BAD_DATA;
@@ -8019,7 +8013,7 @@ int lefwMacroPinPortDesignRuleWidth(const char* layerName, double width)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPinPort)
     return LEFW_BAD_ORDER;
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwSpacingVal)
     return LEFW_BAD_DATA;
@@ -8406,7 +8400,7 @@ int lefwMacroPinPortVia(double xl,
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroPinPort)
     return LEFW_BAD_ORDER;
-  if (!viaName || viaName == 0 || *viaName == 0)
+  if (!viaName || viaName == nullptr || *viaName == 0)
     return LEFW_BAD_DATA;
   if (mask && versionNum < 5.8) {
     return LEFW_WRONG_VERSION;
@@ -8525,7 +8519,7 @@ int lefwMacroObsLayer(const char* layerName, double spacing)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroObs)
     return LEFW_BAD_ORDER;
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwWidthVal)
     return LEFW_BAD_DATA;
@@ -8555,7 +8549,7 @@ int lefwMacroObsDesignRuleWidth(const char* layerName, double width)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroObs)
     return LEFW_BAD_ORDER;
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwSpacingVal)
     return LEFW_BAD_DATA;
@@ -8587,7 +8581,7 @@ int lefwMacroExceptPGNet(const char* layerName)
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroObs)
     return LEFW_BAD_ORDER;
-  if (!layerName || layerName == 0 || *layerName == 0)
+  if (!layerName || layerName == nullptr || *layerName == 0)
     return LEFW_BAD_DATA;
   if (lefwSpacingVal)
     return LEFW_BAD_DATA;
@@ -8964,7 +8958,7 @@ int lefwMacroObsVia(double xl,
     return LEFW_BAD_ORDER;
   if (!lefwIsMacroObs)
     return LEFW_BAD_ORDER;
-  if (!viaName || viaName == 0 || *viaName == 0)
+  if (!viaName || viaName == nullptr || *viaName == 0)
     return LEFW_BAD_DATA;
   if (mask && versionNum < 5.8) {
     return LEFW_WRONG_VERSION;
@@ -9355,7 +9349,7 @@ int lefwAntenna(const char* type, double value)
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_INIT && lefwState < LEFW_END)
     return LEFW_BAD_ORDER;  // not of the ENDs
-  if (!type || type == 0 || *type == 0)
+  if (!type || type == nullptr || *type == 0)
     return LEFW_BAD_DATA;
   if (strcmp(type, "INPUTPINANTENNASIZE")
       && strcmp(type, "OUTPUTPINANTENNASIZE")
@@ -9446,7 +9440,7 @@ int lefwStartBeginext(const char* name)
     return LEFW_BAD_ORDER;
   if (lefwState == LEFW_BEGINEXT_START || lefwState == LEFW_BEGINEXT)
     return LEFW_BAD_ORDER;
-  if (!name || name == 0 || *name == 0)
+  if (!name || name == nullptr || *name == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "BEGINEXT \"%s\"", name);
@@ -9467,7 +9461,7 @@ int lefwBeginextCreator(const char* creatorName)
     return LEFW_BAD_ORDER;
   if (lefwState != LEFW_BEGINEXT_START && lefwState != LEFW_BEGINEXT)
     return LEFW_BAD_ORDER;
-  if (!creatorName || creatorName == 0 || *creatorName == 0)
+  if (!creatorName || creatorName == nullptr || *creatorName == 0)
     return LEFW_BAD_DATA;
   if (lefwWriteEncrypt)
     encPrint(lefwFile, (char*) "\n   CREATOR \"%s\"", creatorName);
@@ -9491,7 +9485,7 @@ int lefwBeginextDate()
   if (lefwState != LEFW_BEGINEXT_START && lefwState != LEFW_BEGINEXT)
     return LEFW_BAD_ORDER;
 
-  todayTime = time(NULL);               // time in UTC
+  todayTime = time(nullptr);            // time in UTC
   rettime = ctime(&todayTime);          // convert to string
   rettime[strlen(rettime) - 1] = '\0';  // replace \n with \0
   if (lefwWriteEncrypt)
@@ -9663,4 +9657,4 @@ void lefwAddIndent()
 // - What is the pin properties section mentioned in the 5.1 spec?
 // *****************************
 
-END_LEFDEF_PARSER_NAMESPACE
+END_LEF_PARSER_NAMESPACE

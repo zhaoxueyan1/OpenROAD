@@ -1,45 +1,18 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "definPin.h"
 
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
 
 #include "odb/db.h"
 #include "odb/dbShape.h"
 #include "odb/dbTransform.h"
 #include "utl/Logger.h"
+
 namespace odb {
 
 definPin::definPin()
@@ -54,7 +27,7 @@ definPin::definPin()
       _effective_width(0),
       _left_bus('['),
       _right_bus(']'),
-      _layer(0),
+      _layer(nullptr),
       _has_min_spacing(false),
       _has_effective_width(false),
       _has_placement(false)
@@ -73,7 +46,7 @@ void definPin::init()
 
 void definPin::pinsBegin(int /* unused: n */)
 {
-  _block->getBusDelimeters(_left_bus, _right_bus);
+  _block->getBusDelimiters(_left_bus, _right_bus);
   _bterm_cnt = 0;
   _update_cnt = 0;
   _ground_pins.clear();
@@ -169,6 +142,15 @@ void definPin::pinDirection(dbIoType type)
   }
 
   _cur_bterm->setIoType(type);
+}
+
+bool definPin::checkPinDirection(dbIoType type)
+{
+  if (_cur_bterm == nullptr) {
+    return true;
+  }
+
+  return _cur_bterm->getIoType() == type;
 }
 
 void definPin::pinPlacement(defPlacement status,
@@ -296,7 +278,7 @@ void definPin::portBegin()
 
 void definPin::portEnd()
 {
-  dbBPin* pin = 0;
+  dbBPin* pin = nullptr;
 
   if (!_rects.empty() || !_polygons.empty()) {
     pin = dbBPin::create(_cur_bterm);

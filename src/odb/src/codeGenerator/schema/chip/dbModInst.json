@@ -1,6 +1,5 @@
 {
     "name":"dbModInst",
-    "type":"dbObject",
     "fields":[
 	{
 	    "name":"_name",
@@ -44,11 +43,11 @@
 	{
       	    "name":"_moditerms",
 	    "type":"dbId<_dbModITerm >",
-	    "flags":["no-get","no-set","no-serial"],	    
+	    "flags":["no-get","no-set","no-serial"],	
 	    "parent":"dbBlock"
 	}
     ],
-    "cpp_includes":["dbBlock.h","dbModule.h","dbHashTable.hpp", "dbModITerm.h"],
+    "cpp_includes":["dbBlock.h","dbModule.h","dbHashTable.hpp", "dbModITerm.h", "dbJournal.h"],
     "h_includes": [
 	"dbVector.h",
 	"odb/dbSet.h"

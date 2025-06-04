@@ -80,9 +80,9 @@ BOOST_AUTO_TEST_CASE(test_inst_and_iterm)
   dbInst::destroy(i1);
 
   BOOST_TEST(cb->events.size() == 4);
-  BOOST_TEST(cb->events[0] == "Destroy iterm a of inst i1");
+  BOOST_TEST(cb->events[0] == "Destroy iterm o of inst i1");
   BOOST_TEST(cb->events[1] == "Destroy iterm b of inst i1");
-  BOOST_TEST(cb->events[2] == "Destroy iterm o of inst i1");
+  BOOST_TEST(cb->events[2] == "Destroy iterm a of inst i1");
   BOOST_TEST(cb->events[3] == "Destroy inst i1");
   tearDown();
 }
@@ -147,9 +147,13 @@ BOOST_AUTO_TEST_CASE(test_blockage)
   db = create2LevetDbWithBTerms();
   block = db->getChip()->getBlock();
   cb->addOwner(block);
-  dbBlockage::create(block, 0, 0, 100, 100);
+  dbBlockage* blk = dbBlockage::create(block, 0, 0, 100, 100);
   BOOST_TEST(cb->events.size() == 1);
   BOOST_TEST(cb->events[0] == "Create blockage (0,0) (100,100)");
+  cb->clearEvents();
+  dbBlockage::destroy(blk);
+  BOOST_TEST(cb->events.size() == 1);
+  BOOST_TEST(cb->events[0] == "Destroy blockage");
   tearDown();
 }
 BOOST_AUTO_TEST_CASE(test_obstruction)

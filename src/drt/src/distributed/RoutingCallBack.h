@@ -1,30 +1,5 @@
-/* Authors: Osama */
-/*
- * Copyright (c) 2021, The Regents of the University of California
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of the University nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2021-2025, The OpenROAD Authors
 
 #pragma once
 #include <omp.h>
@@ -35,7 +10,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <mutex>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "db/infra/frTime.h"
 #include "distributed/PinAccessJobDescription.h"
@@ -46,7 +25,6 @@
 #include "dst/JobCallBack.h"
 #include "dst/JobMessage.h"
 #include "global.h"
-#include "ord/OpenRoad.hh"
 #include "pa/FlexPA.h"
 #include "triton_route/TritonRoute.h"
 #include "utl/Logger.h"
@@ -67,7 +45,10 @@ class RoutingCallBack : public dst::JobCallBack
         dist_(dist),
         logger_(logger),
         init_(true),
-        pa_(router->getDesign(), logger, nullptr)
+        pa_(router->getDesign(),
+            logger,
+            nullptr,
+            router->getRouterConfiguration())
   {
   }
   void onRoutingJobReceived(dst::JobMessage& msg, dst::socket& sock) override
@@ -79,7 +60,7 @@ class RoutingCallBack : public dst::JobCallBack
         = static_cast<RoutingJobDescription*>(msg.getJobDescription());
     if (init_) {
       init_ = false;
-      omp_set_num_threads(ord::OpenRoad::openRoad()->getThreadCount());
+      omp_set_num_threads(router_->getRouterConfiguration()->MAX_THREADS);
     }
     auto workers = desc->getWorkers();
     int size = workers.size();
@@ -124,8 +105,8 @@ class RoutingCallBack : public dst::JobCallBack
     RoutingJobDescription* desc
         = static_cast<RoutingJobDescription*>(msg.getJobDescription());
     if (!desc->getGlobalsPath().empty()) {
-      if (globals_path_ != desc->getGlobalsPath()) {
-        globals_path_ = desc->getGlobalsPath();
+      if (router_cfg_path_ != desc->getGlobalsPath()) {
+        router_cfg_path_ = desc->getGlobalsPath();
         router_->setSharedVolume(desc->getSharedDir());
         router_->updateGlobals(desc->getGlobalsPath().c_str());
       }
@@ -135,7 +116,8 @@ class RoutingCallBack : public dst::JobCallBack
       frTime t;
       logger_->report("Design Update");
       if (desc->isDesignUpdate()) {
-        router_->updateDesign(desc->getUpdates());
+        router_->updateDesign(desc->getUpdates(),
+                              router_->getRouterConfiguration()->MAX_THREADS);
       } else {
         router_->resetDb(desc->getDesignPath().c_str());
       }
@@ -185,7 +167,7 @@ class RoutingCallBack : public dst::JobCallBack
         break;
       case PinAccessJobDescription::INST_ROWS: {
         auto instRows = deserializeInstRows(desc->getPath());
-        omp_set_num_threads(ord::OpenRoad::openRoad()->getThreadCount());
+        omp_set_num_threads(router_->getRouterConfiguration()->MAX_THREADS);
 #pragma omp parallel for schedule(dynamic)
         for (int i = 0; i < instRows.size(); i++) {  // NOLINT
           pa_.genInstRowPattern(instRows.at(i));
@@ -258,7 +240,7 @@ class RoutingCallBack : public dst::JobCallBack
   dst::Distributed* dist_;
   utl::Logger* logger_;
   std::string design_path_;
-  std::string globals_path_;
+  std::string router_cfg_path_;
   bool init_;
   FlexDRViaData via_data_;
   FlexPA pa_;

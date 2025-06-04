@@ -95,6 +95,25 @@ pin placement grid defined with `define_pin_shape_pattern` use:
 The `up` option is only available when the pin placement grid is created with
 the `define_pin_shape_pattern` command.
 
+### Exclude IO Pin Region
+
+The `exclude_io_pin_region` command sets regions in the die edges where pins
+cannot be placed.
+
+It is possible to use the `-region` argument multiple times in a single call
+of `exclude_io_pin_region`.
+
+```tcl
+exclude_io_pin_region 
+    -region edge:interval
+```
+
+#### Options
+
+| Switch Name | Description |
+| ----- | ----- |
+| `-region` | Syntax is `-region edge:interval`. The `edge` values are (`top\|bottom\|left\|right`). The `interval` can be the whole edge with the wildcard `*` value or a range of values. |
+
 ### Clear IO Pin Constraints
 
 The `clear_io_pin_constraints` command clears all the previously-defined
@@ -230,6 +249,7 @@ place_pin
 | `-location` | The center of the pin (in microns). |
 | `-pin_size` | The width and height of the pin (in microns). |
 | `-force_to_die_boundary` | When this flag is enabled, the pin will be snapped to the nearest routing track, next to the die boundary. |
+| `-placed_status` | When this flag is enabled, the pin will have PLACED as its placement status, instead of the FIXED status. |
 
 ### Place all Pins
 
@@ -262,7 +282,7 @@ place_pins
 | `-corner_avoidance` | The distance (in microns) from each corner within which pin placement should be avoided. |
 | `-min_distance` | The minimum distance between pins on the die boundary. This distance can be in microns (default) or in number of tracks between each pin. The default value is the length of two routing tracks between each pin. |
 | `-min_distance_in_tracks` | Flag that allows setting the min distance in number of tracks instead of microns. |
-| `-exclude` | A region where pins cannot be placed. Either `top|bottom|left|right:edge_interval`, which is the edge interval from the selected edge; `begin:end` for begin-end of all edges. |
+| `-exclude` | A region where pins cannot be placed. Either `top\|bottom\|left\|right:edge_interval`, which is the edge interval from the selected edge; `begin:end` for begin-end of all edges. |
 | `-group_pins` | A list of pins to be placed together on the die boundary. |
 | `-annealing` | Flag to enable simulated annealing pin placement. |
 | `-write_pin_placement` | A file with the pin placement generated in the format of multiple calls for the `place_pin` command. |
@@ -288,6 +308,7 @@ The `write_pin_placement` command writes a file with the pin placement in the fo
 ```tcl
 write_pin_placement 
     file_name
+    -placed_status
 ```
 
 #### Options
@@ -295,6 +316,7 @@ write_pin_placement
 | Switch Name | Description |
 | ----- | ----- |
 | `file_name` | The name of the file with the pin placement. |
+| `-placed_status` | When this flag is enabled, the file will be generated´with the `-placed_status` flag in each `place_pin` command call. |
 
 ## Useful Developer Commands
 
@@ -310,7 +332,6 @@ If you are a developer, you might find these useful. More details can be found i
 | `parse_pin_names` | Parse pin names. |
 | `get_edge_extreme` | Get extremes of edge. |
 | `exclude_intervals` | Set exclude interval. |
-| `add_pins_to_constraint` | Add pins to constrained region. |
 | `add_pins_to_top_layer` | Add pins to top layer. | 
 
 ## Example scripts

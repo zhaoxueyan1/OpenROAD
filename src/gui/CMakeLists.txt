@@ -1,9 +1,12 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2020-2025, The OpenROAD Authors
+
 # Allow users to not build without the gui even if Qt is found
 option(BUILD_GUI "Build the GUI" ON)
 
 # If Qt is not installed there will not be cmake
 # support for the package so this needs to be "quiet".
-find_package(Qt5 QUIET COMPONENTS Core Widgets OPTIONAL_COMPONENTS Charts)
+find_package(Qt5 QUIET COMPONENTS Core Widgets Charts)
 
 include("openroad")
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -23,18 +26,6 @@ if (Qt5_FOUND AND BUILD_GUI)
            SCRIPTS   src/gui.tcl
            RUNTIME_HEADER tclSwig.h
   )
-
-  if (TARGET Qt5::Charts)
-    message(STATUS "Charts widget is enabled")
-
-    target_compile_definitions(gui PRIVATE ENABLE_CHARTS)
-
-    list(APPEND CHARTS_LIB
-      "Qt5::Charts"
-    )
-  else()
-    message(STATUS "Charts widget is not enabled")
-  endif()
 
   set_property(SOURCE ${GUI_WRAP} PROPERTY SKIP_AUTOMOC ON)
 
@@ -56,15 +47,19 @@ if (Qt5_FOUND AND BUILD_GUI)
     src/gotoDialog.cpp
     src/inspector.cpp
     src/dbDescriptors.cpp
+    src/staDescriptors.cpp
     src/highlightGroupDialog.cpp
     src/selectHighlightWindow.cpp
     src/staGui.cpp
     src/staGuiInterface.cpp
     src/timingWidget.cpp
     src/drcWidget.cpp
+    src/helpWidget.cpp
     src/ruler.cpp
+    src/label.cpp
     src/heatMap.cpp
     src/heatMapSetup.cpp
+    src/heatMapPinDensity.cpp
     src/heatMapPlacementDensity.cpp
     src/browserWidget.cpp
     src/globalConnectDialog.cpp
@@ -73,6 +68,7 @@ if (Qt5_FOUND AND BUILD_GUI)
     src/colorGenerator.cpp
     src/bufferTreeDescriptor.cpp
     src/chartsWidget.cpp
+    src/GUIProgress.cpp
     resources/resource.qrc
   )
 
@@ -82,9 +78,10 @@ if (Qt5_FOUND AND BUILD_GUI)
     PRIVATE
       Qt5::Core
       Qt5::Widgets
-      ${CHARTS_LIB}
-      utl
+      Qt5::Charts
+      utl_lib
       Boost::boost
+      OpenSTA
   )
 
 messages(
@@ -103,7 +100,7 @@ else()
   )
   target_include_directories(gui
     PRIVATE
-      ${OPENROAD_HOME}/include
+      ${OPENROAD_HOME}/third-party/gif-h
   )
 endif()
 
@@ -113,6 +110,20 @@ target_include_directories(gui
   PRIVATE
     ${OPENSTA_HOME}/include
     ${DBSTA_HOME}/include
+    ${OPENROAD_HOME}/third-party/gif-h
 )
 
 add_subdirectory(test)
+
+set(OPENROAD_SHARE_GUI_DIR ${OPENROAD_SHARE}/gui)
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # configure desktop file
+  configure_file(
+    resources/openroad.desktop.cmake
+    resources/openroad.desktop
+  )
+
+  install(FILES resources/icon.png DESTINATION ${OPENROAD_SHARE_GUI_DIR})
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/resources/openroad.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications/)
+endif()

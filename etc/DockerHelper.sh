@@ -7,6 +7,8 @@ cd "$(dirname $(readlink -f $0))/../"
 baseDir="$(pwd)"
 # docker hub organization/user from where to pull/push images
 org=openroad
+depsPrefixesFile="/etc/openroad_deps_prefixes.txt"
+args=("${@}")
 
 _help() {
     cat <<EOF
@@ -18,10 +20,10 @@ usage: $0 [CMD] [OPTIONS]
   push                          Push the docker image to Docker Hub
 
   OPTIONS:
-  -compiler=COMPILER_NAME       Choose between gcc (default) and clang. Valid
-                                  only if the target is 'builder'.
-  -os=OS_NAME                   Choose beween ubuntu22.04 (default), ubuntu20.04, centos7, rhel, opensuse, debian10 and debian11.
-  -target=TARGET                Choose target fo the Docker image:
+  -os=OS_NAME                   Choose between:
+                                  ubuntu20.04, ubuntu22.04 (default),
+                                  ubuntu24.04, rockylinux9, opensuse or debian11.
+  -target=TARGET                Choose target for the Docker image:
                                   'dev': os + packages to compile app
                                   'builder': os + packages to compile app +
                                              copy source code and build app
@@ -33,6 +35,9 @@ usage: $0 [CMD] [OPTIONS]
                                   'latest'.
   -h -help                      Show this message and exits
   -local                        Installs with prefix /home/openroad-deps
+  -username                     Docker Username
+  -password                     Docker Password
+  -deps-prefixes-path=PATH      Path where the file with dependency prefixes should be stored (in Docker image)
 
 EOF
     exit "${1:-1}"
@@ -58,17 +63,17 @@ _setup() {
         "ubuntu22.04")
             osBaseImage="ubuntu:22.04"
             ;;
+        "ubuntu24.04")
+            osBaseImage="ubuntu:24.04"
+            ;;
         "opensuse")
             osBaseImage="opensuse/leap"
-            ;;
-        "debian10")
-            osBaseImage="debian:buster"
             ;;
         "debian11")
             osBaseImage="debian:bullseye"
             ;;
-        "rhel")
-            osBaseImage="redhat/ubi8"
+        "rockylinux9")
+            osBaseImage="rockylinux:9"
             ;;
         *)
             echo "Target OS ${os} not supported" >&2
@@ -87,20 +92,24 @@ _setup() {
             context="."
             buildArgs="--build-arg compiler=${compiler}"
             buildArgs="${buildArgs} --build-arg numThreads=${numThreads}"
+            buildArgs="${buildArgs} --build-arg depsPrefixFile=${depsPrefixesFile}"
             if [[ "${isLocal}" == "yes" ]]; then
                 buildArgs="${buildArgs} --build-arg LOCAL_PATH=${LOCAL_PATH}/bin"
             fi
             imageName="${IMAGE_NAME_OVERRIDE:-"${imageName}-${compiler}"}"
             ;;
         "dev" )
-            fromImage="${FROM_IMAGE_OVERRIDE:-$osBaseImage}"
+            fromImage="${FROM_IMAGE_OVERRIDE:-${osBaseImage}}"
             context="etc"
-            buildArgs=""
+            buildArgs="-save-deps-prefixes=${depsPrefixesFile}"
             if [[ "${isLocal}" == "yes" ]]; then
-                buildArgs="-prefix=${LOCAL_PATH}"
+                buildArgs="${buildArgs} -prefix=${LOCAL_PATH}"
             fi
             if [[ "${equivalenceDeps}" == "yes" ]]; then
                 buildArgs="${buildArgs} -eqy"
+            fi
+            if [[ "${CI}" == "yes" ]]; then
+                buildArgs="${buildArgs} -ci"
             fi
             if [[ "${buildArgs}" != "" ]]; then
                 buildArgs="--build-arg INSTALLER_ARGS='${buildArgs}'"
@@ -139,9 +148,62 @@ _test() {
     docker run --rm "${imagePath}" "./docker/test_wrapper.sh" "${compiler}" "./test/regression"
 }
 
+_checkFromImage() {
+    set +e
+    # Check if the image exists locally
+    if docker image inspect "${fromImage}" > /dev/null 2>&1; then
+        echo "Image '${fromImage}' exists locally."
+    else
+        echo "Image '${fromImage}' does not exist locally. Attempting to pull..."
+        # Try to pull the image
+        if docker pull "${fromImage}"; then
+            echo "Successfully pulled '${fromImage}'."
+        else
+            echo "Unable to pull '${fromImage}'. Attempting to build..."
+            # Build the image using the createImage command
+            newArgs=""
+            newTarget=""
+            for arg in "${args[@]}"; do
+                # Check if the argument matches -target=builder
+                if [[ "${arg}" == "-target=builder" ]]; then
+                    newTarget="dev"
+                elif [[ "${arg}" == "-target=binary" ]]; then
+                    newTarget="builder"
+                else
+                    newArgs+=" ${arg}"
+                fi
+            done
+            if [[ "${newTarget}" == "" ]]; then
+                echo "Error"
+                exit 1
+            fi
+            newArgs+=" -target=${newTarget}"
+            createImage="$0 ${newArgs}"
+            echo "Running: ${createImage}"
+            if ${createImage}; then
+                echo "Successfully built '${newTarget}' image."
+            else
+                echo "Failed to build '${newTarget}' needed for '${target}' target."
+                return 1
+            fi
+        fi
+    fi
+    set -e
+}
+
 _create() {
+    if [[ "${target}" == "binary" ]]; then
+        _checkFromImage "builder"
+    fi
+    if [[ "${target}" == "builder" ]]; then
+        _checkFromImage "dev"
+    fi
     echo "Create docker image ${imagePath} using ${file}"
-    eval docker build --file "${file}" --tag "${imagePath}" ${buildArgs} "${context}"
+    eval docker buildx build \
+        --file "${file}" \
+        --tag "${imagePath}" \
+        ${buildArgs} \
+        "${context}"
 }
 
 _push() {
@@ -260,7 +322,13 @@ while [ "$#" -gt 0 ]; do
         -no_eqy )
             equivalenceDeps=no
             ;;
-        -compiler | -os | -target )
+        -tag=* )
+            tag="${1#*=}"
+            ;;
+        -deps-prefixes-path=* )
+            depsPrefixesFile="${1#-deps-prefixes-path=}"
+            ;;
+        -os | -target | -compiler | -threads | -username | -password | -tag | -deps-prefixes-path )
             echo "${1} requires an argument" >&2
             _help
             ;;
@@ -271,6 +339,20 @@ while [ "$#" -gt 0 ]; do
     esac
     shift 1
 done
+
+if [[ "${numThreads}" == "-1" ]]; then
+    if [[ "${OSTYPE}" == "linux-gnu"* ]]; then
+        numThreads=$(nproc --all)
+    elif [[ "${OSTYPE}" == "darwin"* ]]; then
+        numThreads=$(sysctl -n hw.ncpu)
+    else
+        numThreads=2
+        cat << EOF
+[WARNING] Unsupported OSTYPE: cannot determine number of host CPUs"
+  Defaulting to 2 threads. Use --threads N to use N threads"
+EOF
+    fi
+fi
 
 _setup
 

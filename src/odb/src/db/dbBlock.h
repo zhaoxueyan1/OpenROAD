@@ -1,38 +1,11 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #pragma once
 
 #include <list>
+#include <map>
+#include <string>
 #include <vector>
 
 #include "dbCore.h"
@@ -40,6 +13,7 @@
 #include "dbIntHashTable.h"
 #include "dbPagedVector.h"
 #include "dbVector.h"
+#include "odb/db.h"
 #include "odb/dbTransform.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
@@ -93,11 +67,13 @@ class _dbModInst;
 class _dbModITerm;
 class _dbModBTerm;
 class _dbModNet;
+class _dbBusPort;
 class _dbGroup;
 class _dbAccessPoint;
 class _dbGlobalConnect;
 class _dbGuide;
 class _dbNetTrack;
+class _dbMarkerCategory;
 class dbJournal;
 
 class dbNetBTermItr;
@@ -131,7 +107,6 @@ class dbCCSegItr;
 class dbExtControl;
 class dbIStream;
 class dbOStream;
-class dbDiff;
 class dbBlockSearch;
 class dbBlockCallBackObj;
 class dbGuideItr;
@@ -142,6 +117,23 @@ struct _dbBlockFlags
 {
   uint _valid_bbox : 1;
   uint _spare_bits : 31;
+};
+
+struct _dbBTermGroup
+{
+  std::vector<dbId<_dbBTerm>> bterms;
+  bool order = false;
+};
+
+struct _dbBTermTopLayerGrid
+{
+  dbId<_dbTechLayer> layer;
+  int x_step = 0;
+  int y_step = 0;
+  Polygon region;
+  int pin_width = 0;
+  int pin_height = 0;
+  int keepout = 0;
 };
 
 class _dbBlock : public _dbObject
@@ -157,14 +149,15 @@ class _dbBlock : public _dbObject
   _dbBlockFlags _flags;
   int _def_units;
   int _dbu_per_micron;  // cached value from dbTech
-  char _hier_delimeter;
-  char _left_bus_delimeter;
-  char _right_bus_delimeter;
+  char _hier_delimiter;
+  char _left_bus_delimiter;
+  char _right_bus_delimiter;
   unsigned char _num_ext_corners;
   uint _corners_per_block;
   char* _corner_name_list;
   char* _name;
-  Rect _die_area;
+  Polygon _die_area;
+  std::vector<Rect> _blocked_regions_for_pins;
   dbId<_dbTech> _tech;
   dbId<_dbChip> _chip;
   dbId<_dbBox> _bbox;
@@ -182,9 +175,7 @@ class _dbBlock : public _dbObject
   dbHashTable<_dbLogicPort> _logicport_hash;
   dbHashTable<_dbPowerSwitch> _powerswitch_hash;
   dbHashTable<_dbIsolation> _isolation_hash;
-  dbHashTable<_dbModBTerm> _modbterm_hash;
-  dbHashTable<_dbModITerm> _moditerm_hash;
-  dbHashTable<_dbModNet> _modnet_hash;
+  dbHashTable<_dbMarkerCategory> _marker_category_hash;
 
   dbHashTable<_dbLevelShifter> _levelshifter_hash;
   dbHashTable<_dbGroup> _group_hash;
@@ -197,6 +188,12 @@ class _dbBlock : public _dbObject
   dbVector<dbId<_dbTechLayer>> _component_mask_shift;
   uint _currentCcAdjOrder;
   dbId<_dbDft> _dft;
+  int _min_routing_layer;
+  int _max_routing_layer;
+  int _min_layer_for_clock;
+  int _max_layer_for_clock;
+  std::vector<_dbBTermGroup> _bterm_groups;
+  _dbBTermTopLayerGrid _bterm_top_layer_grid;
 
   // NON-PERSISTANT-STREAMED-MEMBERS
   dbTable<_dbBTerm>* _bterm_tbl;
@@ -235,6 +232,7 @@ class _dbBlock : public _dbObject
   dbTable<_dbNetTrack>* _net_tracks_tbl;
   _dbNameCache* _name_cache;
   dbTable<_dbDft>* _dft_tbl;
+  dbTable<_dbMarkerCategory>* _marker_categories_tbl;
 
   dbPagedVector<float, 4096, 12>* _r_val_tbl;
   dbPagedVector<float, 4096, 12>* _c_val_tbl;
@@ -243,6 +241,7 @@ class _dbBlock : public _dbObject
   dbTable<_dbModBTerm>* _modbterm_tbl;
   dbTable<_dbModITerm>* _moditerm_tbl;
   dbTable<_dbModNet>* _modnet_tbl;
+  dbTable<_dbBusPort>* _busport_tbl;
 
   dbTable<_dbCapNode>* _cap_node_tbl;
   dbTable<_dbRSeg>* _r_seg_tbl;
@@ -283,6 +282,9 @@ class _dbBlock : public _dbObject
   dbPropertyItr* _prop_itr;
   dbBlockSearch* _searchDb;
 
+  std::unordered_map<std::string, int> _module_name_id_map;
+  std::unordered_map<std::string, int> _inst_name_id_map;
+
   unsigned char _num_ext_dbs;
 
   std::list<dbBlockCallBackObj*> _callbacks;
@@ -292,7 +294,6 @@ class _dbBlock : public _dbObject
   dbJournal* _journal_pending;
 
   _dbBlock(_dbDatabase* db);
-  _dbBlock(_dbDatabase* db, const _dbBlock& block);
   ~_dbBlock();
   void add_rect(const Rect& rect);
   void add_oct(const Oct& oct);
@@ -302,20 +303,27 @@ class _dbBlock : public _dbObject
                   _dbTech* tech,
                   _dbBlock* parent,
                   const char* name,
-                  char delimeter);
+                  char delimiter);
 
   bool operator==(const _dbBlock& rhs) const;
   bool operator!=(const _dbBlock& rhs) const { return !operator==(rhs); }
-  void differences(dbDiff& diff, const char* field, const _dbBlock& rhs) const;
-  void out(dbDiff& diff, char side, const char* field) const;
 
   int globalConnect(const std::vector<dbGlobalConnect*>& connects);
   _dbTech* getTech();
 
   dbObjectTable* getObjectTable(dbObjectType type);
+  void collectMemInfo(MemInfo& info);
+  void clearSystemBlockagesAndObstructions();
+  void ensureConstraintRegion(const Direction2D& edge, int& begin, int& end);
 };
 
 dbOStream& operator<<(dbOStream& stream, const _dbBlock& block);
 dbIStream& operator>>(dbIStream& stream, _dbBlock& block);
+
+dbOStream& operator<<(dbOStream& stream, const _dbBTermGroup& obj);
+dbIStream& operator>>(dbIStream& stream, _dbBTermGroup& obj);
+
+dbOStream& operator<<(dbOStream& stream, const _dbBTermTopLayerGrid& obj);
+dbIStream& operator>>(dbIStream& stream, _dbBTermTopLayerGrid& obj);
 
 }  // namespace odb

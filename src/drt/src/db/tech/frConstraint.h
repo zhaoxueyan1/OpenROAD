@@ -1,30 +1,5 @@
-/* Authors: Lutong Wang and Bangqi Xu */
-/*
- * Copyright (c) 2019, The Regents of the University of California
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of the University nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #pragma once
 
@@ -32,7 +7,9 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "db/tech/frLookupTbl.h"
 #include "frBaseTypes.h"
@@ -427,6 +404,31 @@ class frMinWidthConstraint : public frConstraint
 
  protected:
   frCoord minWidth;
+};
+
+class frOrthSpacingTableConstraint : public frConstraint
+{
+ public:
+  frOrthSpacingTableConstraint(const std::vector<std::pair<int, int>>& spc_tbl)
+      : spc_tbl_(spc_tbl)
+  {
+  }
+
+  const std::vector<std::pair<int, int>>& getSpacingTable() const
+  {
+    return spc_tbl_;
+  }
+  frConstraintTypeEnum typeId() const override
+  {
+    return frConstraintTypeEnum::frcSpacingTableOrth;
+  }
+  void report(utl::Logger* logger) const override
+  {
+    logger->report("SPACINGTABLE ORTHOGONAL");
+  }
+
+ private:
+  std::vector<std::pair<int, int>> spc_tbl_;
 };
 
 class frLef58SpacingEndOfLineWithinEncloseCutConstraint : public frConstraint
@@ -2228,7 +2230,7 @@ class frLef58EnclosureConstraint : public frConstraint
 {
  public:
   frLef58EnclosureConstraint(odb::dbTechLayerCutEnclosureRule* ruleIn)
-      : db_rule_(ruleIn)
+      : db_rule_(ruleIn), cut_class_idx_(-1)
   {
   }
   void setCutClassIdx(int in) { cut_class_idx_ = in; }
@@ -2247,6 +2249,14 @@ class frLef58EnclosureConstraint : public frConstraint
                && sideOverhang >= db_rule_->getFirstOverhang());
   }
   frCoord getWidth() const { return db_rule_->getMinWidth(); }
+  bool isEol() const
+  {
+    return db_rule_->getType() == odb::dbTechLayerCutEnclosureRule::EOL;
+  }
+  bool isEolOnly() const { return db_rule_->isEolOnly(); }
+  frCoord getFirstOverhang() const { return db_rule_->getFirstOverhang(); }
+  frCoord getSecondOverhang() const { return db_rule_->getSecondOverhang(); }
+  frCoord getEolLength() const { return db_rule_->getEolWidth(); }
   void report(utl::Logger* logger) const override
   {
     logger->report("LEF58_ENCLOSURE");
@@ -2259,6 +2269,60 @@ class frLef58EnclosureConstraint : public frConstraint
  private:
   odb::dbTechLayerCutEnclosureRule* db_rule_;
   int cut_class_idx_;
+};
+
+// LEF58_MAXSPACING rule
+class frLef58MaxSpacingConstraint : public frConstraint
+{
+ public:
+  frLef58MaxSpacingConstraint(odb::dbTechLayerMaxSpacingRule* ruleIn)
+      : db_rule_(ruleIn)
+  {
+  }
+  void setCutClassIdx(int in) { cut_class_idx_ = in; }
+  int getCutClassIdx() const { return cut_class_idx_; }
+  frCoord getMaxSpacing() const { return db_rule_->getMaxSpacing(); }
+  std::string getCutClass() const { return db_rule_->getCutClass(); }
+  bool hasCutClass() const { return db_rule_->hasCutClass(); }
+
+  void report(utl::Logger* logger) const override
+  {
+    logger->report("LEF58_MAXSPACING");
+  }
+  // typeId
+  frConstraintTypeEnum typeId() const override
+  {
+    return frConstraintTypeEnum::frcLef58MaxSpacingConstraint;
+  }
+
+ private:
+  odb::dbTechLayerMaxSpacingRule* db_rule_{nullptr};
+  int cut_class_idx_{-1};
+};
+
+class frLef58WidthTableOrthConstraint : public frConstraint
+{
+ public:
+  frLef58WidthTableOrthConstraint(const frCoord horz_spc,
+                                  const frCoord vert_spc)
+      : horz_spc_(horz_spc), vert_spc_(vert_spc)
+  {
+  }
+  frCoord getHorzSpc() const { return horz_spc_; }
+  frCoord getVertSpc() const { return vert_spc_; }
+  void report(utl::Logger* logger) const override
+  {
+    logger->report("LEF58_WIDTHTABLE ORTH");
+  }
+  // typeId
+  frConstraintTypeEnum typeId() const override
+  {
+    return frConstraintTypeEnum::frcLef58WidthTableOrth;
+  }
+
+ private:
+  frCoord horz_spc_;
+  frCoord vert_spc_;
 };
 
 class frNonDefaultRule

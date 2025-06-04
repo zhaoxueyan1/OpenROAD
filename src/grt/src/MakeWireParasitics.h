@@ -1,46 +1,16 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #pragma once
 
+#include <cstddef>
+#include <map>
+#include <vector>
+
 #include "AbstractMakeWireParasitics.h"
-#include "FastRoute.h"
-#include "Grid.h"
-#include "Net.h"
+#include "Pin.h"
 #include "db_sta/dbSta.hh"
-#include "grt/GlobalRouter.h"
+#include "grt/RoutePt.h"
 #include "sta/Clock.hh"
 #include "sta/Set.hh"
 
@@ -55,12 +25,12 @@ class ParasiticAnalysisPt;
 class Units;
 }  // namespace sta
 
-namespace ord {
-class OpenRoad;
-}
-
 namespace utl {
 class Logger;
+}
+
+namespace sta {
+class SpefWriter;
 }
 
 namespace rsz {
@@ -68,7 +38,7 @@ class Resizer;
 }
 
 namespace grt {
-
+class GlobalRouter;
 class MakeWireParasitics : public AbstractMakeWireParasitics
 {
  public:
@@ -80,7 +50,8 @@ class MakeWireParasitics : public AbstractMakeWireParasitics
                      GlobalRouter* grouter);
   void estimateParasitcs(odb::dbNet* net,
                          std::vector<Pin>& pins,
-                         GRoute& route);
+                         GRoute& route,
+                         sta::SpefWriter* spef_writer = nullptr);
   void estimateParasitcs(odb::dbNet* net, GRoute& route) override;
 
   void clearParasitics() override;
@@ -91,7 +62,7 @@ class MakeWireParasitics : public AbstractMakeWireParasitics
   float getNetSlack(odb::dbNet* net) override;
 
  private:
-  typedef std::map<RoutePt, sta::ParasiticNode*> NodeRoutePtMap;
+  using NodeRoutePtMap = std::map<RoutePt, sta::ParasiticNode*>;
 
   sta::Pin* staPin(Pin& pin) const;
   void makeRouteParasitics(odb::dbNet* net,
@@ -108,11 +79,13 @@ class MakeWireParasitics : public AbstractMakeWireParasitics
                                           sta::Parasitic* parasitic,
                                           sta::Net* net) const;
   void makeParasiticsToPins(std::vector<Pin>& pins,
+                            odb::dbNet* net,
                             NodeRoutePtMap& node_map,
                             sta::Corner* corner,
                             sta::ParasiticAnalysisPt* analysis_point,
                             sta::Parasitic* parasitic);
   void makeParasiticsToPin(Pin& pin,
+                           odb::dbNet* net,
                            NodeRoutePtMap& node_map,
                            sta::Corner* corner,
                            sta::ParasiticAnalysisPt* analysis_point,
@@ -150,7 +123,7 @@ class MakeWireParasitics : public AbstractMakeWireParasitics
   sta::dbNetwork* network_;
   sta::Parasitics* parasitics_;
   sta::ArcDelayCalc* arc_delay_calc_;
-  sta::MinMax* min_max_;
+  const sta::MinMax* min_max_;
   size_t resistor_id_;
 };
 

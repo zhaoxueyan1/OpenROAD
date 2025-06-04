@@ -1,40 +1,13 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #pragma once
 
 #include <iostream>
+#include <set>
 
 #include "dbCore.h"
+#include "odb/dbDatabaseObserver.h"
 #include "odb/odb.h"
 
 namespace utl {
@@ -70,7 +43,81 @@ namespace odb {
 const uint db_schema_major = 0;  // Not used...
 const uint db_schema_initial = 57;
 
-const uint db_schema_minor = 84;  // Current revision number
+const uint db_schema_minor = 107;  // Current revision number
+
+// Revision where dbBTerm top layer grid was added to dbBlock
+const uint db_schema_bterm_top_layer_grid = 107;
+
+// Revision where die area is converted to a polygon
+const uint db_schema_die_area_is_polygon = 106;
+
+// Revision where check for mirrored constraint on bterm was added
+const uint db_schema_bterm_is_mirrored = 105;
+
+// Revision where support for pin groups was added
+const uint db_schema_block_pin_groups = 104;
+
+// Revision where support for mirrored pins was added
+const uint db_schema_bterm_mirrored_pin = 103;
+
+// Revision where support for LEF58_CELLEDGESPACINGTABLE was added
+const uint db_schema_cell_edge_spc_tbl = 102;
+
+// Revision where dbMasterEdgeType was added
+const uint db_schema_master_edge_type = 101;
+
+// Revision where dbTarget was removed
+const uint db_rm_target = 100;
+
+// Revision where mask information was added to track grids
+const uint db_track_mask = 99;
+
+// Revision where the jumper insertion flag is added to dbNet
+const uint db_schema_has_jumpers = 98;
+
+// Revision where the is_congested flag was added to dbGuide
+const uint db_schema_db_guide_congested = 97;
+
+// Revision where the dbMarkerGroup/Categories were added to dbBlock
+const uint db_schema_dbmarkergroup = 96;
+
+// Revision where orthogonal spacing table support added
+const uint db_schema_orth_spc_tbl = 95;
+
+// Revision where unused hashes removed
+const uint db_schema_db_remove_hash = 94;
+
+// Revision where the dbGDSLib is added to dbDatabase
+const uint db_schema_gds_lib_in_block = 93;
+
+// Reverted Revision where unused hashes removed
+const uint reverted_db_schema_db_remove_hash = 92;
+
+// Revision where the layers ranges, for signals and clock nets,
+// were moved from GlobalRouter to dbBlock
+const uint db_schema_dbblock_layers_ranges = 91;
+
+// Revision where via layer was added to dbGuide
+const uint db_schema_db_guide_via_layer = 90;
+
+// Revision where blocked regions for IO pins were added to dbBlock
+const uint db_schema_dbblock_blocked_regions_for_pins = 89;
+
+// Revision where odb::modITerm,modBTerm,modNet made doubly linked for
+// hiearchical port removal
+const uint db_schema_hier_port_removal = 89;
+
+// Revision where odb::Polygon was added
+const uint db_schema_polygon = 88;
+
+// Revision where _dbTechLayer::max_spacing_rules_tbl_ was added
+const uint db_schema_max_spacing = 87;
+
+// Revision where bus ports added to odb
+const uint db_schema_odb_busport = 86;
+
+// Revision where constraint region was added to dbBTerm
+const uint db_schema_bterm_constraint_region = 85;
 
 // Revision where GRT layer adjustment was relocated to dbTechLayer
 const uint db_schema_layer_adjustment = 84;
@@ -156,9 +203,9 @@ class _dbNameCache;
 class _dbTech;
 class _dbChip;
 class _dbLib;
+class _dbGDSLib;
 class dbOStream;
 class dbIStream;
-class dbDiff;
 
 class _dbDatabase : public _dbObject
 {
@@ -175,30 +222,28 @@ class _dbDatabase : public _dbObject
   dbTable<_dbTech>* _tech_tbl;
   dbTable<_dbLib>* _lib_tbl;
   dbTable<_dbChip>* _chip_tbl;
+  dbTable<_dbGDSLib>* _gds_lib_tbl;
   dbTable<_dbProperty>* _prop_tbl;
   _dbNameCache* _name_cache;
   dbPropertyItr* _prop_itr;
   int _unique_id;
 
   utl::Logger* _logger;
+  std::set<dbDatabaseObserver*> observers_;
 
   _dbDatabase(_dbDatabase* db);
   _dbDatabase(_dbDatabase* db, int id);
-  _dbDatabase(_dbDatabase* db, const _dbDatabase& d);
   ~_dbDatabase();
 
   utl::Logger* getLogger() const;
 
   bool operator==(const _dbDatabase& rhs) const;
   bool operator!=(const _dbDatabase& rhs) const { return !operator==(rhs); }
-  void differences(dbDiff& diff,
-                   const char* field,
-                   const _dbDatabase& rhs) const;
-  void out(dbDiff& diff, char side, const char* field) const;
 
-  bool isSchema(uint rev) { return _schema_minor >= rev; }
+  bool isSchema(uint rev) const { return _schema_minor >= rev; }
   bool isLessThanSchema(uint rev) { return _schema_minor < rev; }
   dbObjectTable* getObjectTable(dbObjectType type);
+  void collectMemInfo(MemInfo& info);
 };
 
 dbOStream& operator<<(dbOStream& stream, const _dbDatabase& db);

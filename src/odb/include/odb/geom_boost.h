@@ -1,34 +1,5 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2024, Precision Innovations Inc.
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2024-2025, The OpenROAD Authors
 
 // This header adapts odb's Point and Rect to work with Boost Polygon.
 // It is a separate header so clients uninterested can just include geom.h.
@@ -37,7 +8,9 @@
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/register/point.hpp>
+#include <boost/geometry/geometries/register/ring.hpp>
 #include <boost/polygon/polygon.hpp>
+#include <vector>
 
 #include "odb/geom.h"
 
@@ -94,6 +67,10 @@ BOOST_GEOMETRY_REGISTER_POINT_2D_GET_SET(odb::Point,
                                          getY,
                                          setX,
                                          setY);
+
+// Register odb's Point vector as ring.
+
+BOOST_GEOMETRY_REGISTER_RING(std::vector<odb::Point>);
 
 // Make odb's Rect work with boost polgyon
 
@@ -204,6 +181,117 @@ struct indexed_access<odb::Rect, max_corner, Dimension>
     } else {
       b.set_yhi(value);
     }
+  }
+};
+
+//
+// Make odb's Oct work with boost geometry.
+//
+
+template <>
+struct tag<odb::Oct>
+{
+  using type = polygon_tag;
+};
+
+template <>
+struct ring_mutable_type<odb::Oct>
+{
+  using type = std::vector<odb::Point>;
+};
+
+template <>
+struct ring_const_type<odb::Oct>
+{
+  using type = const std::vector<odb::Point>;
+};
+
+template <>
+struct interior_const_type<odb::Oct>
+{
+  using type = const std::vector<std::vector<odb::Point>>;
+};
+
+template <>
+struct interior_mutable_type<odb::Oct>
+{
+  using type = std::vector<std::vector<odb::Point>>;
+};
+
+template <>
+struct exterior_ring<odb::Oct>
+{
+  static std::vector<odb::Point> get(odb::Oct& o) { return o.getPoints(); }
+  static const std::vector<odb::Point> get(const odb::Oct& o)
+  {
+    return o.getPoints();
+  }
+};
+
+template <>
+struct interior_rings<odb::Oct>
+{
+  static std::vector<std::vector<odb::Point>> get(odb::Oct& o) { return {}; }
+  static const std::vector<std::vector<odb::Point>> get(const odb::Oct& o)
+  {
+    return {};
+  }
+};
+
+//
+// Make odb's Polygon work with boost geometry.
+//
+
+template <>
+struct tag<odb::Polygon>
+{
+  using type = polygon_tag;
+};
+
+template <>
+struct ring_mutable_type<odb::Polygon>
+{
+  using type = std::vector<odb::Point>;
+};
+
+template <>
+struct ring_const_type<odb::Polygon>
+{
+  using type = const std::vector<odb::Point>;
+};
+
+template <>
+struct interior_const_type<odb::Polygon>
+{
+  using type = const std::vector<std::vector<odb::Point>>;
+};
+
+template <>
+struct interior_mutable_type<odb::Polygon>
+{
+  using type = std::vector<std::vector<odb::Point>>;
+};
+
+template <>
+struct exterior_ring<odb::Polygon>
+{
+  static std::vector<odb::Point> get(odb::Polygon& p) { return p.getPoints(); }
+  static const std::vector<odb::Point> get(const odb::Polygon& p)
+  {
+    return p.getPoints();
+  }
+};
+
+template <>
+struct interior_rings<odb::Polygon>
+{
+  static std::vector<std::vector<odb::Point>> get(odb::Polygon& p)
+  {
+    return {};
+  }
+  static const std::vector<std::vector<odb::Point>> get(const odb::Polygon& p)
+  {
+    return {};
   }
 };
 

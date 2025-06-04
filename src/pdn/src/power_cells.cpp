@@ -1,36 +1,14 @@
-//////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #include "power_cells.h"
+
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "domain.h"
 #include "grid.h"
@@ -107,9 +85,9 @@ std::set<int> PowerCell::getRectAsSiteWidths(const odb::Rect& rect,
 
 bool PowerCell::appliesToRow(odb::dbRow* row) const
 {
-  // double height cell with switched power in the center needs to be placed in
-  // MX rows
-  return row->getOrient() == odb::dbOrientType::MX;
+  // needs to be string compare because site pointers can come from different
+  // libraries
+  return master_->getSite()->getName() == row->getSite()->getName();
 }
 
 //////////
@@ -255,10 +233,14 @@ void GridSwitchedPower::build()
   const Shape::ShapeTree targets = buildStrapTargetList(target);
   const RowTree row_search = buildRowTree();
 
+  bool found_row = false;
+
   for (auto* row : grid_->getDomain()->getRows()) {
     if (!cell_->appliesToRow(row)) {
       continue;
     }
+    found_row = true;
+
     const int site_width = row->getSite()->getWidth();
     cell_->populateAlwaysOnPinPositions(site_width);
     const std::string inst_prefix = inst_prefix_ + row->getName() + "_";
@@ -315,6 +297,7 @@ void GridSwitchedPower::build()
 
       const auto locations = computeLocations(strap, site_width, core_area);
       inst->setLocation(*locations.begin(), bbox.yMin());
+      inst->setLocationOrient(row->getOrient());
 
       const auto inst_rows = getInstanceRows(inst, row_search);
       if (inst_rows.size() < 2) {
@@ -338,6 +321,13 @@ void GridSwitchedPower::build()
 
       insts_[inst] = InstanceInfo{locations, inst_rows};
     }
+  }
+
+  if (!found_row) {
+    grid_->getLogger()->error(utl::PDN,
+                              240,
+                              "No rows found that match the power cell: {}.",
+                              cell_->getMaster()->getName());
   }
 
   updateControlNetwork();

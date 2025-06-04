@@ -1,42 +1,16 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2021, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2021-2025, The OpenROAD Authors
 
 #include "inspector.h"
 
 #include <QApplication>
 #include <QComboBox>
+#include <QDebug>
 #include <QHeaderView>
 #include <QLineEdit>
 #include <QPushButton>
+#include <string>
+#include <vector>
 
 #include "gui/gui.h"
 #include "gui_utils.h"
@@ -628,12 +602,11 @@ Inspector::Inspector(const SelectionSet& selected,
       selected_(selected),
       selected_itr_(selected.begin()),
       button_frame_(new QFrame(this)),
-      button_next_(
-          new QPushButton("Next \u2192", this)),  // \u2192 = right arrow
-      button_prev_(
-          new QPushButton("\u2190 Previous", this)),  // \u2190 = left arrow
+      button_next_(new QPushButton("Next →", this)),
+      button_prev_(new QPushButton("← Previous", this)),
       selected_itr_label_(new QLabel(this)),
       commands_menu_(new QMenu("Commands Menu", this)),
+      readonly_(false),
       highlighted_(highlighted)
 {
   setObjectName("inspector");  // for settings
@@ -710,8 +683,12 @@ void Inspector::setCommandsMenu()
 void Inspector::showCommandsMenu(const QPoint& pos)
 {
   clicked_index_ = view_->indexAt(pos);
-
   QStandardItem* item = model_->itemFromIndex(clicked_index_);
+
+  if (!item) {
+    return;
+  }
+
   Selected selected
       = item->data(EditorItemDelegate::selected_).value<Selected>();
 
@@ -798,6 +775,8 @@ int Inspector::getSelectedIteratorPosition()
 
 void Inspector::inspect(const Selected& object)
 {
+  QApplication::setOverrideCursor(Qt::WaitCursor);
+
   if (deselect_action_) {
     deselect_action_();
   }
@@ -808,6 +787,12 @@ void Inspector::inspect(const Selected& object)
     navigation_history_.clear();
   }
 
+  if (object) {
+    qDebug() << "Inspector change selection to"
+             << QString::fromStdString(object.getName());
+  } else {
+    qDebug() << "Inspector change selection to nothing";
+  }
   selection_ = object;
   emit selection(object);
 
@@ -828,12 +813,26 @@ void Inspector::inspect(const Selected& object)
   }
 
   adjustHeaders();
+
+  QApplication::restoreOverrideCursor();
 }
 
 void Inspector::reload()
 {
   loadActions();
   model_->updateObject();
+}
+
+void Inspector::setReadOnly()
+{
+  readonly_ = true;
+  reload();
+}
+
+void Inspector::unsetReadOnly()
+{
+  readonly_ = false;
+  reload();
 }
 
 void Inspector::highlightChanged()
@@ -902,7 +901,7 @@ void Inspector::makeAction(const Descriptor::Action& action)
       {"De-focus", ":/defocus.png"},
       {"Navigate back", ":/undo.png"}};
   std::vector<std::pair<std::string, QString>> symbol_replacements{
-      {"Fanin Cone", "\u25B7"}, {"Fanout Cone", "\u25C1"}};
+      {"Fanin Cone", "▷"}, {"Fanout Cone", "◁"}};
 
   const std::string& name = action.name;
 
@@ -934,6 +933,10 @@ void Inspector::makeAction(const Descriptor::Action& action)
   });
   action_layout_->addWidget(button);
   actions_[button] = action.callback;
+
+  if (readonly_ && name == "Delete") {
+    button->setEnabled(false);
+  }
 }
 
 void Inspector::clicked(const QModelIndex& index)
@@ -942,6 +945,16 @@ void Inspector::clicked(const QModelIndex& index)
   // timer to be able to tell the difference
   if (!mouse_timer_.isActive()) {
     clicked_index_ = index;
+
+    // Bypass the timer for those items for which there's
+    // no double click handling
+    QStandardItem* item = model_->itemFromIndex(index);
+    QVariant edit_data = item->data(EditorItemDelegate::editor_);
+    if (!edit_data.isValid()) {
+      indexClicked();
+      return;
+    }
+
     mouse_timer_.start();
   }
 }
@@ -980,7 +993,7 @@ void Inspector::indexDoubleClicked(const QModelIndex& index)
   QStandardItem* item = model_->itemFromIndex(index);
   QVariant item_data = item->data(EditorItemDelegate::editor_);
 
-  if (item_data.isValid()) {
+  if (!readonly_ && item_data.isValid()) {
     // set editable
     item->setEditable(true);
     // start editing
@@ -1125,7 +1138,8 @@ void Inspector::navigateBack()
     }
   }
 
-  emit inspect(next);
+  qDebug() << "Navigate to" << QString::fromStdString(next.getName());
+  emit selected(next);
 }
 
 ////////////

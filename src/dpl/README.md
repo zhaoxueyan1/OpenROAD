@@ -30,7 +30,7 @@ detailed_placement
 | Switch Name | Description | 
 | ----- | ----- |
 | `-max_displacement` | Max distance that an instance can be moved (in microns) when finding a site where it can be placed. Either set one value for both directions or set `{disp_x disp_y}` for individual directions. The default values are `{0, 0}`, and the allowed values within are integers `[0, MAX_INT]`. |
-| `-disallow_one_site_gaps` | Disable one site gap during placement check. |
+| `-disallow_one_site_gaps` | Option is deprecated. |
 | `-report_file_name` | File name for saving the report to (e.g. `report.json`.) |
 
 ### Set Placement Padding
@@ -79,6 +79,7 @@ from `FILLER_` use `-prefix <new prefix>`.
 ```tcl 
 filler_placement
     [-prefix prefix]
+    [-verbose]
     filler_masters
 ```
 
@@ -87,6 +88,7 @@ filler_placement
 | Switch Name | Description |
 | ----- | ----- |
 | `-prefix` | Prefix to name the filler cells. The default value is `FILLER_`. |
+| `-verbose` | Print the filler cell usage. |
 | `filler_masters` | Filler master cells. | 
 
 ### Remove Fillers
@@ -114,8 +116,8 @@ check_placement
 | Switch Name | Description |
 | ----- | ----- |
 | `-verbose` | Enable verbose logging. |
-| `-disallow_one_site_gaps` | Disable one site gap during placement check. |
-| `-report_file_name` | File name for saving the report to (e.g. `report.json`. |
+| `-disallow_one_site_gaps` | Option is deprecated. |
+| `-report_file_name` | File name for saving the report to (e.g. `report.json`.) |
 
 ### Optimize Mirroring
 
@@ -124,6 +126,16 @@ a weak attempt to reduce the total half-perimeter wirelength (HPWL).
 
 ```tcl
 optimize_mirroring
+```
+### Improve Placement
+
+The `improve_placement` command optimizes a given placed design.
+
+```tcl
+improve_placement
+    [-random_seed seed]
+    [-max_displacement disp|{disp_x disp_y}]
+    [-disallow_one_site_gaps]
 ```
 
 ## Useful Developer Commands

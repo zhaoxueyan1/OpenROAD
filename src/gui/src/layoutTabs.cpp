@@ -1,38 +1,11 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2023, Precision Innovations Inc.
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2023-2025, The OpenROAD Authors
 
 #include "layoutTabs.h"
 
+#include <functional>
 #include <utility>
+#include <vector>
 
 #include "colorGenerator.h"
 #include "layoutViewer.h"
@@ -45,9 +18,13 @@ LayoutTabs::LayoutTabs(Options* options,
                        const SelectionSet& selected,
                        const HighlightSet& highlighted,
                        const std::vector<std::unique_ptr<Ruler>>& rulers,
+                       const std::vector<std::unique_ptr<Label>>& labels,
                        Gui* gui,
-                       std::function<bool(void)> usingDBU,
-                       std::function<bool(void)> showRulerAsEuclidian,
+                       std::function<bool()> usingDBU,
+                       std::function<bool()> usingPolyDecompView,
+                       std::function<bool()> showRulerAsEuclidian,
+                       std::function<bool()> default_mouse_wheel_zoom,
+                       std::function<int()> arrow_keys_scroll_step,
                        QWidget* parent)
     : QTabWidget(parent),
       options_(options),
@@ -55,13 +32,33 @@ LayoutTabs::LayoutTabs(Options* options,
       selected_(selected),
       highlighted_(highlighted),
       rulers_(rulers),
+      labels_(labels),
       gui_(gui),
       usingDBU_(std::move(usingDBU)),
+      usingPolyDecompView_(std::move(usingPolyDecompView)),
       showRulerAsEuclidian_(std::move(showRulerAsEuclidian)),
+      default_mouse_wheel_zoom_(std::move(default_mouse_wheel_zoom)),
+      arrow_keys_scroll_step_(std::move(arrow_keys_scroll_step)),
       logger_(nullptr)
 {
   setTabBarAutoHide(true);
   connect(this, &QTabWidget::currentChanged, this, &LayoutTabs::tabChange);
+}
+
+void LayoutTabs::updateBackgroundColors()
+{
+  for (LayoutViewer* viewer : viewers_) {
+    updateBackgroundColor(viewer);
+    viewer->fullRepaint();
+  }
+}
+
+void LayoutTabs::updateBackgroundColor(LayoutViewer* viewer)
+{
+  QPalette palette;
+  palette.setColor(QPalette::Window, options_->background());
+  viewer->setPalette(palette);
+  viewer->setAutoFillBackground(true);
 }
 
 void LayoutTabs::blockLoaded(odb::dbBlock* block)
@@ -79,6 +76,7 @@ void LayoutTabs::blockLoaded(odb::dbBlock* block)
                                  selected_,
                                  highlighted_,
                                  rulers_,
+                                 labels_,
                                  modules_,
                                  focus_nets_,
                                  route_guides_,
@@ -86,25 +84,22 @@ void LayoutTabs::blockLoaded(odb::dbBlock* block)
                                  gui_,
                                  usingDBU_,
                                  showRulerAsEuclidian_,
+                                 usingPolyDecompView_,
                                  this);
   viewer->setLogger(logger_);
   viewers_.push_back(viewer);
   if (command_executing_) {
     viewer->commandAboutToExecute();
   }
-  auto scroll = new LayoutScroll(viewer, this);
+  auto scroll = new LayoutScroll(
+      viewer, default_mouse_wheel_zoom_, arrow_keys_scroll_step_, this);
   viewer->blockLoaded(block);
 
   auto tech = block->getTech();
   const auto name = fmt::format("{} ({})", block->getName(), tech->getName());
   addTab(scroll, name.c_str());
 
-  // This has to be done after addTab.  For unexplained reasons it
-  // doesn't work for all users if done in LayoutViewer::LayoutViewer.
-  QPalette palette;
-  palette.setColor(QPalette::Window, LayoutViewer::background());
-  viewer->setPalette(palette);
-  viewer->setAutoFillBackground(true);
+  updateBackgroundColor(viewer);
 
   // forward signals from the viewer upward
   connect(viewer, &LayoutViewer::location, this, &LayoutTabs::location);
@@ -356,6 +351,13 @@ void LayoutTabs::executionPaused()
 {
   if (current_viewer_) {
     current_viewer_->executionPaused();
+  }
+}
+
+void LayoutTabs::resetCache()
+{
+  for (LayoutViewer* viewer : viewers_) {
+    viewer->resetCache();
   }
 }
 

@@ -1,34 +1,5 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, Nefelus Inc
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #pragma once
 
@@ -86,8 +57,6 @@ class dbWireGraph
       VARIABLE
     };
 
-    EndStyle() : _type(EXTENDED), _ext(0) {}
-
     void setExtended()
     {
       _type = EXTENDED;
@@ -111,8 +80,8 @@ class dbWireGraph
     }
 
    private:
-    Type _type;
-    int _ext;
+    Type _type{EXTENDED};
+    int _ext{0};
 
     friend class dbWireGraph;
   };
@@ -133,11 +102,7 @@ class dbWireGraph
     };
 
     Edge(Type type, dbWireType::Value wire_type, dbTechLayerRule* rule)
-        : _type(type),
-          _src(nullptr),
-          _tgt(nullptr),
-          _wire_type(wire_type),
-          _non_default_rule(rule)
+        : _type(type), _wire_type(wire_type), _non_default_rule(rule)
     {
     }
 
@@ -161,8 +126,8 @@ class dbWireGraph
     }
 
     const Type _type;
-    Node* _src;
-    Node* _tgt;
+    Node* _src{nullptr};
+    Node* _tgt{nullptr};
     dbWireType::Value _wire_type;
     dbTechLayerRule* _non_default_rule;
     DListEntry<Edge> _edge_entry;
@@ -177,15 +142,7 @@ class dbWireGraph
    public:
     using edge_iterator = DList<Edge, &Edge::outEdgeEntry>::iterator;
 
-    Node(int x, int y, dbTechLayer* layer)
-        : _x(x),
-          _y(y),
-          _jct_id(-1),
-          _layer(layer),
-          _in_edge(nullptr),
-          _object(nullptr)
-    {
-    }
+    Node(int x, int y, dbTechLayer* layer) : _x(x), _y(y), _layer(layer) {}
 
     void xy(int& x, int& y) const
     {
@@ -208,10 +165,10 @@ class dbWireGraph
 
     int _x;
     int _y;
-    int _jct_id;
+    int _jct_id{-1};
     dbTechLayer* _layer;
-    Edge* _in_edge;
-    dbObject* _object;
+    Edge* _in_edge{nullptr};
+    dbObject* _object{nullptr};
     DList<Edge, &Edge::outEdgeEntry> _out_edges;
     DListEntry<Node> _node_entry;
 

@@ -1,39 +1,17 @@
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2024, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2024-2025, The OpenROAD Authors
 
 #include "ir_network.h"
 
+#include <algorithm>
 #include <fstream>
 #include <list>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "connection.h"
 #include "node.h"
@@ -260,6 +238,11 @@ IRNetwork::generatePolygonsFromITerms(std::vector<TerminalNode*>& terminals)
       continue;
     }
     const auto transform = inst->getTransform();
+    if (iterm->getBBox().isInverted()) {
+      // iterm has no physical shape, so ignore.
+      continue;
+    }
+
     int x, y;
     iterm->getAvgXY(&x, &y);
     auto base_node
@@ -278,24 +261,39 @@ IRNetwork::generatePolygonsFromITerms(std::vector<TerminalNode*>& terminals)
         }
 
         if (geom->isVia()) {
-          continue;
+          for (const auto& [layer, shapes] : pin_shapes) {
+            std::vector<odb::Rect> via_rects;
+            shapes.get_rectangles(via_rects);
+            for (const auto& pin_shape : via_rects) {
+              has_routing_term = true;
+
+              // create iterm nodes
+              auto center = std::make_unique<TerminalNode>(pin_shape, layer);
+              terminals.push_back(center.get());
+
+              connections_.push_back(std::make_unique<TermConnection>(
+                  base_node.get(), center.get()));
+
+              nodes_[layer].push_back(std::move(center));
+            }
+          }
+        } else {
+          auto* layer = geom->getTechLayer();
+
+          has_routing_term = true;
+
+          odb::Rect pin_shape = geom->getBox();
+          transform.apply(pin_shape);
+
+          // create iterm nodes
+          auto center = std::make_unique<TerminalNode>(pin_shape, layer);
+          terminals.push_back(center.get());
+
+          connections_.push_back(
+              std::make_unique<TermConnection>(base_node.get(), center.get()));
+
+          nodes_[layer].push_back(std::move(center));
         }
-
-        auto* layer = geom->getTechLayer();
-
-        has_routing_term = true;
-
-        odb::Rect pin_shape = geom->getBox();
-        transform.apply(pin_shape);
-
-        // create iterm nodes
-        auto center = std::make_unique<TerminalNode>(pin_shape, layer);
-        terminals.push_back(center.get());
-
-        connections_.push_back(
-            std::make_unique<TermConnection>(base_node.get(), center.get()));
-
-        nodes_[layer].push_back(std::move(center));
       }
     }
 
@@ -336,7 +334,6 @@ IRNetwork::generatePolygonsFromBTerms(std::vector<TerminalNode*>& terminals)
 
         auto* layer = geom->getTechLayer();
         const odb::Rect pin_shape = geom->getBox();
-        const odb::Point center(pin_shape.xCenter(), pin_shape.yCenter());
 
         // create bpin nodes
         auto term = std::make_unique<TerminalNode>(pin_shape, layer);
@@ -400,14 +397,14 @@ void IRNetwork::processPolygonToRectangles(
          search++) {
       if (search->intersects(rect)) {
         const odb::Rect intersect = search->intersect(rect);
-        nodes.emplace(intersect.xCenter(), intersect.yCenter());
+        nodes.emplace(intersect.center());
       }
     }
 
     auto shape = std::make_unique<Shape>(rect, layer);
 
     // Create starter nodes
-    nodes.emplace(rect.xCenter(), rect.yCenter());
+    nodes.emplace(rect.center());
     for (const auto& pt : nodes) {
       auto node = std::make_unique<Node>(pt, layer);
 
@@ -597,10 +594,9 @@ void IRNetwork::generateCutNodesForSBox(
   } else {
     for (const auto& shape : via_shapes) {
       const odb::Rect via = shape.getBox();
-      const odb::Point pt(via.xCenter(), via.yCenter());
 
-      auto bottom_node = std::make_unique<Node>(pt, bottom);
-      auto top_node = std::make_unique<Node>(pt, top);
+      auto bottom_node = std::make_unique<Node>(via.center(), bottom);
+      auto top_node = std::make_unique<Node>(via.center(), top);
 
       new_connections.push_back(std::make_unique<ViaConnection>(
           bottom_node.get(), top_node.get(), getEffectiveNumberOfCuts(shape)));
@@ -1120,6 +1116,20 @@ void IRNetwork::connectLayerNodes()
 odb::dbTechLayer* IRNetwork::getTopLayer() const
 {
   return nodes_.rbegin()->first;
+}
+
+std::set<odb::dbTechLayer*> IRNetwork::getLayers() const
+{
+  std::set<odb::dbTechLayer*> layers;
+  for (const auto& [layer, nodes] : nodes_) {
+    layers.insert(layer);
+  }
+  for (const auto& conn : connections_) {
+    if (conn->isVia()) {
+      layers.insert(conn->getNode0()->getLayer()->getUpperLayer());
+    }
+  }
+  return layers;
 }
 
 const std::vector<std::unique_ptr<Node>>& IRNetwork::getTopLayerNodes() const

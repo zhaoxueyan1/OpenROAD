@@ -1,48 +1,19 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// BSD 3-Clause License
-//
-// Copyright (c) 2019, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "rmp/Restructure.h"
 
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <time.h>
 #include <unistd.h>
 
+#include <ctime>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <mutex>
 #include <sstream>
+#include <vector>
 
 #include "base/abc/abc.h"
 #include "base/main/abcapis.h"
@@ -56,18 +27,20 @@
 #include "sta/Network.hh"
 #include "sta/PathEnd.hh"
 #include "sta/PathExpanded.hh"
-#include "sta/PathRef.hh"
 #include "sta/PatternMatch.hh"
 #include "sta/PortDirection.hh"
 #include "sta/Sdc.hh"
 #include "sta/Search.hh"
 #include "sta/Sta.hh"
 #include "utl/Logger.h"
+#include "zero_slack_strategy.h"
 
 using utl::RMP;
 using namespace abc;
 
 namespace rmp {
+
+std::once_flag init_abc_flag;
 
 void Restructure::init(utl::Logger* logger,
                        sta::dbSta* open_sta,
@@ -78,6 +51,8 @@ void Restructure::init(utl::Logger* logger,
   db_ = db;
   open_sta_ = open_sta;
   resizer_ = resizer;
+
+  std::call_once(init_abc_flag, []() { abc::Abc_Start(); });
 }
 
 void Restructure::deleteComponents()
@@ -93,6 +68,12 @@ void Restructure::reset()
 {
   lib_file_names_.clear();
   path_insts_.clear();
+}
+
+void Restructure::resynth(sta::Corner* corner)
+{
+  ZeroSlackStrategy zero_slack_strategy(corner);
+  zero_slack_strategy.OptimizeDesign(open_sta_, name_generator_, logger_);
 }
 
 void Restructure::run(char* liberty_file_name,
@@ -145,8 +126,7 @@ void Restructure::getBlob(unsigned max_depth)
       odb::dbITerm* term = nullptr;
       odb::dbBTerm* port = nullptr;
       odb::dbModITerm* moditerm = nullptr;
-      odb::dbModBTerm* modbterm = nullptr;
-      open_sta_->getDbNetwork()->staToDb(pin, term, port, moditerm, modbterm);
+      open_sta_->getDbNetwork()->staToDb(pin, term, port, moditerm);
       if (term && !term->getInst()->getMaster()->isBlock())
         path_insts_.insert(term->getInst());
     }
@@ -168,7 +148,8 @@ void Restructure::runABC()
              "Constants before remap {}",
              countConsts(block_));
 
-  Blif blif_(logger_, open_sta_, locell_, loport_, hicell_, hiport_);
+  Blif blif_(
+      logger_, open_sta_, locell_, loport_, hicell_, hiport_, ++blif_call_id_);
   blif_.setReplaceableInstances(path_insts_);
   blif_.writeBlif(input_blif_file_name_.c_str(), !is_area_mode_);
   debugPrint(
@@ -318,9 +299,8 @@ void Restructure::getEndPoints(sta::PinSet& ends,
   logger_->report("Number of paths for restructure are {}", path_found);
   for (auto& end_point : *end_points) {
     if (!is_area_mode_) {
-      sta::PathRef path_ref
+      sta::Path* path
           = open_sta_->vertexWorstSlackPath(end_point, sta::MinMax::max());
-      sta::Path* path = path_ref.path();
       sta::PathExpanded expanded(path, open_sta_);
       // Members in expanded include gate output and net so divide by 2
       logger_->report("Found path of depth {}", expanded.size() / 2);

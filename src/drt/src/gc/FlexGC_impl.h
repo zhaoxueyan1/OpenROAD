@@ -1,34 +1,15 @@
-/* Authors: Lutong Wang and Bangqi Xu */
-/*
- * Copyright (c) 2019, The Regents of the University of California
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of the University nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2019-2025, The OpenROAD Authors
 
 #pragma once
 
+#include <algorithm>
+#include <map>
 #include <memory>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "db/gcObj/gcNet.h"
 #include "dr/FlexDR.h"
@@ -90,6 +71,7 @@ class FlexGCWorker::Impl
   Impl();  // for serialization
   Impl(frTechObject* techIn,
        Logger* logger,
+       RouterConfiguration* router_cfg,
        FlexDRWorker* drWorkerIn,
        FlexGCWorker* gcWorkerIn);
   frLayerNum getMinLayerNum()  // inclusive
@@ -137,6 +119,7 @@ class FlexGCWorker::Impl
  private:
   frTechObject* tech_;
   Logger* logger_;
+  RouterConfiguration* router_cfg_;
   FlexDRWorker* drWorker_;
 
   Rect extBox_;
@@ -157,6 +140,7 @@ class FlexGCWorker::Impl
 
   // parameters
   gcNet* targetNet_;
+  drNet* targetDRNet_;
   frLayerNum minLayerNum_;
   frLayerNum maxLayerNum_;
 
@@ -224,6 +208,8 @@ class FlexGCWorker::Impl
   frCoord getPrl(gcSegment* edge,
                  gcSegment* ptr,
                  const gtl::orientation_2d& orient) const;
+
+  std::pair<frCoord, frCoord> getRectsPrl(gcRect* rect1, gcRect* rect2) const;
   void checkMetalSpacing_wrongDir(gcPin* pin, frLayer* layer);
   frCoord checkMetalSpacing_getMaxSpcVal(frLayerNum layerNum,
                                          bool checkNDRs = true);
@@ -291,8 +277,8 @@ class FlexGCWorker::Impl
       gcRect* rect,
       frLef58TwoWiresForbiddenSpcConstraint* con);
   box_t checkMetalCornerSpacing_getQueryBox(gcCorner* corner,
-                                            frCoord& maxSpcValX,
-                                            frCoord& maxSpcValY);
+                                            frCoord maxSpcValX,
+                                            frCoord maxSpcValY);
   void checkMetalCornerSpacing();
   void checkMetalCornerSpacing_getMaxSpcVal(frLayerNum layerNum,
                                             frCoord& maxSpcValX,
@@ -303,6 +289,8 @@ class FlexGCWorker::Impl
                                     gcRect* rect,
                                     frLef58CornerSpacingConstraint* con);
 
+  void checkWidthTableOrth(gcCorner* corner);
+  void checkWidthTableOrth_main(gcCorner* corner1, gcCorner* corner2);
   void checkMetalShape(bool allow_patching = false);
   void checkMetalShape_main(gcPin* pin, bool allow_patching);
   void checkMetalShape_minWidth(const gtl::rectangle_data<frCoord>& rect,
@@ -499,6 +487,10 @@ class FlexGCWorker::Impl
   bool checkLef58CutSpacing_spc_hasTwoCuts_helper(
       gcRect* rect,
       frLef58CutSpacingConstraint* con);
+  void checkCutSpacingTableOrthogonal(gcRect* rect);
+  void checkCutSpacingTableOrthogonal_helper(gcRect* rect1,
+                                             gcRect* rect2,
+                                             frCoord spacing);
   // LEF58_ENCLOSURE
   void checkLef58Enclosure_main(gcRect* rect);
   void checkLef58Enclosure_main(gcRect* via, gcRect* enc);

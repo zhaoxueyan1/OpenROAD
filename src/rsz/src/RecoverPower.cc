@@ -1,39 +1,10 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2023, Precision Innovations Inc.
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2023-2025, The OpenROAD Authors
 
 #include "RecoverPower.hh"
+
+#include <algorithm>
+#include <string>
 
 #include "db_sta/dbNetwork.hh"
 #include "rsz/Resizer.hh"
@@ -46,8 +17,6 @@
 #include "sta/Liberty.hh"
 #include "sta/Parasitics.hh"
 #include "sta/PathExpanded.hh"
-#include "sta/PathRef.hh"
-#include "sta/PathVertex.hh"
 #include "sta/PortDirection.hh"
 #include "sta/Sdc.hh"
 #include "sta/TimingArc.hh"
@@ -76,10 +45,12 @@ void RecoverPower::init()
   logger_ = resizer_->logger_;
   dbStaState::init(resizer_->sta_);
   db_network_ = resizer_->db_network_;
+  initial_design_area_ = resizer_->computeDesignArea();
 }
 
-void RecoverPower::recoverPower(const float recover_power_percent)
+bool RecoverPower::recoverPower(const float recover_power_percent, bool verbose)
 {
+  bool recovered = false;
   init();
   constexpr int digits = 3;
   resize_count_ = 0;
@@ -113,17 +84,23 @@ void RecoverPower::recoverPower(const float recover_power_percent)
   // As long as we are here fix at least one path
   max_end_count = std::max(max_end_count, 1);
 
-  resizer_->incrementalParasiticsBegin();
-  resizer_->updateParasitics();
-  sta_->findRequireds();
-
   Slack worst_slack_before;
   Vertex* worst_vertex;
   sta_->worstSlack(max_, worst_slack_before, worst_vertex);
 
+  if (max_end_count > 5 * max_print_interval_) {
+    print_interval_ = max_print_interval_;
+  } else {
+    print_interval_ = min_print_interval_;
+  }
+
+  printProgress(0, false, false);
+
   int end_index = 0;
   int failed_move_threshold = 0;
+  IncrementalParasiticsGuard guard(resizer_);
   for (Vertex* end : ends_with_slack) {
+    resizer_->journalBegin();
     const Slack end_slack_before = sta_->vertexSlack(end, max_);
     Slack worst_slack_after;
     //=====================================================================
@@ -133,15 +110,19 @@ void RecoverPower::recoverPower(const float recover_power_percent)
                RSZ,
                "recover_power",
                2,
-               "Doing {} /{}",
+               "Doing {} / {}",
                end_index,
                max_end_count);
+    if (verbose || end_index == 1) {
+      printProgress(end_index, false, false);
+    }
+
     if (end_index > max_end_count) {
+      resizer_->journalEnd();
       break;
     }
     //=====================================================================
-    resizer_->journalBegin();
-    PathRef end_path = sta_->vertexWorstSlackPath(end, max_);
+    Path* end_path = sta_->vertexWorstSlackPath(end, max_);
     Vertex* const changed = recoverPower(end_path, end_slack_before);
     if (changed) {
       resizer_->updateParasitics(true);
@@ -168,6 +149,7 @@ void RecoverPower::recoverPower(const float recover_power_percent)
 
       if (better) {
         failed_move_threshold = 0;
+        resizer_->journalEnd();
         resizer_->journalBegin();
         debugPrint(logger_,
                    RSZ,
@@ -189,16 +171,10 @@ void RecoverPower::recoverPower(const float recover_power_percent)
                         "{} successive tries yielded negative slack. Ending "
                         "power recovery",
                         failed_move_threshold_limit_);
-
+          resizer_->journalEnd();
           break;
         }
-        int resize_count = 100;
-        int inserted_buffer_count = 100;
-        int cloned_gate_count = 100;
-        resizer_->journalRestore(
-            resize_count, inserted_buffer_count, cloned_gate_count);
-        resizer_->updateParasitics();
-        sta_->findRequireds();
+        resizer_->journalRestore();
         debugPrint(logger_,
                    RSZ,
                    "recover_power",
@@ -210,22 +186,28 @@ void RecoverPower::recoverPower(const float recover_power_percent)
                    worst_slack_after);
       }
       if (resizer_->overMaxArea()) {
+        resizer_->journalEnd();
         break;
       }
     }
   }
+
+  printProgress(end_index, true, true);
+
   bad_vertices_.clear();
 
-  resizer_->incrementalParasiticsEnd();
   // TODO: Add the appropriate metric here
   // logger_->metric("design__instance__count__setup_buffer",
   // inserted_buffer_count_);
   if (resize_count_ > 0) {
+    recovered = true;
     logger_->info(RSZ, 141, "Resized {} instances.", resize_count_);
   }
   if (resizer_->overMaxArea()) {
     logger_->error(RSZ, 125, "max utilization reached.");
   }
+
+  return recovered;
 }
 
 // For testing.
@@ -236,12 +218,13 @@ Vertex* RecoverPower::recoverPower(const Pin* end_pin)
 
   Vertex* vertex = graph_->pinLoadVertex(end_pin);
   const Slack slack = sta_->vertexSlack(vertex, max_);
-  const PathRef path = sta_->vertexWorstSlackPath(vertex, max_);
-  resizer_->incrementalParasiticsBegin();
-  Vertex* drvr_vertex = recoverPower(path, slack);
-  // Leave the parasitices up to date.
-  resizer_->updateParasitics();
-  resizer_->incrementalParasiticsEnd();
+  const Path* path = sta_->vertexWorstSlackPath(vertex, max_);
+  Vertex* drvr_vertex;
+
+  {
+    IncrementalParasiticsGuard guard(resizer_);
+    drvr_vertex = recoverPower(path, slack);
+  }
 
   if (resize_count_ > 0) {
     logger_->info(RSZ, 3111, "Resized {} instances.", resize_count_);
@@ -250,27 +233,27 @@ Vertex* RecoverPower::recoverPower(const Pin* end_pin)
 }
 
 // This is the main routine for recovering power.
-Vertex* RecoverPower::recoverPower(const PathRef& path, const Slack path_slack)
+Vertex* RecoverPower::recoverPower(const Path* path, const Slack path_slack)
 {
-  PathExpanded expanded(&path, sta_);
+  PathExpanded expanded(path, sta_);
   Vertex* changed = nullptr;
 
   if (expanded.size() > 1) {
     const int path_length = expanded.size();
     vector<pair<int, Delay>> load_delays;
     const int start_index = expanded.startIndex();
-    const DcalcAnalysisPt* dcalc_ap = path.dcalcAnalysisPt(sta_);
+    const DcalcAnalysisPt* dcalc_ap = path->dcalcAnalysisPt(sta_);
     const int lib_ap = dcalc_ap->libertyIndex();
     // Find load delay for each gate in the path.
     for (int i = start_index; i < path_length; i++) {
-      const PathRef* path = expanded.path(i);
+      const Path* path = expanded.path(i);
       const Vertex* path_vertex = path->vertex(sta_);
       const Pin* path_pin = path->pin(sta_);
       if (i > 0 && network_->isDriver(path_pin)
           && !network_->isTopLevelPort(path_pin)) {
-        const TimingArc* prev_arc = expanded.prevArc(i);
+        const TimingArc* prev_arc = path->prevArc(sta_);
         const TimingArc* corner_arc = prev_arc->cornerArc(lib_ap);
-        const Edge* prev_edge = path->prevEdge(prev_arc, sta_);
+        const Edge* prev_edge = path->prevEdge(sta_);
         const Delay load_delay
             = graph_->arcDelay(prev_edge, prev_arc, dcalc_ap->index())
               // Remove intrinsic delay to find load dependent delay.
@@ -297,7 +280,7 @@ Vertex* RecoverPower::recoverPower(const PathRef& path, const Slack path_slack)
                  || (pair1.second == pair2.second && pair1.first < pair2.first);
         });
     for (const auto& [drvr_index, ignored] : load_delays) {
-      PathRef* drvr_path = expanded.path(drvr_index);
+      const Path* drvr_path = expanded.path(drvr_index);
       Vertex* drvr_vertex = drvr_path->vertex(sta_);
       // If we already tried this vertex and got a worse result, skip it.
       if (bad_vertices_.find(drvr_vertex) != bad_vertices_.end()) {
@@ -325,7 +308,7 @@ Vertex* RecoverPower::recoverPower(const PathRef& path, const Slack path_slack)
   return changed;
 }
 
-bool RecoverPower::downsizeDrvr(const PathRef* drvr_path,
+bool RecoverPower::downsizeDrvr(const Path* drvr_path,
                                 const int drvr_index,
                                 PathExpanded* expanded,
                                 const bool only_same_size_swap,
@@ -336,14 +319,14 @@ bool RecoverPower::downsizeDrvr(const PathRef* drvr_path,
   const DcalcAnalysisPt* dcalc_ap = drvr_path->dcalcAnalysisPt(sta_);
   const float load_cap = graph_delay_calc_->loadCap(drvr_pin, dcalc_ap);
   const int in_index = drvr_index - 1;
-  const PathRef* in_path = expanded->path(in_index);
+  const Path* in_path = expanded->path(in_index);
   const Pin* in_pin = in_path->pin(sta_);
   const LibertyPort* in_port = network_->libertyPort(in_pin);
   if (!resizer_->dontTouch(drvr)) {
     float prev_drive = 0.0;
     if (drvr_index >= 2) {
       const int prev_drvr_index = drvr_index - 2;
-      const PathRef* prev_drvr_path = expanded->path(prev_drvr_index);
+      const Path* prev_drvr_path = expanded->path(prev_drvr_index);
       const Pin* prev_drvr_pin = prev_drvr_path->pin(sta_);
       const LibertyPort* prev_drvr_port = network_->libertyPort(prev_drvr_pin);
       if (prev_drvr_port) {
@@ -377,16 +360,16 @@ bool RecoverPower::downsizeDrvr(const PathRef* drvr_path,
 }
 
 bool RecoverPower::meetsSizeCriteria(const LibertyCell* cell,
-                                     const LibertyCell* equiv,
+                                     const LibertyCell* candidate,
                                      const bool match_size)
 {
   if (!match_size) {
     return true;
   }
-  const dbMaster* equivalent_cell = db_network_->staToDb(equiv);
+  const dbMaster* candidate_cell = db_network_->staToDb(candidate);
   const dbMaster* curr_cell = db_network_->staToDb(cell);
-  if (equivalent_cell->getWidth() <= curr_cell->getWidth()
-      && equivalent_cell->getHeight() == curr_cell->getHeight()) {
+  if (candidate_cell->getWidth() <= curr_cell->getWidth()
+      && candidate_cell->getHeight() == curr_cell->getHeight()) {
     return true;
   }
   return false;
@@ -402,46 +385,47 @@ LibertyCell* RecoverPower::downsizeCell(const LibertyPort* in_port,
 {
   const int lib_ap = dcalc_ap->libertyIndex();
   LibertyCell* cell = drvr_port->libertyCell();
-  LibertyCellSeq* equiv_cells = sta_->equivCells(cell);
+  LibertyCellSeq swappable_cells = resizer_->getSwappableCells(cell);
   constexpr double delay_margin = 1.5;  // Prevent overly aggressive downsizing
 
-  if (equiv_cells) {
+  if (!swappable_cells.empty()) {
     const char* in_port_name = in_port->name();
     const char* drvr_port_name = drvr_port->name();
-    sort(equiv_cells, [=](const LibertyCell* cell1, const LibertyCell* cell2) {
-      LibertyPort* port1
-          = cell1->findLibertyPort(drvr_port_name)->cornerPort(lib_ap);
-      const LibertyPort* port2
-          = cell2->findLibertyPort(drvr_port_name)->cornerPort(lib_ap);
-      const float drive1 = port1->driveResistance();
-      const float drive2 = port2->driveResistance();
-      const ArcDelay intrinsic1 = port1->intrinsicDelay(this);
-      const ArcDelay intrinsic2 = port2->intrinsicDelay(this);
-      return (std::tie(drive1, intrinsic2) < std::tie(drive2, intrinsic1));
-    });
+    sort(&swappable_cells,
+         [=](const LibertyCell* cell1, const LibertyCell* cell2) {
+           LibertyPort* port1
+               = cell1->findLibertyPort(drvr_port_name)->cornerPort(lib_ap);
+           const LibertyPort* port2
+               = cell2->findLibertyPort(drvr_port_name)->cornerPort(lib_ap);
+           const float drive1 = port1->driveResistance();
+           const float drive2 = port2->driveResistance();
+           const ArcDelay intrinsic1 = port1->intrinsicDelay(this);
+           const ArcDelay intrinsic2 = port2->intrinsicDelay(this);
+           return (std::tie(drive1, intrinsic2) < std::tie(drive2, intrinsic1));
+         });
     const float drive = drvr_port->cornerPort(lib_ap)->driveResistance();
     const float delay
         = resizer_->gateDelay(drvr_port, load_cap, resizer_->tgt_slew_dcalc_ap_)
           + prev_drive * in_port->cornerPort(lib_ap)->capacitance();
 
     LibertyCell* best_cell = nullptr;
-    for (LibertyCell* equiv : *equiv_cells) {
-      const LibertyCell* equiv_corner = equiv->cornerCell(lib_ap);
-      const LibertyPort* equiv_drvr
-          = equiv_corner->findLibertyPort(drvr_port_name);
-      const LibertyPort* equiv_input
-          = equiv_corner->findLibertyPort(in_port_name);
-      const float current_drive = equiv_drvr->driveResistance();
-      // Include delay of previous driver into equiv gate.
+    for (LibertyCell* swappable : swappable_cells) {
+      const LibertyCell* swappable_corner = swappable->cornerCell(lib_ap);
+      const LibertyPort* swappable_drvr
+          = swappable_corner->findLibertyPort(drvr_port_name);
+      const LibertyPort* swappable_input
+          = swappable_corner->findLibertyPort(in_port_name);
+      const float current_drive = swappable_drvr->driveResistance();
+      // Include delay of previous driver into swappable gate.
       const float current_delay
-          = resizer_->gateDelay(equiv_drvr, load_cap, dcalc_ap)
-            + prev_drive * equiv_input->capacitance();
+          = resizer_->gateDelay(swappable_drvr, load_cap, dcalc_ap)
+            + prev_drive * swappable_input->capacitance();
 
-      if (!resizer_->dontUse(equiv) && current_drive > drive
+      if (!resizer_->dontUse(swappable) && current_drive > drive
           && current_delay > delay
           && (current_delay - delay) * delay_margin < path_slack  // add margin
-          && meetsSizeCriteria(cell, equiv, match_size)) {
-        best_cell = equiv;
+          && meetsSizeCriteria(cell, swappable, match_size)) {
+        best_cell = swappable;
       }
     }
     if (best_cell != nullptr) {
@@ -460,6 +444,42 @@ int RecoverPower::fanout(Vertex* vertex)
     fanout++;
   }
   return fanout;
+}
+
+void RecoverPower::printProgress(int iteration, bool force, bool end) const
+{
+  const bool start = iteration == 0;
+
+  if (start && !end) {
+    logger_->report("Iteration |   Area    |  Resized |   WNS    | Endpt");
+    logger_->report("---------------------------------------------------");
+  }
+
+  if (iteration % print_interval_ == 0 || force || end) {
+    Slack wns;
+    Vertex* worst_vertex;
+    sta_->worstSlack(max_, wns, worst_vertex);
+
+    std::string itr_field = fmt::format("{}", iteration);
+    if (end) {
+      itr_field = "final";
+    }
+
+    const double design_area = resizer_->computeDesignArea();
+    const double area_growth = design_area - initial_design_area_;
+
+    logger_->report(
+        "{: >9s} | {: >+8.1f}% | {: >8d} | {: >8s} | {}",
+        itr_field,
+        area_growth / initial_design_area_ * 1e2,
+        resize_count_,
+        delayAsString(wns, sta_, 3),
+        worst_vertex != nullptr ? worst_vertex->name(network_) : "");
+  }
+
+  if (end) {
+    logger_->report("---------------------------------------------------");
+  }
 }
 
 }  // namespace rsz

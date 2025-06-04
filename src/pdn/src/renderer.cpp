@@ -1,36 +1,10 @@
-//////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #include "renderer.h"
+
+#include <string>
+#include <vector>
 
 #include "domain.h"
 #include "grid.h"
@@ -51,10 +25,13 @@ const gui::Painter::Color PDNRenderer::obstruction_color_
     = gui::Painter::Color(gui::Painter::gray, 100);
 const gui::Painter::Color PDNRenderer::repair_color_
     = gui::Painter::Color(gui::Painter::light_gray, 100);
+const gui::Painter::Color PDNRenderer::repair_outline_color_
+    = gui::Painter::Color(gui::Painter::yellow, 100);
 
 PDNRenderer::PDNRenderer(PdnGen* pdn) : pdn_(pdn)
 {
   addDisplayControl(grid_obs_text_, false);
+  addDisplayControl(initial_obs_text_, false);
   addDisplayControl(obs_text_, false);
   addDisplayControl(vias_text_, true);
   addDisplayControl(followpins_text_, true);
@@ -70,9 +47,19 @@ PDNRenderer::PDNRenderer(PdnGen* pdn) : pdn_(pdn)
 void PDNRenderer::update()
 {
   shapes_.clear();
+  initial_obstructions_.clear();
   grid_obstructions_.clear();
   vias_.clear();
   repair_.clear();
+
+  if (!pdn_->getDomains().empty()) {
+    auto* domain = pdn_->getDomains()[0];
+    ShapeVectorMap initial_shapes;
+    Grid::makeInitialObstructions(
+        domain->getBlock(), initial_shapes, {}, domain->getLogger());
+    initial_obstructions_
+        = Shape::convertVectorToObstructionTree(initial_shapes);
+  }
 
   ShapeVectorMap shapes;
   ShapeVectorMap obs;
@@ -98,6 +85,7 @@ void PDNRenderer::update()
         channel.source = repair.connect_to;
         channel.target = repair.target->getLayer();
         channel.rect = repair.area;
+        channel.available_rect = repair.available_area;
         std::string nets;
         for (auto* net : repair.nets) {
           if (!nets.empty()) {
@@ -130,6 +118,18 @@ void PDNRenderer::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
   const int min_shape = 1.0 / painter.getPixelsPerDBU();
 
   const odb::Rect paint_rect = painter.getBounds();
+
+  if (checkDisplayControl(initial_obs_text_)) {
+    painter.setPen(gui::Painter::highlight, true);
+    painter.setBrush(gui::Painter::transparent);
+    auto& shapes = initial_obstructions_[layer];
+    for (auto it = shapes.qbegin(bgi::intersects(paint_rect));
+         it != shapes.qend();
+         it++) {
+      const auto& shape = *it;
+      painter.drawRect(shape->getObstruction());
+    }
+  }
 
   if (checkDisplayControl(grid_obs_text_)) {
     painter.setPen(gui::Painter::highlight, true);
@@ -264,6 +264,8 @@ void PDNRenderer::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
       if (layer == repair.source || layer == repair.target) {
         painter.setPenAndBrush(repair_color_, true);
         painter.drawRect(repair.rect);
+        painter.setPenAndBrush(repair_outline_color_, true, gui::Painter::NONE);
+        painter.drawRect(repair.available_rect);
 
         const odb::Rect name_box = painter.stringBoundaries(
             0, 0, gui::Painter::Anchor::BOTTOM_LEFT, repair.text);
@@ -281,6 +283,11 @@ void PDNRenderer::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
 
 void PDNRenderer::drawObjects(gui::Painter& painter)
 {
+}
+
+void PDNRenderer::pause()
+{
+  gui::Gui::get()->pause();
 }
 
 }  // namespace pdn

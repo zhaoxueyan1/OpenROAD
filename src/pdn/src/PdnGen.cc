@@ -1,42 +1,13 @@
-/////////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2022, The Regents of the University of California
-// All rights reserved.
-//
-// BSD 3-Clause License
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * Neither the name of the copyright holder nor the names of its
-//   contributors may be used to endorse or promote products derived from
-//   this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////////
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2022-2025, The OpenROAD Authors
 
 #include "pdn/PdnGen.hh"
 
 #include <map>
+#include <memory>
 #include <set>
+#include <utility>
+#include <vector>
 
 #include "connect.h"
 #include "domain.h"
@@ -56,14 +27,6 @@
 namespace pdn {
 
 using utl::Logger;
-
-using odb::dbBlock;
-using odb::dbInst;
-using odb::dbMaster;
-using odb::dbMTerm;
-using odb::dbNet;
-
-using utl::PDN;
 
 PdnGen::PdnGen() : db_(nullptr), logger_(nullptr)
 {
@@ -253,7 +216,7 @@ void PdnGen::trimShapes()
 
         auto* component = shape->getGridComponent();
         if (new_shape == nullptr) {
-          if (shape->isRemovable()) {
+          if (shape->isRemovable(is_pin_layer)) {
             component->removeShape(shape.get());
           }
         } else {
@@ -575,7 +538,8 @@ void PdnGen::makeRing(Grid* grid,
                       const std::array<int, 4>& pad_offset,
                       bool extend,
                       const std::vector<odb::dbTechLayer*>& pad_pin_layers,
-                      const std::vector<odb::dbNet*>& nets)
+                      const std::vector<odb::dbNet*>& nets,
+                      bool allow_out_of_die)
 {
   std::array<Rings::Layer, 2> layers{Rings::Layer{layer0, width0, spacing0},
                                      Rings::Layer{layer1, width1, spacing1}};
@@ -588,6 +552,9 @@ void PdnGen::makeRing(Grid* grid,
   ring->setExtendToBoundary(extend);
   if (starts_with != GRID) {
     ring->setStartWithPower(starts_with == POWER);
+  }
+  if (allow_out_of_die) {
+    ring->setAllowOutsideDieArea();
   }
   ring->setNets(nets);
   grid->addRing(std::move(ring));
@@ -794,18 +761,22 @@ void PdnGen::writeToDb(bool add_pins, const std::string& report_file) const
     }
   }
 
-  if (!report_file.empty()) {
-    std::ofstream file(report_file);
-    if (!file) {
-      logger_->warn(
-          utl::PDN, 228, "Unable to open \"{}\" to write.", report_file);
-      return;
-    }
+  // remove stale results
+  odb::dbMarkerCategory* category = block->findMarkerCategory("PDN");
+  if (category != nullptr) {
+    odb::dbMarkerCategory::destroy(category);
+  }
 
-    for (auto* grid : getGrids()) {
-      for (const auto& connect : grid->getConnect()) {
-        connect->writeFailedVias(file);
-      }
+  for (auto* grid : getGrids()) {
+    for (const auto& connect : grid->getConnect()) {
+      connect->recordFailedVias();
+    }
+  }
+
+  if (!report_file.empty()) {
+    odb::dbMarkerCategory* category = block->findMarkerCategory("PDN");
+    if (category != nullptr) {
+      category->writeTR(report_file);
     }
   }
 }
