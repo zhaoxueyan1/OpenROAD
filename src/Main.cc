@@ -249,6 +249,10 @@ int ord::flow_OpenROAD(int argc, char* argv[])
   // Setup the app with tcl
   auto* interp = Tcl_CreateInterp();
   Tcl_Init(interp);
+  the_tech_and_design.tech = std::make_unique<ord::Tech>(interp);
+    the_tech_and_design.design
+        = std::make_unique<ord::Design>(the_tech_and_design.tech.get());
+  ord::OpenRoad::setOpenRoad(the_tech_and_design.design->getOpenRoad());
   bool exit_after_cmd_file = findCmdLineFlag(argc, argv, "-exit");
   ord::initOpenRoad(interp, log_filename, metrics_filename, true);
   if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_splash")) {
