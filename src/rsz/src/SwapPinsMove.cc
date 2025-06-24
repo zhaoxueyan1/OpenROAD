@@ -58,7 +58,7 @@ bool SwapPinsMove::doMove(const Path* drvr_path,
   if (cell == nullptr) {
     return false;
   }
-  if (cell->isBuffer() || cell->isInverter()) {
+  if (cell->isBuffer() || cell->isInverter() || cell->isPad()) {
     return false;
   }
   Instance* drvr = network_->instance(drvr_pin);
