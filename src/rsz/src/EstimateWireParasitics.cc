@@ -452,7 +452,7 @@ void Resizer::makePadParasitic(const Net* net, SpefWriter* spef_writer)
     arc_delay_calc_->reduceParasitic(
         parasitic, net, corner, sta::MinMaxAll::all());
   }
-  parasitics_->deleteParasiticNetworks(net);
+  // parasitics_->deleteParasiticNetworks(net);
 }
 
 void Resizer::estimateWireParasiticSteiner(const Pin* drvr_pin,
@@ -541,7 +541,7 @@ void Resizer::estimateWireParasiticSteiner(const Pin* drvr_pin,
       arc_delay_calc_->reduceParasitic(
           parasitic, net, corner, sta::MinMaxAll::all());
     }
-    parasitics_->deleteParasiticNetworks(net);
+    // parasitics_->deleteParasiticNetworks(net);
     delete tree;
   }
 }
