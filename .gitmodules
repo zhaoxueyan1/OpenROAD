@@ -1,6 +1,7 @@
 [submodule "module/OpenSTA"]
 	path = src/sta
 	url = git@gitee.com:icontest/OpenSTA.git
+    branch = Sizer-for-CX55
 [submodule "src/abc"]
 	path = third-party/abc
 	url = git@github.com:The-OpenROAD-Project/abc.git
