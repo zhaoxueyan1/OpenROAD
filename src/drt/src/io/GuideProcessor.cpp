@@ -1,24 +1,33 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2024-2025, The OpenROAD Authors
 
-#include "GuideProcessor.h"
+#include "io/GuideProcessor.h"
 
 #include <omp.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "db/infra/frTime.h"
+#include "db/obj/frAccess.h"
+#include "db/obj/frBlockObject.h"
+#include "frBaseTypes.h"
+#include "frDesign.h"
 #include "frProfileTask.h"
+#include "odb/db.h"
+#include "odb/geom.h"
+#include "utl/Logger.h"
 #include "utl/exception.h"
 
 namespace drt::io {
@@ -28,12 +37,12 @@ namespace {
  * @brief Returns the closest point on the perimeter of the rectangle r to the
  * point p
  */
-Point getClosestPoint(const frRect& r, const Point& p)
+odb::Point getClosestPoint(const frRect& r, const odb::Point& p)
 {
-  const Rect b = r.getBBox();
+  const odb::Rect b = r.getBBox();
   const int x = std::clamp(p.getX(), b.xMin(), b.xMax());
   const int y = std::clamp(p.getY(), b.yMin(), b.yMax());
-  return Point(x, y);
+  return odb::Point(x, y);
 }
 /**
  * @brief Returns the shapes of the given pin on all layers.
@@ -236,7 +245,7 @@ int findClosestGuide(const Point3D& best_pin_loc_coords,
  *
  */
 void adjustGuidePoint(Point3D& guide_pt,
-                      const Rect& guide_bbox,
+                      const odb::Rect& guide_bbox,
                       const frCoord gcell_half_size_horz,
                       const frCoord gcell_half_size_vert)
 {
@@ -280,13 +289,13 @@ void adjustGuidePoint(Point3D& guide_pt,
  * @see adjustGuidePoint()
  */
 void extendGuide(frDesign* design,
-                 const Point& best_pin_loc_coords,
+                 const odb::Point& best_pin_loc_coords,
                  const frCoord gcell_half_size_horz,
                  const frCoord gcell_half_size_vert,
                  frRect& guide,
                  Point3D& guide_pt)
 {
-  const Rect& guide_bbox = guide.getBBox();
+  const odb::Rect& guide_bbox = guide.getBBox();
   // connect best_pin_loc to guide_pt by trying to extend the closest guide
   if (design->isHorizontalLayer(guide_pt.z())) {
     if (guide_pt.x() != best_pin_loc_coords.x()) {
@@ -354,7 +363,7 @@ void fillGuidesUpToZ(const Point3D& best_pin_loc_coords,
  * @param gcell_half_size_vert Half the vertical size of the gcell
  */
 void connectGuidesWithBestPinLoc(const Point3D& guide_pt,
-                                 const Point& best_pin_loc_coords,
+                                 const odb::Point& best_pin_loc_coords,
                                  const frCoord gcell_half_size_horz,
                                  const frCoord gcell_half_size_vert,
                                  frNet* net,
@@ -362,10 +371,10 @@ void connectGuidesWithBestPinLoc(const Point3D& guide_pt,
 {
   if (guide_pt.x() != best_pin_loc_coords.x()
       || guide_pt.y() != best_pin_loc_coords.y()) {
-    const Point pl = {std::min(best_pin_loc_coords.x(), guide_pt.x()),
-                      std::min(best_pin_loc_coords.y(), guide_pt.y())};
-    const Point ph = {std::max(best_pin_loc_coords.x(), guide_pt.x()),
-                      std::max(best_pin_loc_coords.y(), guide_pt.y())};
+    const odb::Point pl = {std::min(best_pin_loc_coords.x(), guide_pt.x()),
+                           std::min(best_pin_loc_coords.y(), guide_pt.y())};
+    const odb::Point ph = {std::max(best_pin_loc_coords.x(), guide_pt.x()),
+                           std::max(best_pin_loc_coords.y(), guide_pt.y())};
 
     guides.emplace_back(pl.x() - gcell_half_size_horz,
                         pl.y() - gcell_half_size_vert,
@@ -396,65 +405,6 @@ void logGuidesRead(const int num_guides, utl::Logger* logger)
   }
 }
 /**
- * @brief Checks the validity of the odb guide layer
- *
- * The db_guide layer is invalid if it is any of the following conditions:
- * - Not in the DRT layer database
- * - Above the sepecified top routing layer
- * - Below the specified bottom routing layer and the via access layer
- * @note If a layer is invalid, this produces an error unless it is above the
- * top routing layer for a net that has pins above the top routing layer. In
- * the latest case, we just ignore the guide and the pin is handled by
- * io::Parser::setBTerms_addPinFig_helper
- * @param layer_num The layer_num of the guide returned by this function if it
- * is a valid layer
- * @returns True if the guide is valid by the previous criteria and False
- * if above top routing layer for a net with bterms above top routing layer
- */
-bool isValidGuideLayerNum(odb::dbGuide* db_guide,
-                          frTechObject* tech,
-                          frNet* net,
-                          utl::Logger* logger,
-                          frLayerNum& layer_num,
-                          RouterConfiguration* router_cfg)
-{
-  frLayer* layer = tech->getLayer(db_guide->getLayer()->getName());
-  if (layer == nullptr) {
-    logger->error(
-        DRT, 154, "Cannot find layer {}.", db_guide->getLayer()->getName());
-  }
-  layer_num = layer->getLayerNum();
-
-  // Ignore guide as invalid if above top routing layer for a net with bterms
-  // above top routing layer
-  const bool guide_above_top_routing_layer
-      = layer_num > router_cfg->TOP_ROUTING_LAYER;
-  if (guide_above_top_routing_layer && net->hasBTermsAboveTopLayer()) {
-    return false;
-  }
-  const bool guide_below_bottom_routing_layer
-      = layer_num < router_cfg->BOTTOM_ROUTING_LAYER
-        && layer_num != router_cfg->VIA_ACCESS_LAYERNUM;
-  if (guide_below_bottom_routing_layer || guide_above_top_routing_layer) {
-    logger->error(DRT,
-                  155,
-                  "Guide in net {} uses layer {} ({})"
-                  " that is outside the allowed routing range "
-                  "[{} ({}), {} ({})] with via access on [{} ({})].",
-                  net->getName(),
-                  layer->getName(),
-                  layer_num,
-                  tech->getLayer(router_cfg->BOTTOM_ROUTING_LAYER)->getName(),
-                  router_cfg->BOTTOM_ROUTING_LAYER,
-                  tech->getLayer(router_cfg->TOP_ROUTING_LAYER)->getName(),
-                  router_cfg->TOP_ROUTING_LAYER,
-                  tech->getLayer(router_cfg->VIA_ACCESS_LAYERNUM)->getName(),
-                  router_cfg->VIA_ACCESS_LAYERNUM);
-  }
-  return true;
-}
-
-/**
  * @brief Initializes guide intervals for genGuides_merge.
  *
  * The function iterates over all the net guides and identifies each one's
@@ -475,13 +425,13 @@ void initGuideIntervals(const std::vector<frRect>& rects,
                         TrackIntervalsByLayer& intvs)
 {
   for (const auto& rect : rects) {
-    const Rect box = rect.getBBox();
-    const Point pt1(box.ll());
-    const Point idx1 = design->getTopBlock()->getGCellIdx(pt1);
+    const odb::Rect box = rect.getBBox();
+    const odb::Point pt1(box.ll());
+    const odb::Point idx1 = design->getTopBlock()->getGCellIdx(pt1);
     const frCoord x1 = idx1.x();
     const frCoord y1 = idx1.y();
-    const Point pt2(box.xMax() - 1, box.yMax() - 1);
-    const Point idx2 = design->getTopBlock()->getGCellIdx(pt2);
+    const odb::Point pt2(box.xMax() - 1, box.yMax() - 1);
+    const odb::Point idx2 = design->getTopBlock()->getGCellIdx(pt2);
     const frCoord x2 = idx2.x();
     const frCoord y2 = idx2.y();
     const frLayerNum layer_num = rect.getLayerNum();
@@ -698,9 +648,93 @@ std::vector<int> getVisitedIndices(const std::set<int>& indices,
 
 }  // namespace
 
+bool GuideProcessor::isValidGuideLayerNum(odb::dbGuide* db_guide,
+                                          frNet* net,
+                                          frLayerNum& layer_num)
+{
+  bool error = false;
+  frLayer* layer = getTech()->getLayer(db_guide->getLayer()->getName());
+  if (layer == nullptr) {
+    logger_->error(
+        DRT, 154, "Cannot find layer {}.", db_guide->getLayer()->getName());
+  }
+  layer_num = layer->getLayerNum();
+
+  // Ignore guide as invalid if above top routing layer for a net with bterms
+  // above top routing layer
+  if (layer_num > router_cfg_->TOP_ROUTING_LAYER) {
+    if (net->hasBTermsAboveTopLayer()) {
+      return false;
+    }
+    error = true;
+  }
+  if (layer_num < router_cfg_->BOTTOM_ROUTING_LAYER) {
+    // check if this is a via access guide
+    if (!getDesign()->getTopBlock()->getGCellPatterns().empty()) {
+      auto guide_rect = db_guide->getBox();
+      guide_rect.bloat(-1, guide_rect);
+      const bool one_gcell_guide
+          = getDesign()->getTopBlock()->getGCellIdx(guide_rect.ll())
+            == getDesign()->getTopBlock()->getGCellIdx(guide_rect.ur());
+      if (!one_gcell_guide) {
+        // TODO: uncomment this when GRT issue is solved
+        // error = true;  // not a valid via access guide
+      }
+    }
+    // else I don't know how many gcells the guide spans
+  }
+  if (error) {
+    logger_->error(
+        DRT,
+        155,
+        "Guide in net {} uses layer {} ({})"
+        " that is outside the allowed routing range "
+        "[{} ({}), {} ({})] with via access on [{} ({})].",
+        net->getName(),
+        layer->getName(),
+        layer_num,
+        getTech()->getLayer(router_cfg_->BOTTOM_ROUTING_LAYER)->getName(),
+        router_cfg_->BOTTOM_ROUTING_LAYER,
+        getTech()->getLayer(router_cfg_->TOP_ROUTING_LAYER)->getName(),
+        router_cfg_->TOP_ROUTING_LAYER,
+        getTech()->getLayer(router_cfg_->VIA_ACCESS_LAYERNUM)->getName(),
+        router_cfg_->VIA_ACCESS_LAYERNUM);
+  }
+  return true;
+}
+
+void GuideProcessor::readGCellGrid()
+{
+  auto gcellGrid = db_->getChip()->getBlock()->getGCellGrid();
+  if (gcellGrid == nullptr || gcellGrid->getNumGridPatternsX() != 1
+      || gcellGrid->getNumGridPatternsY() != 1) {
+    return;
+  }
+  frGCellPattern xgp, ygp;
+  frCoord GCELLOFFSETX, GCELLOFFSETY, GCELLGRIDX, GCELLGRIDY;
+  frCoord COUNTX, COUNTY;
+  gcellGrid->getGridPatternX(0, GCELLOFFSETX, COUNTX, GCELLGRIDX);
+  gcellGrid->getGridPatternY(0, GCELLOFFSETY, COUNTY, GCELLGRIDY);
+  xgp.setStartCoord(GCELLOFFSETX);
+  xgp.setSpacing(GCELLGRIDX);
+  xgp.setCount(COUNTX);
+  xgp.setHorizontal(false);
+
+  ygp.setStartCoord(GCELLOFFSETY);
+  ygp.setSpacing(GCELLGRIDY);
+  ygp.setCount(COUNTY);
+  ygp.setHorizontal(true);
+  getDesign()->getTopBlock()->setGCellPatterns(
+      {std::move(xgp), std::move(ygp)});
+}
+
 bool GuideProcessor::readGuides()
 {
   ProfileTask profile("IO:readGuide");
+
+  // Read GCell grid information first
+  readGCellGrid();
+
   int num_guides = 0;
   const auto block = db_->getChip()->getBlock();
   for (const auto db_net : block->getNets()) {
@@ -713,8 +747,7 @@ bool GuideProcessor::readGuides()
         logger_->error(DRT, 352, "Input route guides are congested.");
       }
       frLayerNum layer_num;
-      if (!isValidGuideLayerNum(
-              db_guide, getTech(), net, logger_, layer_num, router_cfg_)) {
+      if (!isValidGuideLayerNum(db_guide, net, layer_num)) {
         continue;
       }
       frRect rect;
@@ -751,7 +784,7 @@ void GuideProcessor::buildGCellPatterns_getWidth(frCoord& GCELLGRIDX,
   for (auto& [netName, rects] : tmp_guides_) {
     for (auto& rect : rects) {
       frLayerNum layerNum = rect.getLayerNum();
-      Rect guideBBox = rect.getBBox();
+      odb::Rect guideBBox = rect.getBBox();
       frCoord guideWidth = (getTech()->getLayer(layerNum)->getDir()
                             == dbTechLayerDir::HORIZONTAL)
                                ? guideBBox.dy()
@@ -807,7 +840,7 @@ void GuideProcessor::buildGCellPatterns_getOffset(frCoord GCELLGRIDX,
   for (auto& [netName, rects] : tmp_guides_) {
     for (auto& rect : rects) {
       // frLayerNum layerNum = rect.getLayerNum();
-      Rect guideBBox = rect.getBBox();
+      odb::Rect guideBBox = rect.getBBox();
       frCoord guideXOffset = guideBBox.xMin() % GCELLGRIDX;
       frCoord guideYOffset = guideBBox.yMin() % GCELLGRIDY;
       if (guideXOffset < 0) {
@@ -855,26 +888,10 @@ void GuideProcessor::buildGCellPatterns_getOffset(frCoord GCELLGRIDX,
 void GuideProcessor::buildGCellPatterns()
 {
   // horizontal = false is gcell lines along y direction (x-grid)
-  frGCellPattern xgp, ygp;
-  frCoord GCELLOFFSETX, GCELLOFFSETY, GCELLGRIDX, GCELLGRIDY;
-  auto gcellGrid = db_->getChip()->getBlock()->getGCellGrid();
-  if (gcellGrid != nullptr && gcellGrid->getNumGridPatternsX() == 1
-      && gcellGrid->getNumGridPatternsY() == 1) {
-    frCoord COUNTX, COUNTY;
-    gcellGrid->getGridPatternX(0, GCELLOFFSETX, COUNTX, GCELLGRIDX);
-    gcellGrid->getGridPatternY(0, GCELLOFFSETY, COUNTY, GCELLGRIDY);
-    xgp.setStartCoord(GCELLOFFSETX);
-    xgp.setSpacing(GCELLGRIDX);
-    xgp.setCount(COUNTX);
-    xgp.setHorizontal(false);
-
-    ygp.setStartCoord(GCELLOFFSETY);
-    ygp.setSpacing(GCELLGRIDY);
-    ygp.setCount(COUNTY);
-    ygp.setHorizontal(true);
-
-  } else {
-    Rect dieBox = getDesign()->getTopBlock()->getDieBox();
+  if (getDesign()->getTopBlock()->getGCellPatterns().empty()) {
+    frGCellPattern xgp, ygp;
+    frCoord GCELLOFFSETX, GCELLOFFSETY, GCELLGRIDX, GCELLGRIDY;
+    odb::Rect dieBox = getDesign()->getTopBlock()->getDieBox();
     buildGCellPatterns_helper(
         GCELLGRIDX, GCELLGRIDY, GCELLOFFSETX, GCELLOFFSETY);
     xgp.setHorizontal(false);
@@ -907,8 +924,12 @@ void GuideProcessor::buildGCellPatterns()
       logger_->error(DRT, 175, "GCell cnt y < 1.");
     }
     ygp.setCount((dieBox.yMax() - startCoordY) / (frCoord) GCELLGRIDY);
+    getDesign()->getTopBlock()->setGCellPatterns(
+        {std::move(xgp), std::move(ygp)});
   }
-
+  const auto& gcell_patterns = getDesign()->getTopBlock()->getGCellPatterns();
+  const auto& xgp = gcell_patterns[0];
+  const auto& ygp = gcell_patterns[1];
   if (router_cfg_->VERBOSE > 0 || logger_->debugCheck(DRT, "autotuner", 1)) {
     logger_->info(DRT,
                   176,
@@ -923,9 +944,6 @@ void GuideProcessor::buildGCellPatterns()
                   ygp.getCount(),
                   ygp.getSpacing());
   }
-
-  getDesign()->getTopBlock()->setGCellPatterns(
-      {std::move(xgp), std::move(ygp)});
 }
 
 void GuideProcessor::patchGuides_helper(frNet* net,
@@ -937,7 +955,7 @@ void GuideProcessor::patchGuides_helper(frNet* net,
   Point3D guide_pt(
       getClosestPoint(guides[closest_guide_idx], best_pin_loc_coords),
       guides[closest_guide_idx].getLayerNum());
-  const Rect& guide_bbox = guides[closest_guide_idx].getBBox();
+  const odb::Rect& guide_bbox = guides[closest_guide_idx].getBBox();
   const frCoord gcell_half_size_horz
       = getDesign()->getTopBlock()->getGCellSizeHorizontal() / 2;
   const frCoord gcell_half_size_vert
@@ -1138,9 +1156,9 @@ void addSplitRect(const frCoord track_idx,
 {
   frRect rect;
   if (is_horizontal) {
-    rect.setBBox(Rect(begin_idx, track_idx, end_idx, track_idx));
+    rect.setBBox(odb::Rect(begin_idx, track_idx, end_idx, track_idx));
   } else {
-    rect.setBBox(Rect(track_idx, begin_idx, track_idx, end_idx));
+    rect.setBBox(odb::Rect(track_idx, begin_idx, track_idx, end_idx));
   }
   rect.setLayerNum(layer_num);
   rects.emplace_back(rect);
@@ -1271,10 +1289,10 @@ void GuideProcessor::mapPinShapesToGCells(
   const auto pin_shapes = getPinShapes(term);
   for (const auto& shape : pin_shapes) {
     const auto layer_num = shape.getLayerNum();
-    const Rect box = shape.getBBox();
-    const Point min_idx = getDesign()->getTopBlock()->getGCellIdx(
+    const odb::Rect box = shape.getBBox();
+    const odb::Point min_idx = getDesign()->getTopBlock()->getGCellIdx(
         {box.xMin() + 1, box.yMin() + 1});
-    const Point max_idx = getDesign()->getTopBlock()->getGCellIdx(
+    const odb::Point max_idx = getDesign()->getTopBlock()->getGCellIdx(
         {box.xMax() - 1, box.yMax() - 1});
     for (int x = min_idx.x(); x <= max_idx.x(); x++) {
       for (int y = min_idx.y(); y <= max_idx.y(); y++) {
@@ -1301,7 +1319,7 @@ void GuideProcessor::mapTermAccessPointsToGCells(
     frBlockObject* pin) const
 {
   for (const auto& ap_loc : getAccessPoints(pin)) {
-    const Point idx = getDesign()->getTopBlock()->getGCellIdx(ap_loc);
+    const odb::Point idx = getDesign()->getTopBlock()->getGCellIdx(ap_loc);
     gcell_pin_map[Point3D(idx, ap_loc.z())].insert(pin);
   }
 }
@@ -1331,18 +1349,18 @@ void GuideProcessor::genGuides_addCoverGuide_helper(frInstTerm* iterm,
 {
   const frInst* inst = iterm->getInst();
   const size_t num_pins = iterm->getTerm()->getPins().size();
-  dbTransform transform = inst->getNoRotationTransform();
+  odb::dbTransform transform = inst->getNoRotationTransform();
   for (int pin_idx = 0; pin_idx < num_pins; pin_idx++) {
     const frAccessPoint* pref_ap = getPrefAp(iterm, pin_idx);
     if (pref_ap) {
-      Point pt = pref_ap->getPoint();
+      odb::Point pt = pref_ap->getPoint();
       transform.apply(pt);
-      const Point idx = getDesign()->getTopBlock()->getGCellIdx(pt);
-      const Rect ll_box = getDesign()->getTopBlock()->getGCellBox(
-          Point(idx.x() - 1, idx.y() - 1));
-      const Rect ur_box = getDesign()->getTopBlock()->getGCellBox(
-          Point(idx.x() + 1, idx.y() + 1));
-      const Rect cover_box(
+      const odb::Point idx = getDesign()->getTopBlock()->getGCellIdx(pt);
+      const odb::Rect ll_box = getDesign()->getTopBlock()->getGCellBox(
+          odb::Point(idx.x() - 1, idx.y() - 1));
+      const odb::Rect ur_box = getDesign()->getTopBlock()->getGCellBox(
+          odb::Point(idx.x() + 1, idx.y() + 1));
+      const odb::Rect cover_box(
           ll_box.xMin(), ll_box.yMin(), ur_box.xMax(), ur_box.yMax());
       const frLayerNum begin_layer_num = pref_ap->getLayerNum();
       const frLayerNum end_layer_num
@@ -1359,7 +1377,7 @@ void GuideProcessor::genGuides_addCoverGuide_helper(frInstTerm* iterm,
   }
 }
 
-std::vector<std::pair<frBlockObject*, Point>> GuideProcessor::genGuides(
+std::vector<std::pair<frBlockObject*, odb::Point>> GuideProcessor::genGuides(
     frNet* net,
     std::vector<frRect> rects)
 {
@@ -1452,7 +1470,7 @@ std::vector<std::pair<frBlockObject*, Point>> GuideProcessor::genGuides(
 
 GuidePathFinder::GuidePathFinder(
     frDesign* design,
-    Logger* logger,
+    utl::Logger* logger,
     RouterConfiguration* router_cfg,
     frNet* net,
     const bool force_feed_through,
@@ -1480,7 +1498,7 @@ void GuidePathFinder::buildNodeMap(
   node_map_.clear();
   for (int i = 0; i < (int) rects.size(); i++) {
     const auto& rect = rects.at(i);
-    Rect box = rect.getBBox();
+    odb::Rect box = rect.getBBox();
     node_map_[{box.ll(), rect.getLayerNum()}].insert(i);
     node_map_[{box.ur(), rect.getLayerNum()}].insert(i);
   }
@@ -1517,7 +1535,7 @@ std::vector<std::vector<Point3D>> GuidePathFinder::getPinToGCellList(
     }
     const int true_pin_idx = getTruePinIdx(pin_idx);
     const auto& rect = rects[guide_idx];
-    const Rect box = rect.getBBox();
+    const odb::Rect box = rect.getBBox();
     const auto layer_num = rect.getLayerNum();
     auto pin = pins[true_pin_idx];
     if (pin_gcell_map.at(pin).find(Point3D(box.ll(), layer_num))
@@ -1534,15 +1552,15 @@ std::vector<std::vector<Point3D>> GuidePathFinder::getPinToGCellList(
   return pin_to_gcell;
 }
 
-std::vector<std::pair<frBlockObject*, Point>> GuidePathFinder::getGRPins(
+std::vector<std::pair<frBlockObject*, odb::Point>> GuidePathFinder::getGRPins(
     const std::vector<frBlockObject*>& pins,
     const std::vector<std::vector<Point3D>>& pin_to_gcell) const
 {
-  std::vector<std::pair<frBlockObject*, Point>> gr_pins;
+  std::vector<std::pair<frBlockObject*, odb::Point>> gr_pins;
   for (int i = 0; i < getPinCount(); i++) {
     auto pin = pins[i];
     for (auto& pt : pin_to_gcell[i]) {
-      Point abs_pt = getDesign()->getTopBlock()->getGCellCenter(pt);
+      odb::Point abs_pt = getDesign()->getTopBlock()->getGCellCenter(pt);
       gr_pins.emplace_back(pin, abs_pt);
     }
   }
@@ -1565,7 +1583,7 @@ void GuidePathFinder::updateNodeMap(
       continue;
     }
     const auto& rect = rects[i];
-    Rect box = rect.getBBox();
+    odb::Rect box = rect.getBBox();
     node_map_[Point3D(box.ll(), rect.getLayerNum())].insert(i);
     node_map_[Point3D(box.ur(), rect.getLayerNum())].insert(i);
   }
@@ -1592,14 +1610,14 @@ void GuidePathFinder::clipGuides(std::vector<frRect>& rects)
     if (node_map_.find(Point3D(pt, pt.z() + 2)) == node_map_.end()
         && node_map_.find(Point3D(pt, pt.z() - 2)) == node_map_.end()) {
       auto& rect = rects[idx];
-      Rect box = rect.getBBox();
+      odb::Rect box = rect.getBBox();
       if (box.ll() == box.ur()) {
         continue;
       }
       if (box.ll() == pt) {
-        rect.setBBox(Rect(box.xMax(), box.yMax(), box.xMax(), box.yMax()));
+        rect.setBBox(odb::Rect(box.xMax(), box.yMax(), box.xMax(), box.yMax()));
       } else {
-        rect.setBBox(Rect(box.xMin(), box.yMin(), box.xMin(), box.yMin()));
+        rect.setBBox(odb::Rect(box.xMin(), box.yMin(), box.xMin(), box.yMin()));
       }
       node_map_[pt].erase(node_map_[pt].find(idx));
     }
@@ -1631,8 +1649,8 @@ void GuidePathFinder::mergeGuides(std::vector<frRect>& rects)
       }
       auto& rect1 = rects[first_idx];
       auto& rect2 = rects[second_idx];
-      Rect box1 = rect1.getBBox();
-      Rect box2 = rect2.getBBox();
+      odb::Rect box1 = rect1.getBBox();
+      odb::Rect box2 = rect2.getBBox();
       if (box1.getDir() == box2.getDir()) {
         // merge both and remove rect1/box1/first_idx
         box2.merge(box1);
@@ -1653,7 +1671,7 @@ void GuidePathFinder::mergeGuides(std::vector<frRect>& rects)
   }
 }
 
-std::vector<std::pair<frBlockObject*, Point>>
+std::vector<std::pair<frBlockObject*, odb::Point>>
 GuidePathFinder::commitPathToGuides(
     std::vector<frRect>& rects,
     const frBlockObjectMap<std::set<Point3D>>& pin_gcell_map)
@@ -1677,7 +1695,7 @@ GuidePathFinder::commitPathToGuides(
     ++pin_idx;
   }
   updateNodeMap(rects, pin_to_gcell);
-  std::vector<std::pair<frBlockObject*, Point>> gr_pins
+  std::vector<std::pair<frBlockObject*, odb::Point>> gr_pins
       = getGRPins(pins, pin_to_gcell);
   clipGuides(rects);
   mergeGuides(rects);
@@ -1686,10 +1704,10 @@ GuidePathFinder::commitPathToGuides(
       continue;
     }
     auto& rect = rects[i];
-    Rect box = rect.getBBox();
+    odb::Rect box = rect.getBBox();
     auto guide = std::make_unique<frGuide>();
-    Point begin = getDesign()->getTopBlock()->getGCellCenter(box.ll());
-    Point end = getDesign()->getTopBlock()->getGCellCenter(box.ur());
+    odb::Point begin = getDesign()->getTopBlock()->getGCellCenter(box.ll());
+    odb::Point end = getDesign()->getTopBlock()->getGCellCenter(box.ur());
     guide->setPoints(begin, end);
     guide->setBeginLayerNum(rect.getLayerNum());
     guide->setEndLayerNum(rect.getLayerNum());
@@ -1719,7 +1737,7 @@ void GuidePathFinder::constructAdjList()
           // no M1 cross-gcell routing allowed
           // BX200307: in general VIA_ACCESS_LAYER should not be used (instead
           // of 0)
-          if (layer_num != router_cfg_->VIA_ACCESS_LAYERNUM) {
+          if (layer_num > router_cfg_->VIA_ACCESS_LAYERNUM) {
             adj_list_[idx1].push_back(idx2);
             adj_list_[idx2].push_back(idx1);
           }
@@ -1924,10 +1942,10 @@ void GuideProcessor::saveGuidesUpdates()
     dbNet->clearGuides();
     for (auto& guide : net->getGuides()) {
       auto [bp, ep] = guide->getPoints();
-      Point bpIdx = getDesign()->getTopBlock()->getGCellIdx(bp);
-      Point epIdx = getDesign()->getTopBlock()->getGCellIdx(ep);
-      Rect bbox = getDesign()->getTopBlock()->getGCellBox(bpIdx);
-      Rect ebox = getDesign()->getTopBlock()->getGCellBox(epIdx);
+      odb::Point bpIdx = getDesign()->getTopBlock()->getGCellIdx(bp);
+      odb::Point epIdx = getDesign()->getTopBlock()->getGCellIdx(ep);
+      odb::Rect bbox = getDesign()->getTopBlock()->getGCellBox(bpIdx);
+      odb::Rect ebox = getDesign()->getTopBlock()->getGCellBox(epIdx);
       frLayerNum bNum = guide->getBeginLayerNum();
       frLayerNum eNum = guide->getEndLayerNum();
       if (bNum != eNum) {
@@ -1975,7 +1993,7 @@ void GuideProcessor::processGuides()
   getDesign()->getRegionQuery()->initOrigGuide(tmp_guides_);
   int cnt = 0;
   std::vector<std::pair<frNet*, std::vector<frRect>>> nets_to_guides;
-  frBlockObjectMap<std::vector<std::pair<frBlockObject*, Point>>>
+  frBlockObjectMap<std::vector<std::pair<frBlockObject*, odb::Point>>>
       net_to_gr_pins;
   for (auto& [net, rects] : tmp_guides_) {
     nets_to_guides.push_back({net, rects});
@@ -2010,7 +2028,7 @@ void GuideProcessor::processGuides()
     }
   }
   exception.rethrow();
-  std::vector<std::pair<frBlockObject*, Point>> all_gr_pins;
+  std::vector<std::pair<frBlockObject*, odb::Point>> all_gr_pins;
   for (auto [_, gr_pins] : net_to_gr_pins) {
     all_gr_pins.insert(all_gr_pins.end(), gr_pins.begin(), gr_pins.end());
   }

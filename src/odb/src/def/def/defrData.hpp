@@ -27,6 +27,7 @@
 // *****************************************************************************
 // *****************************************************************************
 
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
@@ -128,7 +129,7 @@ class defrData
   int componentWarnings{0};
   int constraintWarnings{0};
   int cover_is_keyword{0};
-  int defMsgCnt{0};
+  int defMsgCnt{5500};
   int defMsgPrinted{0};  // number of msgs output so far
   int defRetVal{0};
   int def_warnings{0};
@@ -247,7 +248,7 @@ class defrData
   int defaultCapWarnings{0};
   FILE* defrLog{nullptr};
   int input_level{-1};
-  char* last{nullptr};
+  char* last{nullptr};  // points to the last valid char in the buffer, or null
   int new_is_keyword{0};
   long long nlines{1};
   char* rowName{nullptr};  // to hold the rowName for message

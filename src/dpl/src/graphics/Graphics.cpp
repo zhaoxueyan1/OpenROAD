@@ -4,9 +4,11 @@
 #include "Graphics.h"
 
 #include "dpl/Opendp.h"
+#include "gui/gui.h"
 #include "infrastructure/Grid.h"
 #include "infrastructure/Objects.h"
 #include "infrastructure/network.h"
+#include "odb/geom.h"
 
 namespace dpl {
 
@@ -50,7 +52,7 @@ void Graphics::binSearch(const Node* cell,
   if (!debug_instance_ || cell->getDbInst() != debug_instance_) {
     return;
   }
-  Rect core = dp_->grid_->getCore();
+  odb::Rect core = dp_->grid_->getCore();
   int xl_dbu = core.xMin() + gridToDbu(xl, dp_->grid_->getSiteWidth()).v;
   int yl_dbu = core.yMin() + dp_->grid_->gridYToDbu(yl).v;
   int xh_dbu = core.xMin() + gridToDbu(xh, dp_->grid_->getSiteWidth()).v;
@@ -83,10 +85,10 @@ void Graphics::drawObjects(gui::Painter& painter)
     DbuX lx{core.xMin() + cell->getLeft()};
     DbuY ly{core.yMin() + cell->getBottom()};
 
-    auto color = cell->getDbInst() ? gui::Painter::gray : gui::Painter::red;
+    auto color = cell->getDbInst() ? gui::Painter::kGray : gui::Painter::kRed;
     painter.setPen(color);
     painter.setBrush(color);
-    painter.drawRect(Rect(
+    painter.drawRect(odb::Rect(
         lx.v, ly.v, lx.v + cell->getWidth().v, ly.v + cell->getHeight().v));
 
     if (!cell->getDbInst()) {
@@ -101,7 +103,7 @@ void Graphics::drawObjects(gui::Painter& painter)
       continue;
     }
 
-    painter.setPen(gui::Painter::yellow, /* cosmetic */ true);
+    painter.setPen(gui::Painter::kYellow, /* cosmetic */ true);
     painter.drawLine(initial_location.x(),
                      initial_location.y(),
                      final_location.x(),
@@ -109,7 +111,7 @@ void Graphics::drawObjects(gui::Painter& painter)
     painter.drawCircle(final_location.x(), final_location.y(), 100);
   }
 
-  auto color = gui::Painter::cyan;
+  auto color = gui::Painter::kCyan;
   painter.setPen(color);
   painter.setBrush(color);
   for (auto& rect : searched_) {

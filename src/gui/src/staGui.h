@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <qchar.h>
+
 #include <QAbstractTableModel>
 #include <QCheckBox>
 #include <QColor>
@@ -10,24 +12,33 @@
 #include <QDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QListWidget>
+#include <QPushButton>
 #include <QSpinBox>
+#include <QVariant>
+#include <QWidget>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "dropdownCheckboxes.h"
 #include "gui/gui.h"
 #include "odb/db.h"
 #include "odb/dbBlockCallBackObj.h"
+#include "odb/dbObject.h"
 #include "sta/PathExpanded.hh"
+#include "sta/SdcClass.hh"
 #include "sta/Sta.hh"
 #include "staGuiInterface.h"
 
 namespace sta {
 class dbSta;
 class Pin;
+class Clock;
 }  // namespace sta
 namespace gui {
 class TimingPathsModel;
@@ -41,33 +52,33 @@ class TimingPathsModel : public QAbstractTableModel
  private:
   enum Column
   {
-    Clock,
-    Required,
-    Arrival,
-    Slack,
-    Skew,
-    LogicDelay,
-    LogicDepth,
-    Fanout,
-    Start,
-    End
+    kClock,
+    kRequired,
+    kArrival,
+    kSlack,
+    kSkew,
+    kLogicDelay,
+    kLogicDepth,
+    kFanout,
+    kStart,
+    kEnd
   };
 
  public:
   static const std::map<Column, const char*>& getColumnNames()
   {
-    static const std::map<Column, const char*> column_names
-        = {{Clock, "Capture Clock"},
-           {Required, "Required"},
-           {Arrival, "Arrival"},
-           {Slack, "Slack"},
-           {Skew, "Skew"},
-           {LogicDelay, "Logic Delay"},
-           {LogicDepth, "Logic Depth"},
-           {Fanout, "Fanout"},
-           {Start, "Start"},
-           {End, "End"}};
-    return column_names;
+    static const std::map<Column, const char*> kColumnNames
+        = {{kClock, "Capture Clock"},
+           {kRequired, "Required"},
+           {kArrival, "Arrival"},
+           {kSlack, "Slack"},
+           {kSkew, "Skew"},
+           {kLogicDelay, "Logic Delay"},
+           {kLogicDepth, "Logic Depth"},
+           {kFanout, "Fanout"},
+           {kStart, "Start"},
+           {kEnd, "End"}};
+    return kColumnNames;
   }
 
   TimingPathsModel(bool is_setup,
@@ -90,7 +101,8 @@ class TimingPathsModel : public QAbstractTableModel
   void populateModel(const std::set<const sta::Pin*>& from,
                      const std::vector<std::set<const sta::Pin*>>& thru,
                      const std::set<const sta::Pin*>& to,
-                     const std::string& path_group_name);
+                     const std::string& path_group_name,
+                     const sta::ClockSet* clks);
 
  public slots:
   void sort(int col_index, Qt::SortOrder sort_order) override;
@@ -99,7 +111,8 @@ class TimingPathsModel : public QAbstractTableModel
   bool populatePaths(const std::set<const sta::Pin*>& from,
                      const std::vector<std::set<const sta::Pin*>>& thru,
                      const std::set<const sta::Pin*>& to,
-                     const std::string& path_group_name);
+                     const std::string& path_group_name,
+                     const sta::ClockSet* clks);
 
   STAGuiInterface* sta_;
   bool is_setup_;
@@ -111,27 +124,27 @@ class TimingPathDetailModel : public QAbstractTableModel
  private:
   enum Column
   {
-    Pin,
-    Fanout,
-    RiseFall,
-    Time,
-    Delay,
-    Slew,
-    Load
+    kPin,
+    kFanout,
+    kRiseFall,
+    kTime,
+    kDelay,
+    kSlew,
+    kLoad
   };
 
  public:
   static const std::map<Column, const char*>& getColumnNames()
   {
-    static const std::map<Column, const char*> column_names
-        = {{Pin, "Pin"},
-           {Fanout, "Fanout"},
-           {RiseFall, "RiseFall"},
-           {Time, "Time"},
-           {Delay, "Delay"},
-           {Slew, "Slew"},
-           {Load, "Load"}};
-    return column_names;
+    static const std::map<Column, const char*> kColumnNames
+        = {{kPin, "Pin"},
+           {kFanout, "Fanout"},
+           {kRiseFall, "RiseFall"},
+           {kTime, "Time"},
+           {kDelay, "Delay"},
+           {kSlew, "Slew"},
+           {kLoad, "Load"}};
+    return kColumnNames;
   }
 
   TimingPathDetailModel(bool is_capture,
@@ -164,7 +177,7 @@ class TimingPathDetailModel : public QAbstractTableModel
 
   bool isClockSummaryRow(const QModelIndex& index) const
   {
-    return index.row() == clock_summary_row_;
+    return index.row() == kClockSummaryRow;
   }
 
   void populateModel(TimingPath* path, TimingNodeList* nodes);
@@ -178,10 +191,10 @@ class TimingPathDetailModel : public QAbstractTableModel
   TimingNodeList* nodes_;
 
   // Unicode symbols
-  static constexpr char up_down_arrows_[] = "⇅";
-  static constexpr char up_arrow_[] = "↑";
-  static constexpr char down_arrow_[] = "↓";
-  static constexpr int clock_summary_row_ = 1;
+  static constexpr char kUpDownArrows[] = "⇅";
+  static constexpr char kUpArrow[] = "↑";
+  static constexpr char kDownArrow[] = "↓";
+  static constexpr int kClockSummaryRow = 1;
 };
 
 class TimingPathRenderer : public gui::Renderer
@@ -224,16 +237,16 @@ class TimingPathRenderer : public gui::Renderer
   std::vector<std::unique_ptr<HighlightStage>> highlight_stage_;
   std::mutex rendering_;
 
-  static const gui::Painter::Color inst_highlight_color_;
-  static const gui::Painter::Color path_inst_color_;
-  static const gui::Painter::Color term_color_;
-  static const gui::Painter::Color signal_color_;
-  static const gui::Painter::Color clock_color_;
-  static const gui::Painter::Color capture_clock_color_;
+  static const gui::Painter::Color kInstHighlightColor;
+  static const gui::Painter::Color kPathInstColor;
+  static const gui::Painter::Color kTermColor;
+  static const gui::Painter::Color kSignalColor;
+  static const gui::Painter::Color kClockColor;
+  static const gui::Painter::Color kCaptureClockColor;
 
-  static constexpr const char* data_path_label_ = "Data path";
-  static constexpr const char* launch_clock_label_ = "Launch clock";
-  static constexpr const char* capture_clock_label_ = "Capture clock";
+  static constexpr const char* kDataPathLabel = "Data path";
+  static constexpr const char* kLaunchClockLabel = "Launch clock";
+  static constexpr const char* kCaptureClockLabel = "Capture clock";
 };
 
 class TimingConeRenderer : public gui::Renderer
@@ -329,7 +342,7 @@ class PinSetWidget : public QWidget
 
   void setPins(const std::set<const sta::Pin*>& pins);
 
-  const std::set<const sta::Pin*> getPins() const;
+  std::set<const sta::Pin*> getPins() const;
 
   bool isAddMode() const { return add_mode_; }
   bool isRemoveMode() const { return !isAddMode(); }
@@ -394,14 +407,12 @@ class TimingControlsDialog : public QDialog
   void setThruPin(const std::vector<std::set<const sta::Pin*>>& pins);
   void setToPin(const std::set<const sta::Pin*>& pins) { to_->setPins(pins); }
 
-  const std::set<const sta::Pin*> getFromPins() const
-  {
-    return from_->getPins();
-  }
-  const std::vector<std::set<const sta::Pin*>> getThruPins() const;
-  const std::set<const sta::Pin*> getToPins() const { return to_->getPins(); }
+  std::set<const sta::Pin*> getFromPins() const { return from_->getPins(); }
+  std::vector<std::set<const sta::Pin*>> getThruPins() const;
+  std::set<const sta::Pin*> getToPins() const { return to_->getPins(); }
+  const sta::ClockSet* getClocks();
 
-  const sta::Pin* convertTerm(Gui::odbTerm term) const;
+  const sta::Pin* convertTerm(Gui::Term term) const;
 
   sta::Corner* getCorner() const { return sta_->getCorner(); }
   void setCorner(sta::Corner* corner) { sta_->setCorner(corner); }
@@ -423,6 +434,7 @@ class TimingControlsDialog : public QDialog
 
   QSpinBox* path_count_spin_box_;
   QComboBox* corner_box_;
+  DropdownCheckboxes* clock_box_;
 
   QCheckBox* unconstrained_;
   QCheckBox* one_path_per_endpoint_;
@@ -431,8 +443,11 @@ class TimingControlsDialog : public QDialog
   PinSetWidget* from_;
   std::vector<PinSetWidget*> thru_;
   PinSetWidget* to_;
+  QHash<QString, sta::Clock*> qstring_to_clk_;
 
-  static constexpr int thru_start_row_ = 3;
+  sta::ClockSet selected_clocks_;
+
+  static constexpr int kThruStartRow = 4;
 
   void setPinSelections();
 

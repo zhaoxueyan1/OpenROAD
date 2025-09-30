@@ -10,7 +10,10 @@
 #include <vector>
 
 #include "grt/GlobalRouter.h"
+#include "odb/db.h"
 #include "odb/dbShape.h"
+#include "odb/dbTypes.h"
+#include "odb/geom.h"
 
 namespace grt {
 
@@ -18,12 +21,13 @@ Net::Net(odb::dbNet* net, bool has_wires)
     : net_(net),
       slack_(0),
       has_wires_(has_wires),
-      merged_net_(false),
+      merged_net_(nullptr),
+      is_merged_net_(false),
       is_dirty_net_(false)
 {
 }
 
-const std::string Net::getName() const
+std::string Net::getName() const
 {
   return net_->getName();
 }

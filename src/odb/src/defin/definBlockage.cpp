@@ -11,23 +11,10 @@
 #include "definPolygon.h"
 #include "odb/db.h"
 #include "odb/dbShape.h"
+#include "odb/geom.h"
 #include "utl/Logger.h"
 
 namespace odb {
-
-definBlockage::definBlockage()
-{
-  init();
-}
-
-definBlockage::~definBlockage()
-{
-}
-
-void definBlockage::init()
-{
-  definBase::init();
-}
 
 void definBlockage::blockageRoutingBegin(const char* layer)
 {

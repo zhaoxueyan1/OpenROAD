@@ -4,6 +4,7 @@ or_integration_tests(
     abstract_origin
     bterm_hier_create
     check_routing_tracks
+    create_blockage
     create_sboxes
     def_dup_net
     def_parser
@@ -32,6 +33,8 @@ or_integration_tests(
     ndr
     polygon
     read_abstract_lef
+    read_3dbv
+    read_3dbx
     read_db
     read_def
     read_def58
@@ -41,6 +44,7 @@ or_integration_tests(
     replace_hier_mod2
     replace_hier_mod3
     replace_hier_mod4
+    replace_hier_mod5
     rounding
     row_settings
     sky130hd_multi_patterned
@@ -48,6 +52,7 @@ or_integration_tests(
     transform
     wire_encoder
     write_def58
+    write_def58_gzip
     write_lef_and_def
     write_lef_polygon
     write_macro_placement

@@ -3,11 +3,11 @@
 
 #pragma once
 
-#include <boost/fusion/container.hpp>
-#include <boost/optional/optional.hpp>
-#include <boost/spirit/include/support_unused.hpp>
 #include <string>
 
+#include "boost/fusion/container.hpp"
+#include "boost/optional/optional.hpp"
+#include "boost/spirit/include/support_unused.hpp"
 #include "odb/db.h"
 #include "odb/lefin.h"
 
@@ -23,7 +23,7 @@ class CellEdgeSpacingTableParser
   void parse(const std::string&);
 
  private:
-  bool parseEntry(std::string);
+  bool parseEntry(const std::string&);
   void createEntry();
   void setSpacing(double);
   void setBool(void (dbCellEdgeSpacing::*func)(bool));

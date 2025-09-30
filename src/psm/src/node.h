@@ -7,8 +7,10 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
+#include "odb/geom.h"
 #include "odb/geom_boost.h"
 
 namespace odb {
@@ -29,11 +31,11 @@ class Node
  public:
   enum class NodeType
   {
-    Node,
-    Source,
-    ITerm,
-    BPin,
-    Unknown
+    kNode,
+    kSource,
+    kITerm,
+    kBPin,
+    kUnknown
   };
 
   struct Compare
@@ -66,7 +68,7 @@ class Node
   static CompareInformation dummyCompareTuple();
 
  protected:
-  virtual NodeType getType() const { return NodeType::Node; }
+  virtual NodeType getType() const { return NodeType::kNode; }
 
   virtual int getTypeCompareInfo() const { return 0; };
 
@@ -85,7 +87,7 @@ class SourceNode : public Node
   Node* getSource() const { return source_; }
 
  protected:
-  NodeType getType() const override { return NodeType::Source; }
+  NodeType getType() const override { return NodeType::kSource; }
 
  private:
   Node* source_;
@@ -112,7 +114,7 @@ class ITermNode : public TerminalNode
   std::string describe(const std::string& prefix) const override;
 
  protected:
-  NodeType getType() const override { return NodeType::ITerm; }
+  NodeType getType() const override { return NodeType::kITerm; }
 
   int getTypeCompareInfo() const override;
 
@@ -128,7 +130,7 @@ class BPinNode : public TerminalNode
   const odb::dbBPin* getBPin() const { return pin_; }
 
  protected:
-  NodeType getType() const override { return NodeType::BPin; }
+  NodeType getType() const override { return NodeType::kBPin; }
 
   int getTypeCompareInfo() const override;
 

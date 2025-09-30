@@ -4,7 +4,6 @@
 #pragma once
 
 #include <array>
-#include <boost/multi_array.hpp>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -14,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "boost/multi_array.hpp"
 #include "gui/gui.h"
 
 namespace odb {
@@ -263,8 +263,8 @@ class HeatMapRenderer : public Renderer
   HeatMapDataSource& datasource_;
   bool first_paint_;
 
-  static constexpr char datasource_prefix_[] = "data#";
-  static constexpr char groupname_prefix_[] = "HeatMap#";
+  static constexpr char kDatasourcePrefix[] = "data#";
+  static constexpr char kGroupnamePrefix[] = "HeatMap#";
 };
 
 class RealValueHeatMapDataSource : public HeatMapDataSource
@@ -322,7 +322,7 @@ class GlobalRoutingDataSource : public HeatMapDataSource
   void populateXYGrid() override;
 
  private:
-  static constexpr int default_grid_ = 10;
+  static constexpr int kDefaultGrid = 10;
 
   std::pair<double, double> getReportableXYGrid() const;
 };
@@ -331,6 +331,8 @@ class PowerDensityDataSource : public RealValueHeatMapDataSource
 {
  public:
   PowerDensityDataSource(sta::dbSta* sta, utl::Logger* logger);
+
+  odb::Rect getBounds() const override { return getBlock()->getCoreArea(); }
 
  protected:
   bool populateMap() override;

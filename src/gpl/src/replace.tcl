@@ -35,6 +35,7 @@ sta::define_cmd_args "global_placement" {\
     [-pad_left pad_left]\
     [-pad_right pad_right]\
     [-disable_revert_if_diverge]\
+    [-enable_routing_congestion]
 }
 
 proc global_placement { args } {
@@ -63,8 +64,9 @@ proc global_placement { args } {
       -disable_timing_driven \
       -disable_routability_driven \
       -skip_io \
-      -incremental\
-      -disable_revert_if_diverge}
+      -incremental \
+      -disable_revert_if_diverge \
+      -enable_routing_congestion}
 
   # flow control for initial_place
   if { [info exists flags(-skip_initial_place)] } {
@@ -100,7 +102,7 @@ proc global_placement { args } {
     if { [info exists keys(-timing_driven_net_reweight_overflow)] } {
       set overflow_list $keys(-timing_driven_net_reweight_overflow)
     } else {
-      set overflow_list [list 79 64 29 21 15]
+      set overflow_list [list 64 20]
     }
 
     foreach overflow $overflow_list {
@@ -155,6 +157,9 @@ proc global_placement { args } {
     utl::info "GPL" 153 \
       "Revert-to-snapshot on divergence detection is disabled."
   }
+
+  set enable_routing_congestion [info exists flags(-enable_routing_congestion)]
+  gpl::set_enable_routing_congestion $enable_routing_congestion
 
   if { [info exists keys(-initial_place_max_fanout)] } {
     set initial_place_max_fanout $keys(-initial_place_max_fanout)

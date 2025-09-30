@@ -3,20 +3,22 @@
 
 #pragma once
 
-#include <boost/asio.hpp>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "boost/asio.hpp"
 
 namespace utl {
 class Logger;
 }
 
+namespace dst {
+
 namespace asio = boost::asio;
 using asio::ip::tcp;
+using Socket = asio::basic_stream_socket<tcp>;
 
-namespace dst {
-using socket = asio::basic_stream_socket<tcp>;
 class JobMessage;
 class JobCallBack;
 class Worker;
@@ -24,9 +26,8 @@ class Worker;
 class Distributed
 {
  public:
-  Distributed(utl::Logger* logger = nullptr);
+  Distributed(utl::Logger* logger);
   ~Distributed();
-  void init(utl::Logger* logger);
   void runWorker(const char* ip, unsigned short port, bool interactive);
   void runLoadBalancer(const char* ip,
                        unsigned short port,
@@ -40,7 +41,7 @@ class Distributed
                           const char* ip,
                           unsigned short port,
                           JobMessage& result);
-  bool sendResult(JobMessage& msg, socket& sock);
+  bool sendResult(JobMessage& msg, Socket& sock);
   void addCallBack(JobCallBack* cb);
   const std::vector<JobCallBack*>& getCallBacks() const { return callbacks_; }
 

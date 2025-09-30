@@ -9,15 +9,24 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QVBoxLayout>
+#include <QWidget>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "db_sta/dbSta.hh"
 #include "gui_utils.h"
+#include "odb/db.h"
+#include "odb/defout.h"
 #include "sta/Liberty.hh"
+#include "sta/SdcClass.hh"
 #include "staGui.h"
 
 namespace gui {
@@ -161,7 +170,7 @@ void TimingWidget::init(sta::dbSta* sta)
   path_details_model_ = new TimingPathDetailModel(false, sta, this);
   capture_details_model_ = new TimingPathDetailModel(true, sta, this);
 
-  auto setupTableView = [](QTableView* view, QAbstractTableModel* model) {
+  auto setup_table_view = [](QTableView* view, QAbstractTableModel* model) {
     view->setModel(model);
     view->setContextMenuPolicy(Qt::CustomContextMenu);
     view->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -170,10 +179,10 @@ void TimingWidget::init(sta::dbSta* sta)
     view->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
   };
 
-  setupTableView(setup_timing_table_view_, setup_timing_paths_model_);
-  setupTableView(hold_timing_table_view_, hold_timing_paths_model_);
-  setupTableView(path_details_table_view_, path_details_model_);
-  setupTableView(capture_details_table_view_, capture_details_model_);
+  setup_table_view(setup_timing_table_view_, setup_timing_paths_model_);
+  setup_table_view(hold_timing_table_view_, hold_timing_paths_model_);
+  setup_table_view(path_details_table_view_, path_details_model_);
+  setup_table_view(capture_details_table_view_, capture_details_model_);
 
   // default to sorting by slack
   setup_timing_table_view_->setSortingEnabled(true);
@@ -244,6 +253,11 @@ void TimingWidget::init(sta::dbSta* sta)
           &TimingWidget::detailRowDoubleClicked);
 
   clearPathDetails();
+}
+
+void TimingWidget::setLogger(utl::Logger* logger)
+{
+  logger_ = logger;
 }
 
 void TimingWidget::updatePaths()
@@ -319,21 +333,24 @@ void TimingWidget::addCommandsMenuActions()
 {
   QMenu* closest_match_menu = new QMenu("Closest Match", this);
   connect(closest_match_menu->addAction("Exact"), &QAction::triggered, [this] {
-    writePathReportCommand(timing_paths_table_index_, EXACT);
+    writePathReportCommand(timing_paths_table_index_, kExact);
   });
   connect(closest_match_menu->addAction("No Buffering"),
           &QAction::triggered,
           [this] {
-            writePathReportCommand(timing_paths_table_index_, NO_BUFFERING);
+            writePathReportCommand(timing_paths_table_index_, kNoBuffering);
           });
   commands_menu_->addMenu(closest_match_menu);
 
   connect(commands_menu_->addAction("From Start to End"),
           &QAction::triggered,
           [this] {
-            writePathReportCommand(timing_paths_table_index_,
-                                   FROM_START_TO_END);
+            writePathReportCommand(timing_paths_table_index_, kFromStartToEnd);
           });
+
+  connect(commands_menu_->addAction("Write path DEF"),
+          &QAction::triggered,
+          [this] { writePathDef(timing_paths_table_index_, kFromStartToEnd); });
 }
 
 void TimingWidget::showCommandsMenu(const QPoint& pos)
@@ -345,6 +362,35 @@ void TimingWidget::showCommandsMenu(const QPoint& pos)
   timing_paths_table_index_ = focus_view_->indexAt(pos);
 
   commands_menu_->popup(focus_view_->viewport()->mapToGlobal(pos));
+}
+
+void TimingWidget::writePathDef(const QModelIndex& selected_index,
+                                const CommandType& type)
+{
+  TimingPathsModel* focus_model
+      = static_cast<TimingPathsModel*>(focus_view_->model());
+  TimingPath* path = focus_model->getPathAt(selected_index);
+
+  odb::dbBlock* block = nullptr;
+  odb::DefOut def_out(logger_);
+  auto add_path = [&](TimingNodeList* node_list) {
+    for (int i = 0; i < (node_list->size() - 1); i++) {
+      TimingPathNode* curr_node = (*node_list)[i].get();
+      odb::dbInst* curr_node_inst = curr_node->getInstance();
+      if (curr_node_inst) {
+        block = curr_node_inst->getBlock();
+        def_out.selectInst(curr_node_inst);
+      }
+      def_out.selectNet(curr_node->getNet());
+    }
+  };
+
+  add_path(&path->getPathNodes());
+  add_path(&path->getCaptureNodes());
+
+  const std::string file_name
+      = fmt::format("path{}.def", selected_index.row() + 1);
+  def_out.writeBlock(block, file_name.c_str());
 }
 
 // The nodes must be written within curly braces to
@@ -359,16 +405,16 @@ void TimingWidget::writePathReportCommand(const QModelIndex& selected_index,
   QString command = "report_checks ";
 
   switch (type) {
-    case FROM_START_TO_END: {
+    case kFromStartToEnd: {
       command += generateFromStartToEndString(selected_path);
       break;
     }
-    case NO_BUFFERING: {
-      command += generateClosestMatchString(NO_BUFFERING, selected_path);
+    case kNoBuffering: {
+      command += generateClosestMatchString(kNoBuffering, selected_path);
       break;
     }
-    case EXACT: {
-      command += generateClosestMatchString(EXACT, selected_path);
+    case kExact: {
+      command += generateClosestMatchString(kExact, selected_path);
       break;
     }
   }
@@ -419,7 +465,7 @@ QString TimingWidget::generateClosestMatchString(CommandType type,
     for (int i = (start_idx + 1); i < (node_list->size() - 1); i++) {
       TimingPathNode* curr_node = (*node_list)[i].get();
       odb::dbInst* curr_node_inst = curr_node->getInstance();
-      if (type == NO_BUFFERING
+      if (type == kNoBuffering
           && network->libertyCell(curr_node_inst)->isBuffer()) {
         continue;
       }
@@ -448,7 +494,7 @@ QString TimingWidget::generateClosestMatchString(CommandType type,
           continue;
         }
 
-        if (type == NO_BUFFERING
+        if (type == kNoBuffering
             && network->libertyCell(curr_node_inst)->isInverter()
             && network->libertyCell(prev_node_inst)->isInverter()) {
           // Remove previously inserted inverter fields.
@@ -493,8 +539,9 @@ void TimingWidget::clearPathDetails()
 
 void TimingWidget::showPathDetails(const QModelIndex& index)
 {
-  if (!index.isValid())
+  if (!index.isValid()) {
     return;
+  }
 
   if (index.model() == setup_timing_paths_model_) {
     hold_timing_table_view_->clearSelection();
@@ -541,7 +588,7 @@ void TimingWidget::updateClockRows()
 
   const bool show = settings_->getExpandClock();
 
-  auto toggleModelView
+  auto toggle_model_view
       = [show](TimingPathDetailModel* model, QTableView* view) {
           model->setExpandClock(show);
 
@@ -554,8 +601,8 @@ void TimingWidget::updateClockRows()
           }
         };
 
-  toggleModelView(path_details_model_, path_details_table_view_);
-  toggleModelView(capture_details_model_, capture_details_table_view_);
+  toggle_model_view(path_details_model_, path_details_table_view_);
+  toggle_model_view(capture_details_model_, capture_details_table_view_);
 }
 
 void TimingWidget::highlightPathStage(TimingPathDetailModel* model,
@@ -590,18 +637,22 @@ void TimingWidget::populatePaths()
   const auto from = settings_->getFromPins();
   const auto thru = settings_->getThruPins();
   const auto to = settings_->getToPins();
+  const sta::ClockSet* clks = settings_->getClocks();
 
-  populateAndSortModels(from, thru, to, "" /* path group name */);
+  populateAndSortModels(from, thru, to, "" /* path group name */, clks);
 }
 
 void TimingWidget::populateAndSortModels(
     const std::set<const sta::Pin*>& from,
     const std::vector<std::set<const sta::Pin*>>& thru,
     const std::set<const sta::Pin*>& to,
-    const std::string& path_group_name)
+    const std::string& path_group_name,
+    const sta::ClockSet* clks)
 {
-  setup_timing_paths_model_->populateModel(from, thru, to, path_group_name);
-  hold_timing_paths_model_->populateModel(from, thru, to, path_group_name);
+  setup_timing_paths_model_->populateModel(
+      from, thru, to, path_group_name, clks);
+  hold_timing_paths_model_->populateModel(
+      from, thru, to, path_group_name, clks);
 
   // honor selected sort
   auto setup_header = setup_timing_table_view_->horizontalHeader();
@@ -678,8 +729,9 @@ void TimingWidget::copy()
   QItemSelectionModel* selection = focus_view->selectionModel();
   QModelIndexList indexes = selection->selectedIndexes();
 
-  if (indexes.size() < 1)
+  if (indexes.size() < 1) {
     return;
+  }
   auto& sel_index = indexes.first();
   if (focus_view == setup_timing_table_view_
       || focus_view == hold_timing_table_view_) {

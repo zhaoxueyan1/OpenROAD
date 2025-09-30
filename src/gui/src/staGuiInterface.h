@@ -16,6 +16,14 @@
 #include "gui/gui.h"
 #include "odb/db.h"
 #include "odb/dbBlockCallBackObj.h"
+#include "odb/dbObject.h"
+#include "odb/geom.h"
+#include "sta/Delay.hh"
+#include "sta/Graph.hh"
+#include "sta/MinMax.hh"
+#include "sta/NetworkClass.hh"
+#include "sta/Path.hh"
+#include "sta/SdcClass.hh"
 
 namespace sta {
 class Corner;
@@ -85,8 +93,8 @@ class TimingPathNode
   const sta::Pin* getPinAsSTA() const { return stapin_; }
   odb::dbITerm* getPinAsITerm() const;
   odb::dbBTerm* getPinAsBTerm() const;
-  const odb::Rect getPinBBox() const;
-  const odb::Rect getPinLargestBox() const;
+  odb::Rect getPinBBox() const;
+  odb::Rect getPinLargestBox() const;
 
   bool isClock() const { return is_clock_; }
   bool isRisingEdge() const { return is_rising_; }
@@ -239,8 +247,8 @@ class ClockTree
   int getLevel() const { return level_; }
   bool isRoot() const { return level_ == 0; }
 
-  std::set<const sta::Pin*> getDrivers() const;
-  std::set<const sta::Pin*> getLeaves() const;
+  std::set<const sta::Pin*> getDrivers(bool visibility) const;
+  std::set<const sta::Pin*> getLeaves(bool visibility) const;
 
   const std::vector<std::unique_ptr<ClockTree>>& getFanout() const
   {
@@ -256,15 +264,15 @@ class ClockTree
   std::pair<const sta::Pin*, sta::Delay> getPairedSink(
       const sta::Pin* paired_pin) const;
 
-  int getTotalFanout() const;
-  int getTotalLeaves() const;
-  int getMaxLeaves() const;
-  sta::Delay getMinimumArrival() const;
-  sta::Delay getMaximumArrival() const;
-  sta::Delay getMinimumDriverDelay() const;
+  int getTotalFanout(bool visibility) const;
+  int getTotalLeaves(bool visibility) const;
+  int getMaxLeaves(bool visibility) const;
+  sta::Delay getMinimumArrival(bool visibility) const;
+  sta::Delay getMaximumArrival(bool visibility) const;
+  sta::Delay getMinimumDriverDelay(bool visibility) const;
   int getSinkCount() const;
 
-  std::set<odb::dbNet*> getNets() const;
+  std::set<odb::dbNet*> getNets(bool visibility) const;
 
   void addPath(sta::PathExpanded& path, const sta::StaState* sta);
 
@@ -272,6 +280,13 @@ class ClockTree
       const sta::Pin* pin) const;
   ClockTree* findTree(odb::dbNet* net, bool include_children = true);
   ClockTree* findTree(sta::Net* net, bool include_children = true);
+
+  void setSubtreeVisibility(bool visibility);
+  bool getSubtreeVisibility() const { return subtree_visibility_; };
+  bool isVisible() const
+  {
+    return (parent_) ? parent_->getSubtreeVisibility() : true;
+  };
 
  private:
   ClockTree* parent_;
@@ -287,6 +302,8 @@ class ClockTree
   PinDelays leaves_;
 
   std::vector<std::unique_ptr<ClockTree>> fanout_;
+
+  bool subtree_visibility_;
 
   void addPath(sta::PathExpanded& path, int idx, const sta::StaState* sta);
   ClockTree* getTree(sta::Net* net);
@@ -312,6 +329,14 @@ class STAGuiInterface
 
   bool isUseMax() const { return use_max_; }
   void setUseMax(bool use_max) { use_max_ = use_max; }
+  const sta::MinMaxAll* minMaxAll() const
+  {
+    return use_max_ ? sta::MinMaxAll::max() : sta::MinMaxAll::min();
+  }
+  const sta::MinMax* minMax() const
+  {
+    return use_max_ ? sta::MinMax::max() : sta::MinMax::min();
+  }
 
   int getMaxPathCount() const { return max_path_count_; }
   void setMaxPathCount(int max_paths) { max_path_count_ = max_paths; }
@@ -331,7 +356,8 @@ class STAGuiInterface
   TimingPathList getTimingPaths(const StaPins& from,
                                 const std::vector<StaPins>& thrus,
                                 const StaPins& to,
-                                const std::string& path_group_name) const;
+                                const std::string& path_group_name,
+                                const sta::ClockSet* clks) const;
   TimingPathList getTimingPaths(const sta::Pin* thru) const;
 
   std::unique_ptr<TimingPathNode> getTimingNode(const sta::Pin* pin) const;
@@ -349,7 +375,9 @@ class STAGuiInterface
   StaPins getStartPoints() const;
 
   float getPinSlack(const sta::Pin* pin) const;
-  EndPointSlackMap getEndPointToSlackMap(const std::string& path_group_name);
+  EndPointSlackMap getEndPointToSlackMap(const std::string& path_group_name,
+                                         const sta::Clock* clk = nullptr);
+  EndPointSlackMap getEndPointToSlackMap(const sta::Clock* clk);
 
   std::set<std::string> getGroupPathsNames() const;
   void updatePathGroups();

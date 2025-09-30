@@ -29,6 +29,7 @@
 
 #include "defiTimingDisable.hpp"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -71,23 +72,27 @@ void defiTimingDisable::Destroy()
 {
   clear();
 
-  if (fromInst_)
+  if (fromInst_) {
     free(fromInst_);
+  }
   fromInst_ = nullptr;
   fromInstLength_ = 0;
 
-  if (toInst_)
+  if (toInst_) {
     free(toInst_);
+  }
   toInst_ = nullptr;
   toInstLength_ = 0;
 
-  if (toPin_)
+  if (toPin_) {
     free(toPin_);
+  }
   toPin_ = nullptr;
   toPinLength_ = 0;
 
-  if (fromPin_)
+  if (fromPin_) {
     free(fromPin_);
+  }
   fromPin_ = nullptr;
   fromPinLength_ = 0;
 }
@@ -117,8 +122,9 @@ void defiTimingDisable::setFromTo(const char* fromInst,
 
   len = strlen(fromInst) + 1;
   if (len > fromInstLength_) {
-    if (fromInst_)
+    if (fromInst_) {
       free(fromInst_);
+    }
     fromInstLength_ = len;
     fromInst_ = (char*) malloc(len);
   }
@@ -126,8 +132,9 @@ void defiTimingDisable::setFromTo(const char* fromInst,
 
   len = strlen(fromPin) + 1;
   if (len > fromPinLength_) {
-    if (fromPin_)
+    if (fromPin_) {
       free(fromPin_);
+    }
     fromPinLength_ = len;
     fromPin_ = (char*) malloc(len);
   }
@@ -135,8 +142,9 @@ void defiTimingDisable::setFromTo(const char* fromInst,
 
   len = strlen(toInst) + 1;
   if (len > toInstLength_) {
-    if (toInst_)
+    if (toInst_) {
       free(toInst_);
+    }
     toInstLength_ = len;
     toInst_ = (char*) malloc(len);
   }
@@ -144,8 +152,9 @@ void defiTimingDisable::setFromTo(const char* fromInst,
 
   len = strlen(toPin) + 1;
   if (len > toPinLength_) {
-    if (toPin_)
+    if (toPin_) {
       free(toPin_);
+    }
     toPinLength_ = len;
     toPin_ = (char*) malloc(len);
   }
@@ -161,8 +170,9 @@ void defiTimingDisable::setThru(const char* fromInst, const char* fromPin)
 
   len = strlen(fromInst) + 1;
   if (len > fromInstLength_) {
-    if (fromInst_)
+    if (fromInst_) {
       free(fromInst_);
+    }
     fromInstLength_ = len;
     fromInst_ = (char*) malloc(len);
   }
@@ -170,8 +180,9 @@ void defiTimingDisable::setThru(const char* fromInst, const char* fromPin)
 
   len = strlen(fromPin) + 1;
   if (len > fromPinLength_) {
-    if (fromPin_)
+    if (fromPin_) {
       free(fromPin_);
+    }
     fromPinLength_ = len;
     fromPin_ = (char*) malloc(len);
   }
@@ -187,8 +198,9 @@ void defiTimingDisable::setMacroFromTo(const char* fromPin, const char* toPin)
 
   len = strlen(fromPin) + 1;
   if (len > fromPinLength_) {
-    if (fromPin_)
+    if (fromPin_) {
       free(fromPin_);
+    }
     fromPinLength_ = len;
     fromPin_ = (char*) malloc(len);
   }
@@ -196,8 +208,9 @@ void defiTimingDisable::setMacroFromTo(const char* fromPin, const char* toPin)
 
   len = strlen(toPin) + 1;
   if (len > toPinLength_) {
-    if (toPin_)
+    if (toPin_) {
       free(toPin_);
+    }
     toPinLength_ = len;
     toPin_ = (char*) malloc(len);
   }
@@ -214,8 +227,9 @@ void defiTimingDisable::setMacroThru(const char* thru)
 
   len = strlen(thru) + 1;
   if (len > fromPinLength_) {
-    if (fromPin_)
+    if (fromPin_) {
       free(fromPin_);
+    }
     fromPinLength_ = len;
     fromPin_ = (char*) malloc(len);
   }
@@ -232,8 +246,9 @@ void defiTimingDisable::setMacro(const char* name)
 
   len = strlen(name) + 1;
   if (len > fromInstLength_) {
-    if (fromInst_)
+    if (fromInst_) {
       free(fromInst_);
+    }
     fromInstLength_ = len;
     fromInst_ = (char*) malloc(len);
   }

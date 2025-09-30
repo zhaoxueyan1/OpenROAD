@@ -4,6 +4,7 @@
 #include "graphics.h"
 
 #include "gui/gui.h"
+#include "odb/db.h"
 
 namespace exa {
 
@@ -33,8 +34,8 @@ void Graphics::drawObjects(gui::Painter& painter)
     return;
   }
 
-  painter.setPen(gui::Painter::red);
-  painter.setBrush(gui::Painter::red, gui::Painter::Brush::DIAGONAL);
+  painter.setPen(gui::Painter::kRed);
+  painter.setBrush(gui::Painter::kRed, gui::Painter::Brush::kDiagonal);
   painter.drawRect(instance_->getBBox()->getBox());
 }
 

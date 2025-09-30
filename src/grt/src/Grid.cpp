@@ -4,7 +4,9 @@
 #include "Grid.h"
 
 #include <cmath>
-#include <complex>
+
+#include "odb/dbTypes.h"
+#include "odb/geom.h"
 
 namespace grt {
 
@@ -41,14 +43,16 @@ odb::Point Grid::getPositionOnGrid(const odb::Point& position)
   int y = position.y();
 
   // Computing x and y center:
-  int gcell_id_x = floor((float) ((x - die_area_.xMin()) / tile_size_));
-  int gcell_id_y = floor((float) ((y - die_area_.yMin()) / tile_size_));
+  int gcell_id_x = (x - die_area_.xMin()) / tile_size_;
+  int gcell_id_y = (y - die_area_.yMin()) / tile_size_;
 
-  if (gcell_id_x >= x_grids_)
+  if (gcell_id_x >= x_grids_) {
     gcell_id_x--;
+  }
 
-  if (gcell_id_y >= y_grids_)
+  if (gcell_id_y >= y_grids_) {
     gcell_id_y--;
+  }
 
   int center_x
       = (gcell_id_x * tile_size_) + (tile_size_ / 2) + die_area_.xMin();

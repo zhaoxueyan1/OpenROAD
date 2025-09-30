@@ -4,9 +4,14 @@
 #include "Slots.h"
 
 #include <algorithm>
-#include <boost/functional/hash.hpp>
+#include <cstddef>
 #include <limits>
+#include <tuple>
 #include <vector>
+
+#include "boost/container_hash/hash.hpp"
+#include "odb/geom.h"
+#include "ppl/IOPlacer.h"
 
 namespace ppl {
 
@@ -37,6 +42,21 @@ bool Interval::operator==(const Interval& interval) const
          && end_ == interval.getEnd() && layer_ == interval.getLayer();
 }
 
+bool Interval::operator<(const Interval& interval) const
+{
+  if (edge_ != interval.edge_) {
+    return edge_ < interval.edge_;
+  }
+  if (layer_ != interval.layer_) {
+    return layer_ < interval.layer_;
+  }
+  if (begin_ != interval.begin_) {
+    return begin_ < interval.begin_;
+  }
+
+  return end_ < interval.end_;
+}
+
 std::size_t IntervalHash::operator()(const Interval& interval) const
 {
   return boost::hash<std::tuple<Edge, int, int, int>>()({interval.getEdge(),
@@ -45,7 +65,7 @@ std::size_t IntervalHash::operator()(const Interval& interval) const
                                                          interval.getLayer()});
 }
 
-std::size_t RectHash::operator()(const Rect& rect) const
+std::size_t RectHash::operator()(const odb::Rect& rect) const
 {
   return boost::hash<std::tuple<int, int, int, int>>()(
       {rect.xMin(), rect.yMin(), rect.xMax(), rect.yMax()});

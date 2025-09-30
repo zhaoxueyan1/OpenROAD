@@ -5,12 +5,12 @@
 
 #include "dbCore.h"
 #include "dbHashTable.h"
+#include "odb/dbId.h"
+#include "odb/dbObject.h"
 #include "odb/odb.h"
 
 namespace odb {
 
-template <class T>
-class dbTable;
 class _dbProperty;
 class dbPropertyItr;
 class _dbNameCache;

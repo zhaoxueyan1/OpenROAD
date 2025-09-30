@@ -3,13 +3,20 @@
 
 #pragma once
 
+#include <QColor>
 #include <QTabWidget>
+#include <QWidget>
 #include <functional>
+#include <map>
 #include <memory>
+#include <set>
+#include <string>
 #include <vector>
 
 #include "gui/gui.h"
 #include "layoutViewer.h"
+#include "odb/db.h"
+#include "odb/geom.h"
 
 namespace gui {
 
@@ -32,9 +39,9 @@ class LayoutTabs : public QTabWidget
              const std::vector<std::unique_ptr<Ruler>>& rulers,
              const std::vector<std::unique_ptr<Label>>& labels,
              Gui* gui,
-             std::function<bool()> usingDBU,
-             std::function<bool()> usingPolyDecompView,
-             std::function<bool()> showRulerAsEuclidian,
+             std::function<bool()> using_dbu,
+             std::function<bool()> using_poly_decomp_view,
+             std::function<bool()> show_ruler_as_euclidian,
              std::function<bool()> default_mouse_wheel_zoom,
              std::function<int()> arrow_keys_scroll_step,
              QWidget* parent = nullptr);
@@ -71,11 +78,13 @@ class LayoutTabs : public QTabWidget
   // active viewer should be emitting signals, but all are connected
   // as signal-to-signal connections.
   void location(int x, int y);
-  void selected(const Selected& selected, bool showConnectivity = false);
+  void selected(const Selected& selected, bool show_connectivity = false);
   void addSelected(const Selected& selected);
   void addSelected(const SelectionSet& selected);
   void addRuler(int x0, int y0, int x1, int y1);
   void focusNetsChanged();
+  void routeGuidesChanged();
+  void netTracksChanged();
 
  public slots:
   void tabChange(int index);
@@ -119,9 +128,9 @@ class LayoutTabs : public QTabWidget
   const std::vector<std::unique_ptr<Label>>& labels_;
   std::map<odb::dbModule*, LayoutViewer::ModuleSettings> modules_;
   Gui* gui_;
-  std::function<bool()> usingDBU_;
-  std::function<bool()> usingPolyDecompView_;
-  std::function<bool()> showRulerAsEuclidian_;
+  std::function<bool()> using_dbu_;
+  std::function<bool()> using_poly_decomp_view_;
+  std::function<bool()> show_ruler_as_euclidian_;
   std::function<bool()> default_mouse_wheel_zoom_;
   std::function<int()> arrow_keys_scroll_step_;
   utl::Logger* logger_;

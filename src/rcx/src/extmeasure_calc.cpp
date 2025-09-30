@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2024-2025, The OpenROAD Authors
 
-#include "dbUtil.h"
+#include <cstdio>
+
+#include "odb/db.h"
+#include "rcx/dbUtil.h"
 #include "rcx/extMeasureRC.h"
 #include "rcx/extSegment.h"
 #include "utl/Logger.h"
@@ -22,8 +25,9 @@ void extMeasureRC::VerticalCap(Ath__array1D<extSegment*>* segTable,
     extSegment* s = segTable->get(0);
     Wire* w2 = look_up ? s->_up : s->_down;
 
-    if (w2 == nullptr)
+    if (w2 == nullptr) {
       continue;
+    }
     uint rsegId1 = s->_wire->getRsegId();
     uint rsegId2 = w2->getRsegId();
 
@@ -55,8 +59,9 @@ bool extMeasureRC::DiagCap(FILE* fp,
                            bool PowerOnly)
 {
   bool no_dist_limit = false;
-  if (PowerOnly)
+  if (PowerOnly) {
     no_dist_limit = true;
+  }
 
   uint met = w->getLevel();
   _width = w->getWidth();
@@ -66,21 +71,25 @@ bool extMeasureRC::DiagCap(FILE* fp,
   for (uint ii = 0; ii < segTable->getCnt(); ii++) {
     extSegment* s = segTable->get(0);
     Wire* w2 = lookUp ? s->_up : s->_down;
-    if (w2 == nullptr)
+    if (w2 == nullptr) {
       continue;
-    if (PowerOnly && !w2->isPower())
+    }
+    if (PowerOnly && !w2->isPower()) {
       continue;
+    }
     int dist = lookUp ? s->_dist : s->_dist_down;
 
     uint tgtMet = w2->getLevel();
 
     if (!no_dist_limit) {
       if (tgtMet - met < 2) {
-        if (dist > pitch)
+        if (dist > pitch) {
           continue;
+        }
       } else {
-        if (dist > pitch)
+        if (dist > pitch) {
           continue;
+        }
       }
     }
     uint tgtWidth = w2->getWidth();
@@ -93,9 +102,9 @@ bool extMeasureRC::DiagCap(FILE* fp,
   }
   return true;
 }
-dbRSeg* extMeasureRC::GetRseg(int id)
+odb::dbRSeg* extMeasureRC::GetRseg(int id)
 {
-  dbRSeg* rseg1 = id > 0 ? dbRSeg::getRSeg(_block, id) : nullptr;
+  odb::dbRSeg* rseg1 = id > 0 ? odb::dbRSeg::getRSeg(_block, id) : nullptr;
   return rseg1;
 }
 bool extMeasureRC::VerticalCap(uint met,
@@ -120,10 +129,11 @@ bool extMeasureRC::VerticalCap(uint met,
     // NOT working extDistRC* rc = getVerticalUnderRC(rcModel, diagDist,
     // tgtWidth, tgtMet);
     extDistRC* rc = getDiagUnderCC(rcModel, diagDist, tgtMet);
-    if (rc == nullptr)
+    if (rc == nullptr) {
       return false;
+    }
 
-    capTable[ii] = len * rc->_fringe;
+    capTable[ii] = len * rc->getFringe();
   }
   createCap(rsegId1, rsegId2, capTable);
   return true;
@@ -154,11 +164,12 @@ bool extMeasureRC::DiagCouplingCap(uint met,
       tgtMet = met;
     }
     extDistRC* rc = getDiagUnderCC(rcModel, diagDist, tgtMet);
-    if (rc == nullptr)
+    if (rc == nullptr) {
       return false;
+    }
 
     capTable[ii]
-        = len * rc->_fringe;  // OVERLOADED value from model - dkf 110424
+        = len * rc->getFringe();  // OVERLOADED value from model - dkf 110424
   }
   createCap(rsegId1, rsegId2, capTable);
   return true;

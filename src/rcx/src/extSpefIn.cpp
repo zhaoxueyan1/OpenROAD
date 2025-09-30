@@ -2,13 +2,18 @@
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <vector>
 
-#include "grids.h"
 #include "name.h"
+#include "odb/db.h"
+#include "odb/dbShape.h"
 #include "parse.h"
 #include "rcx/extRCap.h"
 #include "rcx/extSpef.h"
+#include "rcx/grids.h"
 #include "utl/Logger.h"
 
 namespace rcx {
@@ -498,8 +503,9 @@ uint extSpef::getCapNodeId(const char* nodeWord,
 
       if (!_testParsing && !_diff) {
         capId = getCapIdFromCapTable(nodeWord);
-        if (capId == 0 && cornerNet == nullptr)
+        if (capId == 0 && cornerNet == nullptr) {
           return 0;
+        }
 
         if (capId > 0) {
           cap = dbCapNode::getCapNode(_cornerBlock, capId);

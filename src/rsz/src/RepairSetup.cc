@@ -5,20 +5,24 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include <memory>
-#include <optional>
-#include <sstream>
+#include <limits>
 #include <string>
+#include <vector>
 
 #include "BaseMove.hh"
 #include "BufferMove.hh"
 #include "CloneMove.hh"
+#include "Rebuffer.hh"
 #include "SizeDownMove.hh"
+#include "db_sta/dbSta.hh"
+#include "sta/Delay.hh"
+#include "sta/NetworkClass.hh"
+// This includes SizeUpMatchMove
 #include "SizeUpMove.hh"
 #include "SplitLoadMove.hh"
 #include "SwapPinsMove.hh"
 #include "UnbufferMove.hh"
+#include "VTSwapMove.hh"
 #include "rsz/Resizer.hh"
 #include "sta/Corner.hh"
 #include "sta/DcalcAnalysisPt.hh"
@@ -31,10 +35,12 @@
 #include "sta/PathExpanded.hh"
 #include "sta/PortDirection.hh"
 #include "sta/Sdc.hh"
+#include "sta/Sta.hh"
 #include "sta/TimingArc.hh"
 #include "sta/Units.hh"
 #include "sta/VerilogWriter.hh"
 #include "utl/Logger.h"
+#include "utl/mem_stats.h"
 
 namespace rsz {
 
@@ -64,7 +70,7 @@ void RepairSetup::init()
   logger_ = resizer_->logger_;
   dbStaState::init(resizer_->sta_);
   db_network_ = resizer_->db_network_;
-
+  estimate_parasitics_ = resizer_->estimate_parasitics_;
   initial_design_area_ = resizer_->computeDesignArea();
 }
 
@@ -79,10 +85,14 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
                               const bool skip_size_down,
                               const bool skip_buffering,
                               const bool skip_buffer_removal,
-                              const bool skip_last_gasp)
+                              const bool skip_last_gasp,
+                              const bool skip_vt_swap)
 {
   bool repaired = false;
   init();
+  resizer_->rebuffer_->init();
+  // IMPROVE ME: rebuffering always looks at cmd corner
+  resizer_->rebuffer_->initOnCorner(sta_->cmdCorner());
   constexpr int digits = 3;
   max_repairs_per_pass_ = max_repairs_per_pass;
   resizer_->buffer_moved_into_core_ = false;
@@ -93,42 +103,51 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
       switch (move) {
         case MoveType::BUFFER:
           if (!skip_buffering) {
-            move_sequence.push_back(resizer_->buffer_move);
+            move_sequence.push_back(resizer_->buffer_move_.get());
           }
           break;
         case MoveType::UNBUFFER:
           if (!skip_buffer_removal) {
-            move_sequence.push_back(resizer_->unbuffer_move);
+            move_sequence.push_back(resizer_->unbuffer_move_.get());
           }
           break;
         case MoveType::SWAP:
           if (!skip_pin_swap) {
-            move_sequence.push_back(resizer_->swap_pins_move);
+            move_sequence.push_back(resizer_->swap_pins_move_.get());
           }
           break;
         case MoveType::SIZE:
           if (!skip_size_down) {
-            move_sequence.push_back(resizer_->size_down_move);
+            move_sequence.push_back(resizer_->size_down_move_.get());
           }
-          move_sequence.push_back(resizer_->size_up_move);
+          move_sequence.push_back(resizer_->size_up_move_.get());
           break;
         case MoveType::SIZEUP:
-          move_sequence.push_back(resizer_->size_up_move);
+          move_sequence.push_back(resizer_->size_up_move_.get());
           break;
         case MoveType::SIZEDOWN:
           if (!skip_size_down) {
-            move_sequence.push_back(resizer_->size_down_move);
+            move_sequence.push_back(resizer_->size_down_move_.get());
           }
           break;
         case MoveType::CLONE:
           if (!skip_gate_cloning) {
-            move_sequence.push_back(resizer_->clone_move);
+            move_sequence.push_back(resizer_->clone_move_.get());
           }
           break;
         case MoveType::SPLIT:
           if (!skip_buffering) {
-            move_sequence.push_back(resizer_->split_load_move);
+            move_sequence.push_back(resizer_->split_load_move_.get());
           }
+          break;
+        case MoveType::VTSWAP_SPEED:
+          if (!skip_vt_swap
+              && resizer_->lib_data_->sorted_vt_categories.size() > 1) {
+            move_sequence.push_back(resizer_->vt_swap_speed_move_.get());
+          }
+          break;
+        case MoveType::SIZEUP_MATCH:
+          move_sequence.push_back(resizer_->size_up_match_move_.get());
           break;
       }
     }
@@ -136,22 +155,25 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
   } else {
     move_sequence.clear();
     if (!skip_buffer_removal) {
-      move_sequence.push_back(resizer_->unbuffer_move);
+      move_sequence.push_back(resizer_->unbuffer_move_.get());
+    }
+    if (!skip_vt_swap && resizer_->lib_data_->sorted_vt_categories.size() > 1) {
+      move_sequence.push_back(resizer_->vt_swap_speed_move_.get());
     }
     // TODO: Add size_down_move to the sequence if we want to allow
     // Always  have sizing
-    move_sequence.push_back(resizer_->size_up_move);
+    move_sequence.push_back(resizer_->size_up_move_.get());
     if (!skip_pin_swap) {
-      move_sequence.push_back(resizer_->swap_pins_move);
+      move_sequence.push_back(resizer_->swap_pins_move_.get());
     }
     if (!skip_buffering) {
-      move_sequence.push_back(resizer_->buffer_move);
+      move_sequence.push_back(resizer_->buffer_move_.get());
     }
     if (!skip_gate_cloning) {
-      move_sequence.push_back(resizer_->clone_move);
+      move_sequence.push_back(resizer_->clone_move_.get());
     }
     if (!skip_buffering) {
-      move_sequence.push_back(resizer_->split_load_move);
+      move_sequence.push_back(resizer_->split_load_move_.get());
     }
   }
 
@@ -219,7 +241,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
   sta_->checkCapacitanceLimitPreamble();
   sta_->checkFanoutLimitPreamble();
 
-  IncrementalParasiticsGuard guard(resizer_);
+  est::IncrementalParasiticsGuard guard(estimate_parasitics_);
   int opto_iteration = 0;
   bool prev_termination = false;
   bool two_cons_terminations = false;
@@ -338,7 +360,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
         }
         break;
       }
-      resizer_->updateParasitics();
+      estimate_parasitics_->updateParasitics();
       sta_->findRequireds();
       end_slack = sta_->vertexSlack(end, max_);
       sta_->worstSlack(max_, worst_slack, worst_vertex);
@@ -422,7 +444,14 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
 
   if (!skip_last_gasp) {
     // do some last gasp setup fixing before we give up
-    OptoParams params(setup_slack_margin, verbose);
+    OptoParams params(setup_slack_margin,
+                      verbose,
+                      skip_pin_swap,
+                      skip_gate_cloning,
+                      skip_size_down,
+                      skip_buffering,
+                      skip_buffer_removal,
+                      skip_vt_swap);
     params.iteration = opto_iteration;
     params.initial_tns = initial_tns;
     repairSetupLastGasp(params, num_viols);
@@ -430,13 +459,15 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
 
   printProgress(opto_iteration, true, true, false, num_viols);
 
-  int buffer_moves_ = resizer_->buffer_move->numCommittedMoves();
-  int size_up_moves_ = resizer_->size_up_move->numCommittedMoves();
-  int size_down_moves_ = resizer_->size_down_move->numCommittedMoves();
-  int swap_pins_moves_ = resizer_->swap_pins_move->numCommittedMoves();
-  int clone_moves_ = resizer_->clone_move->numCommittedMoves();
-  int split_load_moves_ = resizer_->split_load_move->numCommittedMoves();
-  int unbuffer_moves_ = resizer_->unbuffer_move->numCommittedMoves();
+  int buffer_moves_ = resizer_->buffer_move_->numCommittedMoves();
+  int size_up_moves_ = resizer_->size_up_move_->numCommittedMoves();
+  int size_down_moves_ = resizer_->size_down_move_->numCommittedMoves();
+  int swap_pins_moves_ = resizer_->swap_pins_move_->numCommittedMoves();
+  int clone_moves_ = resizer_->clone_move_->numCommittedMoves();
+  int split_load_moves_ = resizer_->split_load_move_->numCommittedMoves();
+  int unbuffer_moves_ = resizer_->unbuffer_move_->numCommittedMoves();
+  int vt_swap_moves_ = resizer_->vt_swap_speed_move_->numCommittedMoves();
+  int size_up_match_moves_ = resizer_->size_up_match_move_->numCommittedMoves();
 
   if (unbuffer_moves_ > 0) {
     repaired = true;
@@ -456,14 +487,18 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
   }
   logger_->metric("design__instance__count__setup_buffer",
                   buffer_moves_ + split_load_moves_);
-  if (size_up_moves_ + size_down_moves_ > 0) {
+  if (size_up_moves_ + size_down_moves_ + size_up_match_moves_ + vt_swap_moves_
+      > 0) {
     repaired = true;
     logger_->info(RSZ,
                   51,
-                  "Resized {} instances, {} sized up, {} sized down.",
-                  size_up_moves_ + size_down_moves_,
+                  "Resized {} instances: {} up, {} up match, {} down, {} VT",
+                  size_up_moves_ + size_up_match_moves_ + size_down_moves_
+                      + vt_swap_moves_,
                   size_up_moves_,
-                  size_down_moves_);
+                  size_up_match_moves_,
+                  size_down_moves_,
+                  vt_swap_moves_);
   }
   if (swap_pins_moves_ > 0) {
     repaired = true;
@@ -496,31 +531,32 @@ void RepairSetup::repairSetup(const Pin* end_pin)
   Path* path = sta_->vertexWorstSlackPath(vertex, max_);
 
   move_sequence.clear();
-  move_sequence = {resizer_->unbuffer_move,
-                   resizer_->size_down_move,
-                   resizer_->size_up_move,
-                   resizer_->swap_pins_move,
-                   resizer_->buffer_move,
-                   resizer_->clone_move,
-                   resizer_->split_load_move};
+  move_sequence = {resizer_->unbuffer_move_.get(),
+                   resizer_->vt_swap_speed_move_.get(),
+                   resizer_->size_down_move_.get(),
+                   resizer_->size_up_move_.get(),
+                   resizer_->swap_pins_move_.get(),
+                   resizer_->buffer_move_.get(),
+                   resizer_->clone_move_.get(),
+                   resizer_->split_load_move_.get()};
 
   {
-    IncrementalParasiticsGuard guard(resizer_);
+    est::IncrementalParasiticsGuard guard(estimate_parasitics_);
     repairPath(path, slack, 0.0);
   }
 
-  int unbuffer_moves_ = resizer_->unbuffer_move->numCommittedMoves();
+  int unbuffer_moves_ = resizer_->unbuffer_move_->numCommittedMoves();
   if (unbuffer_moves_ > 0) {
     logger_->info(RSZ, 61, "Removed {} buffers.", unbuffer_moves_);
   }
-  int buffer_moves_ = resizer_->buffer_move->numCommittedMoves();
-  int split_load_moves_ = resizer_->split_load_move->numMoves();
+  int buffer_moves_ = resizer_->buffer_move_->numCommittedMoves();
+  int split_load_moves_ = resizer_->split_load_move_->numMoves();
   if (buffer_moves_ + split_load_moves_ > 0) {
     logger_->info(
         RSZ, 30, "Inserted {} buffers.", buffer_moves_ + split_load_moves_);
   }
-  int size_up_moves_ = resizer_->size_up_move->numMoves();
-  int size_down_moves_ = resizer_->size_down_move->numMoves();
+  int size_up_moves_ = resizer_->size_up_move_->numMoves();
+  int size_down_moves_ = resizer_->size_down_move_->numMoves();
   if (size_up_moves_ + size_down_moves_ > 0) {
     logger_->info(RSZ,
                   38,
@@ -529,7 +565,7 @@ void RepairSetup::repairSetup(const Pin* end_pin)
                   size_up_moves_,
                   size_down_moves_);
   }
-  int swap_pins_moves_ = resizer_->swap_pins_move->numMoves();
+  int swap_pins_moves_ = resizer_->swap_pins_move_->numMoves();
   if (swap_pins_moves_ > 0) {
     logger_->info(RSZ, 44, "Swapped pins on {} instances.", swap_pins_moves_);
   }
@@ -585,7 +621,7 @@ bool RepairSetup::repairPath(Path* path,
       const Path* path = expanded.path(i);
       Vertex* path_vertex = path->vertex(sta_);
       const Pin* path_pin = path->pin(sta_);
-      if (i > 0 && network_->isDriver(path_pin)
+      if (i > 0 && path_vertex->isDriver(network_)
           && !network_->isTopLevelPort(path_pin)) {
         const TimingArc* prev_arc = path->prevArc(sta_);
         const TimingArc* corner_arc = prev_arc->cornerArc(lib_ap);
@@ -665,7 +701,7 @@ bool RepairSetup::repairPath(Path* path,
                          path_slack,
                          &expanded,
                          setup_slack_margin)) {
-          if (move == resizer_->unbuffer_move) {
+          if (move == resizer_->unbuffer_move_.get()) {
             // Only allow one unbuffer move per pass to
             // prevent the use-after-free error of multiple buffer removals.
             changed += repairs_per_pass;
@@ -722,25 +758,33 @@ void RepairSetup::printProgress(const int iteration,
 
     const double design_area = resizer_->computeDesignArea();
     const double area_growth = design_area - initial_design_area_;
+    double area_growth_percent = std::numeric_limits<double>::infinity();
+    if (std::abs(initial_design_area_) > 0.0) {
+      area_growth_percent = area_growth / initial_design_area_ * 100.0;
+    }
 
     // This actually prints both committed and pending moves, so the moves could
-    // could go down if a pass is restrored by the journal.
+    // could go down if a pass is rejected and restored by the ECO.
     logger_->report(
         "{: >9s} | {: >7d} | {: >7d} | {: >8d} | {: >6d} | {: >5d} "
         "| {: >+7.1f}% | {: >8s} | {: >10s} | {: >6d} | {}",
         itr_field,
-        resizer_->unbuffer_move->numCommittedMoves(),
-        resizer_->size_up_move->numCommittedMoves()
-            + resizer_->size_down_move->numCommittedMoves(),
-        resizer_->buffer_move->numCommittedMoves()
-            + resizer_->split_load_move->numCommittedMoves(),
-        resizer_->clone_move->numCommittedMoves(),
-        resizer_->swap_pins_move->numCommittedMoves(),
-        area_growth / initial_design_area_ * 1e2,
+        resizer_->unbuffer_move_->numMoves(),
+        resizer_->size_up_move_->numMoves()
+            + resizer_->size_down_move_->numMoves()
+            + resizer_->size_up_match_move_->numMoves()
+            + resizer_->vt_swap_speed_move_->numMoves(),
+        resizer_->buffer_move_->numMoves()
+            + resizer_->split_load_move_->numMoves(),
+        resizer_->clone_move_->numMoves(),
+        resizer_->swap_pins_move_->numMoves(),
+        area_growth_percent,
         delayAsString(wns, sta_, 3),
         delayAsString(tns, sta_, 1),
         max(0, num_viols),
         worst_vertex != nullptr ? worst_vertex->name(network_) : "");
+
+    debugPrint(logger_, RSZ, "memory", 1, "RSS = {}", utl::getCurrentRSS());
   }
 
   if (end) {
@@ -784,9 +828,18 @@ bool RepairSetup::terminateProgress(const int iteration,
 
 // Perform some last fixing based on sizing only.
 // This is a greedy opto that does not degrade WNS or TNS.
-// TODO: add VT swap
 void RepairSetup::repairSetupLastGasp(const OptoParams& params, int& num_viols)
 {
+  move_sequence.clear();
+  if (!params.skip_vt_swap) {
+    move_sequence.push_back(resizer_->vt_swap_speed_move_.get());
+  }
+  move_sequence.push_back(resizer_->size_up_match_move_.get());
+  move_sequence.push_back(resizer_->size_up_move_.get());
+  if (!params.skip_pin_swap) {
+    move_sequence.push_back(resizer_->swap_pins_move_.get());
+  }
+
   // Sort remaining failing endpoints
   const VertexSet* endpoints = sta_->endpoints();
   vector<pair<Vertex*, Slack>> violating_ends;
@@ -808,15 +861,6 @@ void RepairSetup::repairSetupLastGasp(const OptoParams& params, int& num_viols)
     // clang-format off
     debugPrint(logger_, RSZ, "repair_setup", 1, "last gasp is bailing out "
                "because TNS is {:0.2f}", curr_tns);
-    // clang-format on
-    return;
-  }
-
-  // Don't do anything unless there was some progress from previous fixing
-  if ((params.initial_tns - curr_tns) / params.initial_tns < 0.05) {
-    // clang-format off
-    debugPrint(logger_, RSZ, "repair_setup", 1, "last gasp is bailing out "
-               "because TNS was reduced by < 5% from previous fixing");
     // clang-format on
     return;
   }
@@ -898,7 +942,7 @@ void RepairSetup::repairSetupLastGasp(const OptoParams& params, int& num_viols)
         }
         break;
       }
-      resizer_->updateParasitics();
+      estimate_parasitics_->updateParasitics();
       sta_->findRequireds();
       end_slack = sta_->vertexSlack(end, max_);
       sta_->worstSlack(max_, curr_worst_slack, worst_vertex);

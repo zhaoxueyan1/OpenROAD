@@ -4,6 +4,7 @@
 #include "debug_gui.h"
 
 #include <algorithm>
+#include <any>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -11,10 +12,14 @@
 #include <string>
 #include <vector>
 
+#include "boost/geometry/geometry.hpp"
 #include "connection.h"
+#include "gui/gui.h"
 #include "ir_network.h"
 #include "ir_solver.h"
 #include "node.h"
+#include "odb/db.h"
+#include "odb/geom.h"
 #include "shape.h"
 #include "sta/Corner.hh"
 
@@ -54,20 +59,21 @@ NodeDescriptor::NodeDescriptor(
 {
 }
 
-std::string NodeDescriptor::getName(std::any object) const
+std::string NodeDescriptor::getName(const std::any& object) const
 {
   auto node = std::any_cast<Node*>(object);
   return node->getName();
 }
 
-bool NodeDescriptor::getBBox(std::any object, odb::Rect& bbox) const
+bool NodeDescriptor::getBBox(const std::any& object, odb::Rect& bbox) const
 {
   auto node = std::any_cast<Node*>(object);
   bbox = odb::Rect(node->getPoint(), node->getPoint());
   return true;
 }
 
-gui::Descriptor::Properties NodeDescriptor::getProperties(std::any object) const
+gui::Descriptor::Properties NodeDescriptor::getProperties(
+    const std::any& object) const
 {
   auto node = std::any_cast<Node*>(object);
 
@@ -120,7 +126,7 @@ gui::Descriptor::Properties NodeDescriptor::getProperties(std::any object) const
   return props;
 }
 
-gui::Selected NodeDescriptor::makeSelected(std::any object) const
+gui::Selected NodeDescriptor::makeSelected(const std::any& object) const
 {
   if (auto node = std::any_cast<Node*>(&object)) {
     return gui::Selected(*node, this);
@@ -128,14 +134,15 @@ gui::Selected NodeDescriptor::makeSelected(std::any object) const
   return gui::Selected();
 }
 
-bool NodeDescriptor::lessThan(std::any l, std::any r) const
+bool NodeDescriptor::lessThan(const std::any& l, const std::any& r) const
 {
   auto l_node = std::any_cast<Node*>(l);
   auto r_node = std::any_cast<Node*>(r);
   return l_node->compare(r_node);
 }
 
-void NodeDescriptor::highlight(std::any object, gui::Painter& painter) const
+void NodeDescriptor::highlight(const std::any& object,
+                               gui::Painter& painter) const
 {
   auto node = std::any_cast<Node*>(object);
   auto& pt = node->getPoint();
@@ -150,13 +157,13 @@ ITermNodeDescriptor::ITermNodeDescriptor(
 {
 }
 
-std::string ITermNodeDescriptor::getName(std::any object) const
+std::string ITermNodeDescriptor::getName(const std::any& object) const
 {
   auto node = std::any_cast<ITermNode*>(object);
   return node->getName();
 }
 
-bool ITermNodeDescriptor::getBBox(std::any object, odb::Rect& bbox) const
+bool ITermNodeDescriptor::getBBox(const std::any& object, odb::Rect& bbox) const
 {
   auto node = std::any_cast<ITermNode*>(object);
   bbox = node->getShape();
@@ -164,7 +171,7 @@ bool ITermNodeDescriptor::getBBox(std::any object, odb::Rect& bbox) const
 }
 
 gui::Descriptor::Properties ITermNodeDescriptor::getProperties(
-    std::any object) const
+    const std::any& object) const
 {
   auto node = std::any_cast<ITermNode*>(object);
 
@@ -176,7 +183,7 @@ gui::Descriptor::Properties ITermNodeDescriptor::getProperties(
   return props;
 }
 
-gui::Selected ITermNodeDescriptor::makeSelected(std::any object) const
+gui::Selected ITermNodeDescriptor::makeSelected(const std::any& object) const
 {
   if (auto node = std::any_cast<ITermNode*>(&object)) {
     return gui::Selected(*node, this);
@@ -184,14 +191,14 @@ gui::Selected ITermNodeDescriptor::makeSelected(std::any object) const
   return gui::Selected();
 }
 
-bool ITermNodeDescriptor::lessThan(std::any l, std::any r) const
+bool ITermNodeDescriptor::lessThan(const std::any& l, const std::any& r) const
 {
   auto l_node = std::any_cast<ITermNode*>(l);
   auto r_node = std::any_cast<ITermNode*>(r);
   return l_node->compare(r_node);
 }
 
-void ITermNodeDescriptor::highlight(std::any object,
+void ITermNodeDescriptor::highlight(const std::any& object,
                                     gui::Painter& painter) const
 {
   auto node = std::any_cast<ITermNode*>(object);
@@ -206,13 +213,13 @@ BPinNodeDescriptor::BPinNodeDescriptor(
 {
 }
 
-std::string BPinNodeDescriptor::getName(std::any object) const
+std::string BPinNodeDescriptor::getName(const std::any& object) const
 {
   auto node = std::any_cast<BPinNode*>(object);
   return node->getName();
 }
 
-bool BPinNodeDescriptor::getBBox(std::any object, odb::Rect& bbox) const
+bool BPinNodeDescriptor::getBBox(const std::any& object, odb::Rect& bbox) const
 {
   auto node = std::any_cast<BPinNode*>(object);
   bbox = node->getShape();
@@ -220,7 +227,7 @@ bool BPinNodeDescriptor::getBBox(std::any object, odb::Rect& bbox) const
 }
 
 gui::Descriptor::Properties BPinNodeDescriptor::getProperties(
-    std::any object) const
+    const std::any& object) const
 {
   auto node = std::any_cast<BPinNode*>(object);
 
@@ -232,7 +239,7 @@ gui::Descriptor::Properties BPinNodeDescriptor::getProperties(
   return props;
 }
 
-gui::Selected BPinNodeDescriptor::makeSelected(std::any object) const
+gui::Selected BPinNodeDescriptor::makeSelected(const std::any& object) const
 {
   if (auto node = std::any_cast<BPinNode*>(&object)) {
     return gui::Selected(*node, this);
@@ -240,14 +247,15 @@ gui::Selected BPinNodeDescriptor::makeSelected(std::any object) const
   return gui::Selected();
 }
 
-bool BPinNodeDescriptor::lessThan(std::any l, std::any r) const
+bool BPinNodeDescriptor::lessThan(const std::any& l, const std::any& r) const
 {
   auto l_node = std::any_cast<BPinNode*>(l);
   auto r_node = std::any_cast<BPinNode*>(r);
   return l_node->compare(r_node);
 }
 
-void BPinNodeDescriptor::highlight(std::any object, gui::Painter& painter) const
+void BPinNodeDescriptor::highlight(const std::any& object,
+                                   gui::Painter& painter) const
 {
   auto node = std::any_cast<BPinNode*>(object);
   NodeDescriptor::highlight(static_cast<Node*>(node), painter);
@@ -261,13 +269,14 @@ ConnectionDescriptor::ConnectionDescriptor(
 {
 }
 
-std::string ConnectionDescriptor::getName(std::any object) const
+std::string ConnectionDescriptor::getName(const std::any& object) const
 {
   auto conn = std::any_cast<Connection*>(object);
   return conn->getNode0()->getName() + "->" + conn->getNode1()->getName();
 }
 
-bool ConnectionDescriptor::getBBox(std::any object, odb::Rect& bbox) const
+bool ConnectionDescriptor::getBBox(const std::any& object,
+                                   odb::Rect& bbox) const
 {
   auto conn = std::any_cast<Connection*>(object);
   bbox = odb::Rect(conn->getNode0()->getPoint(), conn->getNode1()->getPoint());
@@ -275,7 +284,7 @@ bool ConnectionDescriptor::getBBox(std::any object, odb::Rect& bbox) const
 }
 
 gui::Descriptor::Properties ConnectionDescriptor::getProperties(
-    std::any object) const
+    const std::any& object) const
 {
   auto conn = std::any_cast<Connection*>(object);
 
@@ -328,7 +337,7 @@ gui::Descriptor::Properties ConnectionDescriptor::getProperties(
   return props;
 }
 
-gui::Selected ConnectionDescriptor::makeSelected(std::any object) const
+gui::Selected ConnectionDescriptor::makeSelected(const std::any& object) const
 {
   if (auto conn = std::any_cast<Connection*>(&object)) {
     return gui::Selected(*conn, this);
@@ -336,14 +345,14 @@ gui::Selected ConnectionDescriptor::makeSelected(std::any object) const
   return gui::Selected();
 }
 
-bool ConnectionDescriptor::lessThan(std::any l, std::any r) const
+bool ConnectionDescriptor::lessThan(const std::any& l, const std::any& r) const
 {
   auto l_conn = std::any_cast<Connection*>(l);
   auto r_conn = std::any_cast<Connection*>(r);
   return l_conn->compare(r_conn);
 }
 
-void ConnectionDescriptor::highlight(std::any object,
+void ConnectionDescriptor::highlight(const std::any& object,
                                      gui::Painter& painter) const
 {
   auto conn = std::any_cast<Connection*>(object);
@@ -355,22 +364,22 @@ void ConnectionDescriptor::highlight(std::any object,
 DebugGui::DebugGui(IRNetwork* network)
     : network_(network),
       control_group_("PSM: " + network_->getNet()->getName()),
-      shape_color_(gui::Painter::white),
-      node_color_(gui::Painter::cyan),
-      src_node_color_(gui::Painter::magenta),
-      iterm_node_color_(gui::Painter::red),
-      bpin_node_color_(gui::Painter::blue),
-      connection_color_(gui::Painter::yellow),
-      term_connection_color_(gui::Painter::red),
+      shape_color_(gui::Painter::kWhite),
+      node_color_(gui::Painter::kCyan),
+      src_node_color_(gui::Painter::kMagenta),
+      iterm_node_color_(gui::Painter::kRed),
+      bpin_node_color_(gui::Painter::kBlue),
+      connection_color_(gui::Painter::kYellow),
+      term_connection_color_(gui::Painter::kRed),
       found_select_(false)
 {
-  addDisplayControl(shapes_text_, true);
-  addDisplayControl(nodes_text_, true);
-  addDisplayControl(iterm_nodes_text_, true);
-  addDisplayControl(bpin_nodes_text_, true);
-  addDisplayControl(connectivity_text_, true);
-  addDisplayControl(source_text_, true);
-  addDisplayControl(source_shape_text_, true);
+  addDisplayControl(kShapesText, true);
+  addDisplayControl(kNodesText, true);
+  addDisplayControl(kItermNodesText, true);
+  addDisplayControl(kBpinNodesText, true);
+  addDisplayControl(kConnectivityText, true);
+  addDisplayControl(kSourceText, true);
+  addDisplayControl(kSourceShapeText, true);
 
   gui::Gui::get()->registerRenderer(this);
 }
@@ -457,7 +466,7 @@ void DebugGui::drawShape(const Shape* shape, gui::Painter& painter) const
   const bool bold = isSelected(shape);
   if (bold) {
     painter.saveState();
-    painter.setPen(shape_color_, /* cosmetic */ true, bold_multiplier_);
+    painter.setPen(shape_color_, /* cosmetic */ true, kBoldMultiplier);
   }
   painter.drawRect(shape->getShape());
   if (bold) {
@@ -472,11 +481,10 @@ void DebugGui::drawNode(const Node* node,
   const bool bold = isSelected(node);
   if (bold) {
     painter.saveState();
-    painter.setPen(
-        color, /* cosmetic */ true, node_pen_width_ * bold_multiplier_);
+    painter.setPen(color, /* cosmetic */ true, kNodePenWidth * kBoldMultiplier);
   }
   const odb::Point& pt = node->getPoint();
-  painter.drawCircle(pt.getX(), pt.getY(), node_size_);
+  painter.drawCircle(pt.getX(), pt.getY(), kNodeSize);
   if (bold) {
     painter.restoreState();
   }
@@ -491,7 +499,7 @@ void DebugGui::drawConnection(const Connection* connection,
       = is_terminal_connection ? term_connection_color_ : connection_color_;
   const bool bold = isSelected(connection);
   if (bold) {
-    painter.setPen(color, /* cosmetic */ true, bold_multiplier_);
+    painter.setPen(color, /* cosmetic */ true, kBoldMultiplier);
   } else {
     painter.setPen(color, /* cosmetic */ true);
   }
@@ -500,7 +508,7 @@ void DebugGui::drawConnection(const Connection* connection,
 
   if (connection->isVia()) {
     // draw an X to indicate cross layer connection
-    painter.drawX(pt.getX(), pt.getY(), via_size_);
+    painter.drawX(pt.getX(), pt.getY(), kViaSize);
   } else {
     const Node* other = connection->getOtherNode(node);
     painter.drawLine(pt, other->getPoint());
@@ -510,8 +518,8 @@ void DebugGui::drawConnection(const Connection* connection,
 void DebugGui::drawSource(const Node* node, gui::Painter& painter) const
 {
   const int src_node_size
-      = std::max(src_node_max_size_,
-                 static_cast<int>(static_cast<double>(src_node_max_size_)
+      = std::max(kSrcNodeMaxSize,
+                 static_cast<int>(static_cast<double>(kSrcNodeMaxSize)
                                   / painter.getPixelsPerDBU()));
 
   const odb::Point& pt = node->getPoint();
@@ -527,7 +535,7 @@ void DebugGui::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
 {
   const odb::Rect& rect = painter.getBounds();
 
-  if (checkDisplayControl(shapes_text_)) {
+  if (checkDisplayControl(kShapesText)) {
     painter.setPen(shape_color_, /* cosmetic */ true);
 
     for (auto shape_itr
@@ -538,8 +546,8 @@ void DebugGui::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
     }
   }
 
-  if (checkDisplayControl(nodes_text_)) {
-    painter.setPen(node_color_, /* cosmetic */ true, node_pen_width_);
+  if (checkDisplayControl(kNodesText)) {
+    painter.setPen(node_color_, /* cosmetic */ true, kNodePenWidth);
 
     for (auto node_itr
          = nodes_[layer].qbegin(boost::geometry::index::intersects(rect));
@@ -549,8 +557,8 @@ void DebugGui::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
     }
   }
 
-  if (checkDisplayControl(iterm_nodes_text_)) {
-    painter.setPen(iterm_node_color_, /* cosmetic */ true, node_pen_width_);
+  if (checkDisplayControl(kItermNodesText)) {
+    painter.setPen(iterm_node_color_, /* cosmetic */ true, kNodePenWidth);
 
     for (auto node_itr
          = iterm_nodes_[layer].qbegin(boost::geometry::index::intersects(rect));
@@ -560,8 +568,8 @@ void DebugGui::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
     }
   }
 
-  if (checkDisplayControl(bpin_nodes_text_)) {
-    painter.setPen(bpin_node_color_, /* cosmetic */ true, node_pen_width_);
+  if (checkDisplayControl(kBpinNodesText)) {
+    painter.setPen(bpin_node_color_, /* cosmetic */ true, kNodePenWidth);
 
     for (auto node_itr
          = bpin_nodes_[layer].qbegin(boost::geometry::index::intersects(rect));
@@ -571,7 +579,7 @@ void DebugGui::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
     }
   }
 
-  if (checkDisplayControl(connectivity_text_)) {
+  if (checkDisplayControl(kConnectivityText)) {
     for (auto conn_itr
          = connections_[layer].qbegin(boost::geometry::index::intersects(rect));
          conn_itr != connections_[layer].qend();
@@ -580,7 +588,7 @@ void DebugGui::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
     }
   }
 
-  if (checkDisplayControl(source_shape_text_)) {
+  if (checkDisplayControl(kSourceShapeText)) {
     gui::Painter::Color color = src_node_color_;
     color.a = 100;
     painter.setPen(color, /* cosmetic */ true, 1);
@@ -593,8 +601,8 @@ void DebugGui::drawLayer(odb::dbTechLayer* layer, gui::Painter& painter)
     }
   }
 
-  if (checkDisplayControl(source_text_)) {
-    painter.setPen(src_node_color_, /* cosmetic */ true, node_pen_width_);
+  if (checkDisplayControl(kSourceText)) {
+    painter.setPen(src_node_color_, /* cosmetic */ true, kNodePenWidth);
 
     for (auto node_itr
          = sources_[layer].qbegin(boost::geometry::index::intersects(rect));
@@ -618,7 +626,7 @@ gui::SelectionSet DebugGui::select(odb::dbTechLayer* layer,
   } else {
     gui::SelectionSet selection;
 
-    if (checkDisplayControl(shapes_text_)) {
+    if (checkDisplayControl(kShapesText)) {
       for (auto shape_itr
            = shapes_[layer].qbegin(boost::geometry::index::intersects(region));
            shape_itr != shapes_[layer].qend();
@@ -626,7 +634,7 @@ gui::SelectionSet DebugGui::select(odb::dbTechLayer* layer,
         selected_shapes_.insert(*shape_itr);
       }
     }
-    if (checkDisplayControl(nodes_text_)) {
+    if (checkDisplayControl(kNodesText)) {
       for (auto node_itr
            = nodes_[layer].qbegin(boost::geometry::index::intersects(region));
            node_itr != nodes_[layer].qend();
@@ -635,7 +643,7 @@ gui::SelectionSet DebugGui::select(odb::dbTechLayer* layer,
         selection.insert(gui::Gui::get()->makeSelected(*node_itr));
       }
     }
-    if (checkDisplayControl(iterm_nodes_text_)) {
+    if (checkDisplayControl(kItermNodesText)) {
       for (auto node_itr = iterm_nodes_[layer].qbegin(
                boost::geometry::index::intersects(region));
            node_itr != iterm_nodes_[layer].qend();
@@ -644,7 +652,7 @@ gui::SelectionSet DebugGui::select(odb::dbTechLayer* layer,
         selection.insert(gui::Gui::get()->makeSelected(*node_itr));
       }
     }
-    if (checkDisplayControl(bpin_nodes_text_)) {
+    if (checkDisplayControl(kBpinNodesText)) {
       for (auto node_itr = bpin_nodes_[layer].qbegin(
                boost::geometry::index::intersects(region));
            node_itr != bpin_nodes_[layer].qend();
@@ -653,7 +661,7 @@ gui::SelectionSet DebugGui::select(odb::dbTechLayer* layer,
         selection.insert(gui::Gui::get()->makeSelected(*node_itr));
       }
     }
-    if (checkDisplayControl(connectivity_text_)) {
+    if (checkDisplayControl(kConnectivityText)) {
       for (auto conn_itr = connections_[layer].qbegin(
                boost::geometry::index::intersects(region));
            conn_itr != connections_[layer].qend();

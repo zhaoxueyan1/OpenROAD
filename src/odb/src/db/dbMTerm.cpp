@@ -3,13 +3,17 @@
 
 #include "dbMTerm.h"
 
-#include <spdlog/fmt/ostr.h>
+#include <string.h>
 
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "dbCore.h"
 #include "dbDatabase.h"
+#include "dbHashTable.hpp"
 #include "dbLib.h"
 #include "dbMPinItr.h"
 #include "dbMaster.h"
@@ -17,7 +21,11 @@
 #include "dbTable.hpp"
 #include "dbTechLayerAntennaRule.h"
 #include "odb/db.h"
+#include "odb/dbSet.h"
+#include "odb/dbTypes.h"
+#include "odb/geom.h"
 #include "odb/lefout.h"
+#include "spdlog/fmt/ostr.h"
 
 namespace odb {
 
@@ -447,7 +455,6 @@ dbMTerm* dbMTerm::create(dbMaster* master,
 
   _dbMTerm* impl = master_impl->_mterm_tbl->create();
   impl->_name = strdup(name);
-  ZALLOCATED(impl->_name);
   impl->_flags._io_type = io_type.getValue();
   impl->_flags._shape_type = shape_type;
   master_impl->_mterm_hash.insert(impl);

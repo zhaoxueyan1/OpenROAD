@@ -10,24 +10,10 @@
 
 #include "odb/db.h"
 #include "odb/dbShape.h"
+#include "odb/geom.h"
 #include "utl/Logger.h"
 
 namespace odb {
-
-definFill::definFill()
-{
-  _cur_layer = nullptr;
-}
-
-definFill::~definFill()
-{
-}
-
-void definFill::init()
-{
-  definBase::init();
-  _cur_layer = nullptr;
-}
 
 void definFill::fillBegin(const char* layer, bool needs_opc, int mask_number)
 {

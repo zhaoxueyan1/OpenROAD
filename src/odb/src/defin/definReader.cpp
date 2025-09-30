@@ -3,15 +3,18 @@
 
 #include "definReader.h"
 
-#include <boost/algorithm/string/replace.hpp>
+#include <cassert>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
-#include <iostream>
+#include <cstring>
 #include <optional>
 #include <string>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
+#include "boost/algorithm/string/replace.hpp"
 #include "definBlockage.h"
 #include "definComponent.h"
 #include "definComponentMaskShift.h"
@@ -30,7 +33,11 @@
 #include "definVia.h"
 #include "defzlib.hpp"
 #include "odb/db.h"
+#include "odb/dbSet.h"
 #include "odb/dbShape.h"
+#include "odb/dbTypes.h"
+#include "odb/defin.h"
+#include "odb/geom.h"
 #include "utl/Logger.h"
 
 #define UNSUPPORTED(msg)              \
@@ -167,39 +174,6 @@ definReader::definReader(dbDatabase* db, utl::Logger* logger, defin::MODE mode)
   definBase::setLogger(logger);
   definBase::setMode(mode);
 
-  _blockageR = std::make_unique<definBlockage>();
-  _componentR = std::make_unique<definComponent>();
-  _componentMaskShift = std::make_unique<definComponentMaskShift>();
-  _fillR = std::make_unique<definFill>();
-  _gcellR = std::make_unique<definGCell>();
-  _netR = std::make_unique<definNet>();
-  _pinR = std::make_unique<definPin>();
-  _rowR = std::make_unique<definRow>();
-  _snetR = std::make_unique<definSNet>();
-  _tracksR = std::make_unique<definTracks>();
-  _viaR = std::make_unique<definVia>();
-  _regionR = std::make_unique<definRegion>();
-  _groupR = std::make_unique<definGroup>();
-  _non_default_ruleR = std::make_unique<definNonDefaultRule>();
-  _prop_defsR = std::make_unique<definPropDefs>();
-  _pin_propsR = std::make_unique<definPinProps>();
-
-  _interfaces.push_back(_blockageR.get());
-  _interfaces.push_back(_componentR.get());
-  _interfaces.push_back(_componentMaskShift.get());
-  _interfaces.push_back(_fillR.get());
-  _interfaces.push_back(_gcellR.get());
-  _interfaces.push_back(_netR.get());
-  _interfaces.push_back(_pinR.get());
-  _interfaces.push_back(_rowR.get());
-  _interfaces.push_back(_snetR.get());
-  _interfaces.push_back(_tracksR.get());
-  _interfaces.push_back(_viaR.get());
-  _interfaces.push_back(_regionR.get());
-  _interfaces.push_back(_groupR.get());
-  _interfaces.push_back(_non_default_ruleR.get());
-  _interfaces.push_back(_prop_defsR.get());
-  _interfaces.push_back(_pin_propsR.get());
   init();
 }
 
@@ -257,13 +231,32 @@ void definReader::useBlockName(const char* name)
 
 void definReader::init()
 {
-  std::vector<definBase*>::iterator itr;
-  for (itr = _interfaces.begin(); itr != _interfaces.end(); ++itr) {
-    (*itr)->init();
-    (*itr)->setLogger(_logger);
-    (*itr)->setMode(_mode);
-  }
-  _update = false;
+  auto make = [this](auto& interface) {
+    using PtrType = std::remove_reference_t<decltype(interface)>;
+    using Type = typename PtrType::element_type;
+    interface = std::make_unique<Type>();
+    interface->setLogger(_logger);
+    interface->setMode(_mode);
+    _interfaces.push_back(interface.get());
+  };
+
+  _interfaces.clear();
+  make(_blockageR);
+  make(_componentR);
+  make(_componentMaskShift);
+  make(_fillR);
+  make(_gcellR);
+  make(_netR);
+  make(_pinR);
+  make(_rowR);
+  make(_snetR);
+  make(_tracksR);
+  make(_viaR);
+  make(_regionR);
+  make(_groupR);
+  make(_non_default_ruleR);
+  make(_prop_defsR);
+  make(_pin_propsR);
 }
 
 void definReader::setTech(dbTech* tech)
@@ -303,22 +296,6 @@ static void handle_props(DEF_TYPE* def_obj, CALLBACK* callback)
       case 'Q':
         callback->property(def_obj->propName(i), def_obj->propValue(i));
         break;
-    }
-  }
-}
-
-static std::string renameBlock(dbBlock* parent, const char* old_name)
-{
-  int cnt = 1;
-
-  for (;; ++cnt) {
-    char n[16];
-    snprintf(n, 15, "_%d", cnt);
-    std::string name(old_name);
-    name += n;
-
-    if (!parent->findChild(name.c_str())) {
-      return name;
     }
   }
 }
@@ -373,37 +350,11 @@ int definReader::designCallback(
   } else {
     block_name = design;
   }
-  if (reader->parent_ != nullptr) {
-    if (reader->parent_->findChild(block_name.c_str())) {
-      if (reader->_mode != defin::DEFAULT) {
-        reader->_block = reader->parent_->findChild(block_name.c_str());
-      } else {
-        std::string new_name = renameBlock(reader->parent_, block_name.c_str());
-        reader->_logger->warn(
-            utl::ODB,
-            261,
-            "Block with name \"{}\" already exists, renaming too \"{}\"",
-            block_name.c_str(),
-            new_name.c_str());
-        reader->_block = dbBlock::create(reader->parent_,
-                                         new_name.c_str(),
-                                         reader->_tech,
-                                         reader->hier_delimiter_);
-      }
-    } else {
-      reader->_block = dbBlock::create(reader->parent_,
-                                       block_name.c_str(),
-                                       reader->_tech,
-                                       reader->hier_delimiter_);
-    }
+  if (reader->_mode != defin::DEFAULT) {
+    reader->_block = reader->chip_->getBlock();
   } else {
-    dbChip* chip = reader->_db->getChip();
-    if (reader->_mode != defin::DEFAULT) {
-      reader->_block = chip->getBlock();
-    } else {
-      reader->_block = dbBlock::create(
-          chip, block_name.c_str(), reader->_tech, reader->hier_delimiter_);
-    }
+    reader->_block = dbBlock::create(
+        reader->chip_, block_name.c_str(), reader->hier_delimiter_);
   }
   if (reader->_mode == defin::DEFAULT) {
     reader->_block->setBusDelimiters(reader->left_bus_delimiter_,
@@ -1441,6 +1392,12 @@ int definReader::scanchainsCallback(
                        out_pin_name,
                        bits[i]);
     }
+
+    dbSet<dbScanInst> db_scan_insts = db_scan_list->getScanInsts();
+
+    if (db_scan_insts.reversible() && db_scan_insts.orderReversed()) {
+      db_scan_insts.reverse();
+    }
   }
 
   return PARSE_OK;
@@ -1503,6 +1460,7 @@ int definReader::unitsCallback(DefParser::defrCallbackType_e type,
                                DefParser::defiUserData data)
 {
   definReader* reader = (definReader*) data;
+  CHECKBLOCK
 
   // Truncation error
   if (d > reader->_tech->getDbUnitsPerMicron()) {
@@ -1521,9 +1479,7 @@ int definReader::unitsCallback(DefParser::defrCallbackType_e type,
     (*itr)->units(d);
   }
 
-  if (!reader->_update) {
-    reader->_block->setDefUnits(d);
-  }
+  reader->_block->setDefUnits(d);
   return PARSE_OK;
 }
 
@@ -1849,31 +1805,28 @@ void definReader::setLibs(std::vector<dbLib*>& lib_names)
   _rowR->setLibs(lib_names);
 }
 
-dbChip* definReader::createChip(std::vector<dbLib*>& libs,
-                                const char* file,
-                                odb::dbTech* tech)
+void definReader::readChip(std::vector<dbLib*>& libs,
+                           const char* file,
+                           dbChip* chip)
 {
   init();
   setLibs(libs);
-  dbChip* chip = _db->getChip();
-  if (_mode != defin::DEFAULT) {
-    if (chip == nullptr) {
-      _logger->error(utl::ODB, 250, "Chip does not exist");
-    }
-  } else if (chip != nullptr) {
-    _logger->error(utl::ODB, 251, "Chip already exists");
-  } else {
-    chip = dbChip::create(_db);
+  chip_ = chip;
+  if (chip_ == nullptr) {
+    _logger->error(utl::ODB, 250, "Chip does not exist");
+  }
+  if (_mode == defin::DEFAULT && chip_->getBlock() != nullptr) {
+    _logger->error(utl::ODB, 251, "Chip already has a block");
   }
 
-  assert(chip);
-  setTech(tech);
+  assert(chip_);
+  setTech(chip_->getTech());
   _logger->info(utl::ODB, 127, "Reading DEF file: {}", file);
 
   if (!createBlock(file)) {
     dbChip::destroy(chip);
     _logger->warn(utl::ODB, 129, "Error: Failed to read DEF file");
-    return nullptr;
+    return;
   }
 
   if (_pinR->_bterm_cnt) {
@@ -1924,60 +1877,6 @@ dbChip* definReader::createChip(std::vector<dbLib*>& libs,
   _logger->info(utl::ODB, 134, "Finished DEF file: {}", file);
 
   _db->triggerPostReadDef(_block, _mode == defin::FLOORPLAN);
-
-  return chip;
-}
-
-dbBlock* definReader::createBlock(dbBlock* parent,
-                                  std::vector<dbLib*>& libs,
-                                  const char* def_file,
-                                  odb::dbTech* tech)
-{
-  init();
-  setLibs(libs);
-  parent_ = parent;
-  setTech(tech);
-  _logger->info(utl::ODB, 135, "Reading DEF file: {}", def_file);
-
-  if (!createBlock(def_file)) {
-    dbBlock::destroy(_block);
-    _logger->warn(utl::ODB, 137, "Error: Failed to read DEF file");
-    return nullptr;
-  }
-
-  if (_pinR->_bterm_cnt) {
-    _logger->info(utl::ODB, 138, "    Created {} pins.", _pinR->_bterm_cnt);
-  }
-
-  if (_componentR->_inst_cnt) {
-    _logger->info(utl::ODB,
-                  139,
-                  "    Created {} components and {} component-terminals.",
-                  _componentR->_inst_cnt,
-                  _componentR->_iterm_cnt);
-  }
-
-  if (_snetR->_snet_cnt) {
-    _logger->info(utl::ODB,
-                  140,
-                  "    Created {} special nets and {} connections.",
-                  _snetR->_snet_cnt,
-                  _snetR->_snet_iterm_cnt);
-  }
-
-  if (_netR->_net_cnt) {
-    _logger->info(utl::ODB,
-                  141,
-                  "    Created {} nets and {} connections.",
-                  _netR->_net_cnt,
-                  _netR->_net_iterm_cnt);
-  }
-
-  _logger->info(utl::ODB, 142, "Finished DEF file: {}", def_file);
-
-  _db->triggerPostReadDef(_block, _mode == defin::FLOORPLAN);
-
-  return _block;
 }
 
 static inline bool hasSuffix(const std::string& str, const std::string& suffix)

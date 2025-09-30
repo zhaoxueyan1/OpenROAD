@@ -3,17 +3,18 @@
 
 #include "Opt.hh"
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/register/point.hpp>
-#include <boost/geometry/index/rtree.hpp>
 #include <cstddef>
-#include <iostream>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
 
 #include "ClockDomain.hh"
+#include "boost/geometry/geometries/register/point.hpp"
+#include "boost/geometry/geometry.hpp"
+#include "boost/geometry/index/rtree.hpp"
+#include "utl/Logger.h"
 
 namespace bg = boost::geometry;
 namespace bgi = boost::geometry::index;
@@ -44,8 +45,8 @@ void OptimizeScanWirelength(std::vector<std::unique_ptr<ScanCell>>& cells,
   size_t start_index = 0;
   int64_t lowest_dist = std::numeric_limits<int64_t>::max();
   // Get points in a form ready to insert into index
-  using bg_point = bg::model::point<int, 2, bg::cs::cartesian>;
-  std::vector<std::pair<bg_point, size_t>> transformed;
+  using Point = bg::model::point<int, 2, bg::cs::cartesian>;
+  std::vector<std::pair<Point, size_t>> transformed;
 
   for (size_t i = 0; i < cells.size(); i++) {
     // Find the lower leftmost cell by looking for the cell with the lowest
@@ -57,10 +58,10 @@ void OptimizeScanWirelength(std::vector<std::unique_ptr<ScanCell>>& cells,
       lowest_dist = dist;
     }
     // Add the point to the set of points
-    transformed.emplace_back(bg_point(origin.x(), origin.y()), i);
+    transformed.emplace_back(Point(origin.x(), origin.y()), i);
   }
   // Update the index
-  bgi::rtree<std::pair<bg_point, size_t>, bgi::rstar<4>> rtree(transformed);
+  bgi::rtree<std::pair<Point, size_t>, bgi::rstar<4>> rtree(transformed);
   auto cursor = transformed[start_index];
 
   // Search nearest neighbours

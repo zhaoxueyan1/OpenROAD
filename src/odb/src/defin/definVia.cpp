@@ -3,31 +3,18 @@
 
 #include "definVia.h"
 
+#include <cassert>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 
 #include "odb/db.h"
+#include "odb/dbSet.h"
 #include "odb/dbShape.h"
+#include "odb/dbTypes.h"
 #include "utl/Logger.h"
 
 namespace odb {
-
-definVia::definVia()
-{
-  init();
-}
-
-definVia::~definVia()
-{
-}
-
-void definVia::init()
-{
-  definBase::init();
-  _cur_via = nullptr;
-  _params = nullptr;
-}
 
 void definVia::viaBegin(const char* name)
 {

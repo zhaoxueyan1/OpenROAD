@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2025, The OpenROAD Authors
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel:python_wrap_cc.bzl", "python_wrap_cc")
 load("//bazel:tcl_encode_or.bzl", "tcl_encode")
 load("//bazel:tcl_wrap_cc.bzl", "tcl_wrap_cc")
 
@@ -14,23 +16,46 @@ cc_library(
     srcs = [
         "src/example.cpp",
         "src/observer.h",
-        "src/graphics.h",
-        "src/graphics.cpp",
-        "src/MakeExample.cpp",
     ],
     hdrs = [
-        "include/exa/MakeExample.h",
         "include/exa/example.h",
     ],
     includes = [
         "include",
-        "src",
     ],
     deps = [
+        "//src/odb",
+        "//src/utl",
+        "@tk_tcl//:tcl",
+    ],
+)
+
+cc_library(
+    name = "ui",
+    srcs = [
+        "src/MakeExample.cpp",
+        "src/graphics.cpp",
+        "src/graphics.h",
+        "src/observer.h",
+        ":swig",
+        ":tcl",
+    ],
+    hdrs = [
+        "include/exa/MakeExample.h",
+    ],
+    copts = [
+        "-Isrc/exa/src",
+    ],
+    includes = [
+        "include",
+    ],
+    deps = [
+        ":exa",
         "//:ord",
         "//src/gui",
         "//src/odb",
         "//src/utl",
+        "@boost.stacktrace",
         "@tk_tcl//:tcl",
     ],
 )
@@ -58,5 +83,20 @@ tcl_wrap_cc(
     ],
     deps = [
         "//src/odb:swig",
+    ],
+)
+
+python_wrap_cc(
+    name = "swig-py",
+    srcs = [
+        "include/exa/example.h",
+        "src/example-py.i",
+        "//:error_swig-py",
+    ],
+    module = "exa_py",
+    root_swig_src = "src/example-py.i",
+    swig_includes = [
+        "include",
+        "src",
     ],
 )

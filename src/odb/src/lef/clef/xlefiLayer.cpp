@@ -33,6 +33,8 @@
 
 #define EXTERN extern "C"
 
+#include <cstdio>
+
 #include "lefiLayer.h"
 #include "lefiLayer.hpp"
 
@@ -707,7 +709,7 @@ double lefiLayer_propNumber(const ::lefiLayer* obj, int index)
   return ((LefParser::lefiLayer*) obj)->propNumber(index);
 }
 
-const char lefiLayer_propType(const ::lefiLayer* obj, int index)
+char lefiLayer_propType(const ::lefiLayer* obj, int index)
 {
   return ((const LefParser::lefiLayer*) obj)->propType(index);
 }

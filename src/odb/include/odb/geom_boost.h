@@ -6,12 +6,13 @@
 
 #pragma once
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/register/point.hpp>
-#include <boost/geometry/geometries/register/ring.hpp>
-#include <boost/polygon/polygon.hpp>
+#include <cstddef>
 #include <vector>
 
+#include "boost/geometry/geometries/register/point.hpp"
+#include "boost/geometry/geometries/register/ring.hpp"
+#include "boost/geometry/geometry.hpp"
+#include "boost/polygon/polygon.hpp"
 #include "odb/geom.h"
 
 // Make odb's Point work with boost polgyon
@@ -86,8 +87,8 @@ struct boost::polygon::rectangle_traits<odb::Rect>
   using coordinate_type = int;
   using interval_type = interval_data<int>;
 
-  static inline interval_type get(const odb::Rect& rectangle,
-                                  const orientation_2d& orient)
+  static interval_type get(const odb::Rect& rectangle,
+                           const orientation_2d& orient)
   {
     if (orient == HORIZONTAL) {
       return {rectangle.xMin(), rectangle.xMax()};
@@ -100,9 +101,9 @@ template <>
 struct boost::polygon::rectangle_mutable_traits<odb::Rect>
 {
   template <typename T2>
-  static inline void set(odb::Rect& rectangle,
-                         const orientation_2d& orient,
-                         const T2& interval)
+  static void set(odb::Rect& rectangle,
+                  const orientation_2d& orient,
+                  const T2& interval)
   {
     if (orient == HORIZONTAL) {
       rectangle.set_xlo(low(interval));
@@ -114,8 +115,8 @@ struct boost::polygon::rectangle_mutable_traits<odb::Rect>
   }
 
   template <typename T2, typename T3>
-  static inline odb::Rect construct(const T2& interval_horizontal,
-                                    const T3& interval_vertical)
+  static odb::Rect construct(const T2& interval_horizontal,
+                             const T3& interval_vertical)
   {
     return odb::Rect(low(interval_horizontal),
                      low(interval_vertical),
@@ -222,7 +223,7 @@ template <>
 struct exterior_ring<odb::Oct>
 {
   static std::vector<odb::Point> get(odb::Oct& o) { return o.getPoints(); }
-  static const std::vector<odb::Point> get(const odb::Oct& o)
+  static std::vector<odb::Point> get(const odb::Oct& o)
   {
     return o.getPoints();
   }
@@ -231,8 +232,8 @@ struct exterior_ring<odb::Oct>
 template <>
 struct interior_rings<odb::Oct>
 {
-  static std::vector<std::vector<odb::Point>> get(odb::Oct& o) { return {}; }
-  static const std::vector<std::vector<odb::Point>> get(const odb::Oct& o)
+  static std::vector<std::vector<odb::Point>> get(odb::Oct&) { return {}; }
+  static std::vector<std::vector<odb::Point>> get(const odb::Oct&)
   {
     return {};
   }
@@ -276,7 +277,7 @@ template <>
 struct exterior_ring<odb::Polygon>
 {
   static std::vector<odb::Point> get(odb::Polygon& p) { return p.getPoints(); }
-  static const std::vector<odb::Point> get(const odb::Polygon& p)
+  static std::vector<odb::Point> get(const odb::Polygon& p)
   {
     return p.getPoints();
   }
@@ -285,11 +286,8 @@ struct exterior_ring<odb::Polygon>
 template <>
 struct interior_rings<odb::Polygon>
 {
-  static std::vector<std::vector<odb::Point>> get(odb::Polygon& p)
-  {
-    return {};
-  }
-  static const std::vector<std::vector<odb::Point>> get(const odb::Polygon& p)
+  static std::vector<std::vector<odb::Point>> get(odb::Polygon&) { return {}; }
+  static std::vector<std::vector<odb::Point>> get(const odb::Polygon&)
   {
     return {};
   }

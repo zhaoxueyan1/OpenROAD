@@ -3,12 +3,18 @@
 
 #include "dbMaster.h"
 
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
 #include "dbBlock.h"
 #include "dbBox.h"
 #include "dbBoxItr.h"
+#include "dbCommon.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
+#include "dbHashTable.h"
 #include "dbHashTable.hpp"
 #include "dbLib.h"
 #include "dbMPin.h"
@@ -22,7 +28,11 @@
 #include "dbTable.hpp"
 #include "dbTechLayerAntennaRule.h"
 #include "odb/db.h"
+#include "odb/dbObject.h"
+#include "odb/dbSet.h"
 #include "odb/dbTransform.h"
+#include "odb/dbTypes.h"
+#include "odb/geom.h"
 #include "utl/Logger.h"
 
 namespace odb {
@@ -170,38 +180,31 @@ _dbMaster::_dbMaster(_dbDatabase* db)
   _id = 0;
   _name = nullptr;
 
-  _mterm_tbl = new dbTable<_dbMTerm>(
-      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbMTermObj, 4, 2);
+  _mterm_tbl = new dbTable<_dbMTerm, 4>(
+      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbMTermObj);
 
-  _mpin_tbl = new dbTable<_dbMPin>(
-      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbMPinObj, 4, 2);
+  _mpin_tbl = new dbTable<_dbMPin, 4>(
+      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbMPinObj);
 
-  _box_tbl = new dbTable<_dbBox>(
-      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbBoxObj, 8, 3);
+  _box_tbl = new dbTable<_dbBox, 8>(
+      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbBoxObj);
 
-  _poly_box_tbl = new dbTable<_dbPolygon>(
-      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbPolygonObj, 8, 3);
+  _poly_box_tbl = new dbTable<_dbPolygon, 8>(
+      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbPolygonObj);
 
-  _antenna_pin_model_tbl = new dbTable<_dbTechAntennaPinModel>(
+  _antenna_pin_model_tbl = new dbTable<_dbTechAntennaPinModel, 8>(
       db,
       this,
       (GetObjTbl_t) &_dbMaster::getObjectTable,
-      dbTechAntennaPinModelObj,
-      8,
-      3);
-  edge_types_tbl_
-      = new dbTable<_dbMasterEdgeType>(db,
-                                       this,
-                                       (GetObjTbl_t) &_dbMaster::getObjectTable,
-                                       dbMasterEdgeTypeObj,
-                                       8,
-                                       3);
+      dbTechAntennaPinModelObj);
+  edge_types_tbl_ = new dbTable<_dbMasterEdgeType, 8>(
+      db, this, (GetObjTbl_t) &_dbMaster::getObjectTable, dbMasterEdgeTypeObj);
 
-  _box_itr = new dbBoxItr(_box_tbl, _poly_box_tbl, true);
+  _box_itr = new dbBoxItr<8>(_box_tbl, _poly_box_tbl, true);
 
   _pbox_itr = new dbPolygonItr(_poly_box_tbl);
 
-  _pbox_box_itr = new dbBoxItr(_box_tbl, _poly_box_tbl, false);
+  _pbox_box_itr = new dbBoxItr<8>(_box_tbl, _poly_box_tbl, false);
 
   _mpin_itr = new dbMPinItr(_mpin_tbl);
 
@@ -287,7 +290,7 @@ dbIStream& operator>>(dbIStream& stream, _dbMaster& master)
   stream >> *master._mpin_tbl;
   if (!db->isSchema(db_rm_target)) {
     // obsolete table is always unpopulated so type/values unimportant
-    dbTable<_dbMaster> dummy(nullptr, nullptr, nullptr, dbDatabaseObj);
+    dbTable<_dbMaster, 4> dummy(nullptr, nullptr, nullptr, dbDatabaseObj);
     stream >> dummy;
   }
   stream >> *master._box_tbl;
@@ -675,8 +678,7 @@ dbMaster* dbMaster::create(dbLib* lib_, const char* name_)
   _dbLib* lib = (_dbLib*) lib_;
   _dbDatabase* db = lib->getDatabase();
   _dbMaster* master = lib->_master_tbl->create();
-  master->_name = strdup(name_);
-  ZALLOCATED(master->_name);
+  master->_name = safe_strdup(name_);
   master->_id = db->_master_id++;
   lib->_master_hash.insert(master);
   return (dbMaster*) master;

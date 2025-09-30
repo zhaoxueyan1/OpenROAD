@@ -7,11 +7,11 @@
 #include <map>
 
 #include "dbCore.h"
+#include "dbVector.h"
 #include "odb/db.h"
+#include "odb/dbId.h"
 #include "odb/odb.h"
 // User Code Begin Includes
-#include <map>
-
 #include "dbVector.h"
 #include "odb/dbMatrix.h"
 // User Code End Includes

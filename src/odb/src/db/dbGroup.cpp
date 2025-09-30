@@ -449,8 +449,7 @@ dbGroup* dbGroup::create(dbBlock* block, const char* name)
     return nullptr;
   }
   _dbGroup* _group = _block->_group_tbl->create();
-  _group->_name = strdup(name);
-  ZALLOCATED(_group->_name);
+  _group->_name = safe_strdup(name);
   _group->flags_._type = dbGroupType::PHYSICAL_CLUSTER;
   _block->_group_hash.insert(_group);
   return (dbGroup*) _group;
@@ -464,8 +463,7 @@ dbGroup* dbGroup::create(dbGroup* parent, const char* name)
     return nullptr;
   }
   _dbGroup* _group = _block->_group_tbl->create();
-  _group->_name = strdup(name);
-  ZALLOCATED(_group->_name);
+  _group->_name = safe_strdup(name);
   _group->flags_._type = dbGroupType::PHYSICAL_CLUSTER;
   _block->_group_hash.insert(_group);
   parent->addGroup((dbGroup*) _group);
@@ -480,8 +478,7 @@ dbGroup* dbGroup::create(dbRegion* region, const char* name)
     return nullptr;
   }
   _dbGroup* _group = _block->_group_tbl->create();
-  _group->_name = strdup(name);
-  ZALLOCATED(_group->_name);
+  _group->_name = safe_strdup(name);
   _group->flags_._type = dbGroupType::PHYSICAL_CLUSTER;
   _block->_group_hash.insert(_group);
   region->addGroup((dbGroup*) _group);
@@ -492,17 +489,17 @@ void dbGroup::destroy(dbGroup* group)
 {
   _dbGroup* _group = (_dbGroup*) group;
   _dbBlock* block = (_dbBlock*) _group->getOwner();
-  for (auto inst : group->getInsts()) {
-    group->removeInst(inst);
+  while (!group->getInsts().empty()) {
+    group->removeInst(*group->getInsts().begin());
   }
   if (_group->region_.isValid()) {
     group->getRegion()->removeGroup(group);
   }
-  for (auto modinst : group->getModInsts()) {
-    group->removeModInst(modinst);
+  while (!group->getModInsts().empty()) {
+    group->removeModInst(*group->getModInsts().begin());
   }
-  for (auto child : group->getGroups()) {
-    group->removeGroup(child);
+  while (!group->getGroups().empty()) {
+    group->removeGroup(*group->getGroups().begin());
   }
   if (_group->_parent_group.isValid()) {
     group->getParentGroup()->removeGroup(group);

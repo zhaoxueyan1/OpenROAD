@@ -2,12 +2,12 @@
 // Copyright (c) 2023-2025, The OpenROAD Authors
 
 #pragma once
-#include <boost/serialization/base_object.hpp>
 #include <string>
 #include <vector>
 
+#include "boost/serialization/base_object.hpp"
+#include "distributed/paUpdate.h"
 #include "dst/JobMessage.h"
-#include "paUpdate.h"
 namespace boost::serialization {
 class access;
 }
@@ -26,7 +26,7 @@ class PinAccessJobDescription : public dst::JobDescription
   void setPath(const std::string& path) { path_ = path; }
   void setType(JobType in) { type_ = in; }
   JobType getType() const { return type_; }
-  const std::string getPath() const { return path_; }
+  const std::string& getPath() const { return path_; }
 
  private:
   std::string path_;

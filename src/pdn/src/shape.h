@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/index/rtree.hpp>
 #include <functional>
 #include <map>
 #include <memory>
@@ -12,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "boost/geometry/geometry.hpp"
+#include "boost/geometry/index/rtree.hpp"
 #include "odb/db.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
@@ -167,6 +167,7 @@ class Shape
   bool hasTermConnections() const;
   bool hasITermConnections() const { return !iterm_connections_.empty(); }
   bool hasBTermConnections() const { return !bterm_connections_.empty(); };
+  bool hasInternalConnections() const;
 
   // returns the smallest shape possible when attempting to trim
   virtual odb::Rect getMinimumRect() const;
@@ -201,9 +202,10 @@ class Shape
   std::string getReportText() const;
   static std::string getRectText(const odb::Rect& rect, double dbu_to_micron);
 
-  void writeToDb(odb::dbSWire* swire,
-                 bool add_pins,
-                 bool make_rect_as_pin) const;
+  std::vector<odb::dbBox*> writeToDb(odb::dbSWire* swire,
+                                     bool add_pins,
+                                     bool make_rect_as_pin) const;
+
   // copy existing shapes into the map
   static void populateMapFromDb(odb::dbNet* net, ShapeVectorMap& map);
 
@@ -242,7 +244,7 @@ class Shape
   std::set<odb::Rect> bterm_connections_;
 
   // add rect as bterm to database
-  void addBPinToDb(const odb::Rect& rect) const;
+  odb::dbBox* addBPinToDb(const odb::Rect& rect) const;
 
   void updateIBTermConnections(std::set<odb::Rect>& terms);
 

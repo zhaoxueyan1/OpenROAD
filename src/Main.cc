@@ -2,10 +2,11 @@
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include <libgen.h>
+#include <stdlib.h>  // NOLINT(modernize-deprecated-headers): for setenv()
+#include <strings.h>
 #include <tcl.h>
 
 #include <array>
-#include <boost/stacktrace.hpp>
 #include <climits>
 #include <clocale>
 #include <csignal>
@@ -21,6 +22,9 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <system_error>
+
+#include "boost/stacktrace/stacktrace.hpp"
 #ifdef ENABLE_READLINE
 // If you get an error on this include be sure you have
 //   the package tcl-tclreadline-devel installed
@@ -35,6 +39,7 @@
 #include <tclExtend.h>
 #endif
 
+#include "cut/abc_init.h"
 #include "gui/gui.h"
 #include "ord/Design.h"
 #include "ord/InitOpenRoad.hh"
@@ -69,6 +74,7 @@ using std::string;
   X(par)                                 \
   X(rcx)                                 \
   X(rmp)                                 \
+  X(cgt)                                 \
   X(stt)                                 \
   X(psm)                                 \
   X(pdn)                                 \
@@ -233,12 +239,14 @@ int ord::flow_OpenROAD(int argc, char* argv[])
 
   log_filename = findCmdLineKey(argc, argv, "-log");
   if (log_filename) {
-    remove(log_filename);
+    std::error_code err_ignore;
+    std::filesystem::remove(log_filename, err_ignore);
   }
 
   metrics_filename = findCmdLineKey(argc, argv, "-metrics");
   if (metrics_filename) {
-    remove(metrics_filename);
+    std::error_code err_ignored;
+    std::filesystem::remove(metrics_filename, err_ignored);
   }
 
   no_settings = findCmdLineFlag(argc, argv, "-no_settings");
@@ -273,6 +281,10 @@ int ord::flow_OpenROAD(int argc, char* argv[])
   // Set argc to 1 so Tcl_Main doesn't source any files.
   // Tcl_Main never returns.
   // Tcl_Main(1, argv, ord::tclAppInit);
+  // Tcl_Main(1, argv, ord::tclAppInit);
+
+  // cut::abcStop();
+
   return 0;
 }
 
@@ -321,12 +333,12 @@ std::string findPathToTclreadlineInit(Tcl_Interp* interp)
   //
   // Running Docker within a bazel isolated environment introduces lots of
   // problems and is not really done.
-  const char* tclScript = R"(
+  const char* tcl_script = R"(
       namespace eval temp {
         foreach dir $::auto_path {
             set folder [file join $dir]
             set path [file join $folder "tclreadline)" TCLRL_VERSION_STR
-                          R"(" "tclreadlineInit.tcl"]
+                           R"(" "tclreadlineInit.tcl"]
             if {[file exists $path]} {
                 return $path
             }
@@ -335,7 +347,7 @@ std::string findPathToTclreadlineInit(Tcl_Interp* interp)
       }
     )";
 
-  if (Tcl_Eval(interp, tclScript) == TCL_ERROR) {
+  if (Tcl_Eval(interp, tcl_script) == TCL_ERROR) {
     std::cerr << "Tcl_Eval failed: " << Tcl_GetStringResult(interp)
               << std::endl;
     return "";

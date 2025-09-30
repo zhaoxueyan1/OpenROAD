@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
-#include <map>
+#include <cmath>
+#include <cstdio>
+#include <memory>
 #include <vector>
 
-#include "grids.h"
 #include "gseq.h"
+#include "odb/db.h"
+#include "odb/dbShape.h"
+#include "odb/dbTypes.h"
+#include "odb/geom.h"
 #include "rcx/dbUtil.h"
 #include "rcx/extRCap.h"
+#include "rcx/grids.h"
 #include "utl/Logger.h"
 
 namespace rcx {
@@ -1024,8 +1030,9 @@ void extMain::fill_gs4(const int dir,
       int R_ll[2] = {R->xMin(), R->yMin()};
       int R_ur[2] = {R->xMax(), R->yMax()};
 
-      if ((R_ur[dir] < lo_gs[dir]) || (R_ll[dir] > hi_gs[dir]))
+      if ((R_ur[dir] < lo_gs[dir]) || (R_ll[dir] > hi_gs[dir])) {
         continue;
+      }
 
       instGsTable.add(inst->getId());
     }

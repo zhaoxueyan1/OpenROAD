@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "ClockDomain.hh"
 #include "db_sta/dbSta.hh"
 #include "odb/db.h"
 #include "utl/Logger.h"
@@ -36,9 +35,8 @@ class ScanChain;
 class Dft
 {
  public:
-  Dft();
-
-  void init(odb::dbDatabase* db, sta::dbSta* sta, utl::Logger* logger);
+  Dft(odb::dbDatabase* db, sta::dbSta* sta, utl::Logger* logger);
+  ~Dft();
 
   // Pre-work for insert_dft. We collect the cells that need to be
   // scan replaced. This function doesn't mutate the design.
@@ -57,7 +55,7 @@ class Dft
   //
   // If verbose is true, then we show all the cells that are inside the scan
   // chains
-  void previewDft(bool verbose);
+  void reportDftPlan(bool verbose);
 
   // Inserts the scan chains into the design. For now this just replace the
   // cells in the design with scan equivalent. This functions mutates the
@@ -68,7 +66,14 @@ class Dft
   //
   void scanReplace();
 
-  void insertDft();
+  // Runs the complete flow for scan insertion based on the user's settings
+  //
+  // Here we do:
+  //  - Scan Replace
+  //  - Scan Architect
+  //  - Scan Insertion
+  //  - Store the inserted DFT (scan chains) into odb for later optimization
+  void executeDftPlan();
 
   // Returns a mutable version of DftConfig
   DftConfig* getMutableDftConfig();
@@ -79,15 +84,18 @@ class Dft
   // Prints to stdout
   void reportDftConfig() const;
 
+  // Performs scan optimizations on the netlist
+  void scanOpt();
+
  private:
   // If we need to run pre_dft to create the internal state
-  bool need_to_run_pre_dft_;
+  bool need_to_run_pre_dft_{true};
 
   // Resets the internal state
   void reset();
 
   // Common function to perform scan replace and scan architect. Shared between
-  // preview_dft and insert_dft
+  // report_dft_plan and execute_dft_plan
   std::vector<std::unique_ptr<ScanChain>> scanArchitect();
 
   // Global state

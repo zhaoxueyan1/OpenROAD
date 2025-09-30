@@ -3,9 +3,12 @@
 
 #include "dbRow.h"
 
+#include <cstring>
 #include <string>
 
 #include "dbBlock.h"
+#include "dbCommon.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbLib.h"
 #include "dbSite.h"
@@ -15,6 +18,8 @@
 #include "odb/dbBlockCallBackObj.h"
 #include "odb/dbSet.h"
 #include "odb/dbTransform.h"
+#include "odb/dbTypes.h"
+#include "odb/geom.h"
 
 namespace odb {
 
@@ -242,8 +247,7 @@ dbRow* dbRow::create(dbBlock* block_,
   _dbSite* site = (_dbSite*) site_;
   _dbLib* lib = (_dbLib*) site->getOwner();
   _dbRow* row = block->_row_tbl->create();
-  row->_name = strdup(name);
-  ZALLOCATED(row->_name);
+  row->_name = safe_strdup(name);
   row->_lib = lib->getOID();
   row->_site = site->getOID();
   row->_flags._orient = orient;

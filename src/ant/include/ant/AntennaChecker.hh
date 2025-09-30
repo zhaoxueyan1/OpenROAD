@@ -8,22 +8,19 @@
 #include <queue>
 #include <set>
 
-#include "ant/GlobalRouteSource.hh"
 #include "odb/db.h"
 #include "odb/dbWireGraph.h"
-#include "utl/Logger.h"
 
-namespace grt {
-class GlobalRouter;
+namespace utl {
+class Logger;
 }
 
 namespace ant {
 
-using utl::Logger;
-
 struct PARinfo;
 struct ARinfo;
 struct AntennaModel;
+class WireBuilder;
 
 ///////////////////////////////////////
 struct GraphNode;
@@ -109,12 +106,8 @@ using GateToViolationLayers
 class AntennaChecker
 {
  public:
-  AntennaChecker();
+  AntennaChecker(odb::dbDatabase* db, utl::Logger* logger);
   ~AntennaChecker();
-
-  void init(odb::dbDatabase* db,
-            ant::GlobalRouteSource* global_route_source,
-            utl::Logger* logger);
 
   // net nullptr -> check all nets
   int checkAntennas(odb::dbNet* net = nullptr,
@@ -126,9 +119,12 @@ class AntennaChecker
                                   float ratio_margin);
   void initAntennaRules();
   void setReportFileName(const char* file_name);
+  void makeNetWiresFromGuides(const std::vector<odb::dbNet*>& nets);
 
  private:
   bool haveRoutedNets();
+  bool designIsPlaced();
+  bool haveGuides();
   double getPwlFactor(odb::dbTechLayerAntennaRule::pwl_pair pwl_info,
                       double ref_val,
                       double def);
@@ -199,9 +195,9 @@ class AntennaChecker
                 bool report,
                 ViolationReport& net_report);
 
+  std::unique_ptr<ant::WireBuilder> wire_builder_;
   odb::dbDatabase* db_{nullptr};
   odb::dbBlock* block_{nullptr};
-  ant::GlobalRouteSource* global_route_source_{nullptr};
   utl::Logger* logger_{nullptr};
   std::map<odb::dbTechLayer*, AntennaModel> layer_info_;
   int net_violation_count_{0};

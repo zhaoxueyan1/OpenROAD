@@ -3,10 +3,15 @@
 
 #include "colorGenerator.h"
 
+#include <QColor>
+#include <array>
+
+#include "gui/gui.h"
+
 namespace gui {
 
 // https://mokole.com/palette.html
-const std::array<QColor, 31> ColorGenerator::colors_{
+const std::array<QColor, 31> ColorGenerator::kColors{
     QColor{255, 0, 0},     QColor{255, 140, 0},   QColor{255, 215, 0},
     QColor{0, 255, 0},     QColor{148, 0, 211},   QColor{0, 250, 154},
     QColor{220, 20, 60},   QColor{0, 255, 255},   QColor{0, 191, 255},
@@ -25,7 +30,7 @@ ColorGenerator::ColorGenerator() : index_(0)
 
 QColor ColorGenerator::getQColor()
 {
-  QColor color = colors_[index_++];
+  QColor color = kColors[index_++];
   if (index_ == getColorCount()) {
     index_ = 0;
   }

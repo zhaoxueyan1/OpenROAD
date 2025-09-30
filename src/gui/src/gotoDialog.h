@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QWidget>
 
 #include "layoutTabs.h"
 #include "ui_gotoDlg.h"
@@ -16,10 +17,10 @@ class GotoLocationDialog : public QDialog, public Ui::GotoLocDialog
   LayoutTabs* viewers_;
 
  public:
-  GotoLocationDialog(QWidget* parent = nullptr, LayoutTabs* viewers_ = nullptr);
+  GotoLocationDialog(QWidget* parent = nullptr, LayoutTabs* viewers = nullptr);
  public slots:
-  void updateLocation(QLineEdit* xEdit, QLineEdit* yEdit);
-  void updateUnits(int dbu_per_micron, bool useDBU);
+  void updateLocation(QLineEdit* x_edit, QLineEdit* y_edit);
+  void updateUnits(int dbu_per_micron, bool use_dbu);
   void show_init();
   void accept() override;
 };

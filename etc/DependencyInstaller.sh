@@ -3,6 +3,7 @@
 set -euo pipefail
 
 CMAKE_PACKAGE_ROOT_ARGS=""
+rhelVersion=NONE
 
 _versionCompare() {
     local a b IFS=. ; set -f
@@ -11,7 +12,7 @@ _versionCompare() {
 }
 
 _equivalenceDeps() {
-    yosysVersion=v0.53
+    yosysVersion=v0.57
 
     # yosys
     yosysPrefix=${PREFIX:-"/usr/local"}
@@ -21,7 +22,7 @@ _equivalenceDeps() {
         cd yosys
         # use of no-register flag is required for some compilers,
         # e.g., gcc and clang from RHEL8
-        make -j $(nproc) PREFIX="${yosysPrefix}" ABC_ARCHFLAGS=-Wno-register
+        make -j ${numThreads} PREFIX="${yosysPrefix}" ABC_ARCHFLAGS=-Wno-register
         make install
     ) fi
 
@@ -33,7 +34,7 @@ _equivalenceDeps() {
         cd eqy
         git checkout ${eqyVersion}
         export PATH="${yosysPrefix}/bin:${PATH}"
-        make -j $(nproc) PREFIX="${eqyPrefix}"
+        make -j ${numThreads} PREFIX="${eqyPrefix}"
         make install PREFIX="${eqyPrefix}"
     )
     fi
@@ -45,7 +46,7 @@ _equivalenceDeps() {
         git clone --depth=1 -b ${yosysVersion} --recursive https://github.com/YosysHQ/sby
         cd sby
         export PATH="${eqyPrefix}/bin:${PATH}"
-        make -j $(nproc) PREFIX="${sbyPrefix}" install
+        make -j ${numThreads} PREFIX="${sbyPrefix}" install
     )
     fi
 }
@@ -64,8 +65,8 @@ _installCommonDev() {
     cmakeVersionSmall=${cmakeVersionBig}.6
     pcreVersion=10.42
     pcreChecksum="37d2f77cfd411a3ddf1c64e1d72e43f7"
-    swigVersion=4.1.0
-    swigChecksum="794433378154eb61270a3ac127d9c5f3"
+    swigVersion=4.3.0
+    swigChecksum="9f74c7f402aa28d9f75e67d1990ee6fb"
     boostVersionBig=1.86
     boostVersionSmall=${boostVersionBig}.0
     boostChecksum="ac857d73bb754b718a039830b07b9624"
@@ -75,8 +76,12 @@ _installCommonDev() {
     spdlogVersion=1.15.0
     gtestVersion=1.13.0
     gtestChecksum="a1279c6fb5bf7d4a5e0d0b2a4adb39ac"
+    abslVersion=20240722.0
+    abslChecksum="740fb8f35ebdf82740c294bde408b9c0"
     bisonVersion=3.8.2
     bisonChecksum="1e541a097cda9eca675d29dd2832921f"
+    flexVersion=2.6.4
+    flexChecksum="2882e3179748cc9f9c23ec593d6adc8d"
 
     rm -rf "${baseDir}"
     mkdir -p "${baseDir}"
@@ -89,7 +94,7 @@ _installCommonDev() {
     cmakeBin=${cmakePrefix}/bin/cmake
     if [[ ! -f ${cmakeBin} || -z $(${cmakeBin} --version | grep ${cmakeVersionBig}) ]]; then
         cd "${baseDir}"
-        eval wget https://cmake.org/files/v${cmakeVersionBig}/cmake-${cmakeVersionSmall}-${osName}-${arch}.sh
+        eval wget https://github.com/Kitware/CMake/releases/download/v${cmakeVersionSmall}/cmake-${cmakeVersionSmall}-linux-${arch}.sh
         md5sum -c <(echo "${cmakeChecksum} cmake-${cmakeVersionSmall}-${osName}-${arch}.sh") || exit 1
         chmod +x cmake-${cmakeVersionSmall}-${osName}-${arch}.sh
         ./cmake-${cmakeVersionSmall}-${osName}-${arch}.sh --skip-license --prefix=${cmakePrefix}
@@ -110,12 +115,27 @@ _installCommonDev() {
         tar xf bison-${bisonVersion}.tar.gz
         cd bison-${bisonVersion}
         ./configure --prefix=${bisonPrefix}
-        make -j install
+        make -j ${numThreads} install
         echo "bison ${bisonVersion} installed (from ${bisonInstalledVersion})."
     else
         echo "bison ${bisonVersion} already installed."
     fi
     CMAKE_PACKAGE_ROOT_ARGS+=" -D bison_ROOT=$(realpath ${bisonPrefix}) "
+
+    # Flex
+    flexPrefix=${PREFIX:-"/usr/local"}
+    if [[ ${rhelVersion} == 8 ]] && [ ! -f ${flexPrefix}/bin/flex ]; then
+        cd "${baseDir}"
+        eval wget https://github.com/westes/flex/releases/download/v${flexVersion}/flex-${flexVersion}.tar.gz
+        md5sum -c <(echo "${flexChecksum} flex-${flexVersion}.tar.gz") || exit 1
+        tar xf flex-${flexVersion}.tar.gz
+        cd flex-${flexVersion}
+        ./configure --prefix=${flexPrefix}
+        make -j ${numThreads}
+        make -j ${numThreads} install
+    else
+        echo "Flex already installed."
+    fi
 
     # SWIG
     swigPrefix=${PREFIX:-"/usr/local"}
@@ -137,8 +157,8 @@ _installCommonDev() {
         fi
         ./autogen.sh
         ./configure --prefix=${swigPrefix}
-        make -j $(nproc)
-        make -j $(nproc) install
+        make -j ${numThreads}
+        make -j ${numThreads} install
     else
         echo "Swig already installed."
     fi
@@ -154,7 +174,7 @@ _installCommonDev() {
         tar -xf boost_${boostVersionUnderscore}.tar.gz
         cd boost_${boostVersionUnderscore}
         ./bootstrap.sh --prefix="${boostPrefix}"
-        ./b2 install --with-iostreams --with-test --with-serialization --with-system --with-thread -j $(nproc)
+        ./b2 install --with-iostreams --with-test --with-serialization --with-system --with-thread -j ${numThreads}
     else
         echo "Boost already installed."
     fi
@@ -167,7 +187,7 @@ _installCommonDev() {
         git clone --depth=1 -b ${eigenVersion} https://gitlab.com/libeigen/eigen.git
         cd eigen
         ${cmakePrefix}/bin/cmake -DCMAKE_INSTALL_PREFIX="${eigenPrefix}" -B build .
-        ${cmakePrefix}/bin/cmake --build build -j $(nproc) --target install
+        ${cmakePrefix}/bin/cmake --build build -j ${numThreads} --target install
     else
         echo "Eigen already installed."
     fi
@@ -181,7 +201,7 @@ _installCommonDev() {
         cd cudd
         autoreconf
         ./configure --prefix=${cuddPrefix}
-        make -j $(nproc) install
+        make -j ${numThreads} install
     else
         echo "Cudd already installed."
     fi
@@ -206,7 +226,7 @@ _installCommonDev() {
         git clone --depth=1 -b ${lemonVersion} https://github.com/The-OpenROAD-Project/lemon-graph.git
         cd lemon-graph
         ${cmakePrefix}/bin/cmake -DCMAKE_INSTALL_PREFIX="${lemonPrefix}" -B build .
-        ${cmakePrefix}/bin/cmake --build build -j $(nproc) --target install
+        ${cmakePrefix}/bin/cmake --build build -j ${numThreads} --target install
     else
         echo "Lemon already installed."
     fi
@@ -223,7 +243,7 @@ _installCommonDev() {
         git clone --depth=1 -b "v${spdlogVersion}" https://github.com/gabime/spdlog.git
         cd spdlog
         ${cmakePrefix}/bin/cmake -DCMAKE_INSTALL_PREFIX="${spdlogPrefix}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DSPDLOG_BUILD_EXAMPLE=OFF -B build .
-        ${cmakePrefix}/bin/cmake --build build -j $(nproc) --target install
+        ${cmakePrefix}/bin/cmake --build build -j ${numThreads} --target install
         echo "spdlog ${spdlogVersion} installed (from ${spdlogInstalledVersion})."
     else
         echo "spdlog ${spdlogVersion} already installed."
@@ -244,6 +264,21 @@ _installCommonDev() {
         echo "gtest already installed."
     fi
     CMAKE_PACKAGE_ROOT_ARGS+=" -D GTest_ROOT=$(realpath $gtestPrefix) "
+
+    # Abseil
+    abslPrefix=${PREFIX:-"/usr/local"}
+    if [[ ! -d ${abslPrefix}/absl/base ]]; then
+        cd "${baseDir}"
+        eval wget https://github.com/abseil/abseil-cpp/releases/download/${abslVersion}/abseil-cpp-${abslVersion}.tar.gz
+        md5sum -c <(echo "${abslChecksum} abseil-cpp-${abslVersion}.tar.gz") || exit 1
+        tar xf abseil-cpp-${abslVersion}.tar.gz
+        cd abseil-cpp-${abslVersion}
+        ${cmakePrefix}/bin/cmake -DCMAKE_INSTALL_PREFIX="${abslPrefix}" -DCMAKE_CXX_STANDARD=17 -B build .
+        ${cmakePrefix}/bin/cmake --build build --target install
+    else
+        echo "Abseil already installed."
+    fi
+    CMAKE_PACKAGE_ROOT_ARGS+=" -D ABSL_ROOT=$(realpath $abslPrefix) "
 
     if [[ ${equivalenceDeps} == "yes" ]]; then
         _equivalenceDeps
@@ -272,7 +307,12 @@ _installCommonDev() {
     if [[ ! -z ${PREFIX} ]]; then
         # Emit an environment setup script
         cat > ${PREFIX}/env.sh <<EOF
-depRoot="\$(dirname \$(readlink -f "\${BASH_SOURCE[0]}"))"
+if [ -n "\$ZSH_VERSION" ]; then
+  depRoot="\$(dirname \$(readlink -f "\${(%):-%x}"))"
+else
+  depRoot="\$(dirname \$(readlink -f "\${BASH_SOURCE[0]}"))"
+fi
+
 PATH=\${depRoot}/bin:\${PATH}
 LD_LIBRARY_PATH=\${depRoot}/lib64:\${depRoot}/lib:\${LD_LIBRARY_PATH}
 EOF
@@ -283,6 +323,8 @@ _installOrTools() {
     os=$1
     osVersion=$2
     arch=$3
+    local skipSystemOrTools=$4
+
     orToolsVersionBig=9.11
     orToolsVersionSmall=${orToolsVersionBig}.4210
 
@@ -292,18 +334,20 @@ _installOrTools() {
     cd "${baseDir}"
 
     # Disable exit on error for 'find' command, as it might return non zero
-    set +euo pipefail
-    LIST=($(find /local* /opt* /lib* /usr* /bin* -type f -name "libortools.so*" 2>/dev/null))
-    # Bring back exit on error
-    set -euo pipefail
-    # Return if right version of or-tools is installed
-    for lib in ${LIST[@]}; do
-        if [[ "$lib" =~ .*"/libortools.so.${orToolsVersionSmall}" ]]; then
-            echo "OR-Tools is already installed"
-            CMAKE_PACKAGE_ROOT_ARGS+=" -D ortools_ROOT=$(realpath $(dirname $lib)/..) "
-            return
-        fi
-    done
+    if [[ "${skipSystemOrTools}" == "false" ]]; then
+      set +euo pipefail
+      LIST=($(find /local* /opt* /lib* /usr* /bin* -type f -name "libortools.so*" 2>/dev/null))
+      # Bring back exit on error
+      set -euo pipefail
+      # Return if right version of or-tools is installed
+      for lib in ${LIST[@]}; do
+          if [[ "$lib" =~ .*"/libortools.so.${orToolsVersionSmall}" ]]; then
+              echo "OR-Tools is already installed"
+              CMAKE_PACKAGE_ROOT_ARGS+=" -D ortools_ROOT=$(realpath $(dirname $lib)/..) "
+              return
+          fi
+      done
+    fi
 
     orToolsPath=${PREFIX:-"/opt/or-tools"}
     if [ "$(uname -m)" == "aarch64" ]; then
@@ -312,7 +356,7 @@ _installOrTools() {
         git clone --depth=1 -b "v${orToolsVersionBig}" https://github.com/google/or-tools.git
         cd or-tools
         ${cmakePrefix}/bin/cmake -S. -Bbuild -DBUILD_DEPS:BOOL=ON -DBUILD_EXAMPLES:BOOL=OFF -DBUILD_SAMPLES:BOOL=OFF -DBUILD_TESTING:BOOL=OFF -DCMAKE_INSTALL_PREFIX=${orToolsPath} -DCMAKE_CXX_FLAGS="-w" -DCMAKE_C_FLAGS="-w"
-        ${cmakePrefix}/bin/cmake --build build --config Release --target install -v -j $(nproc)
+        ${cmakePrefix}/bin/cmake --build build --config Release --target install -v -j ${numThreads}
     else
         if [[ $osVersion == rodete ]]; then
             osVersion=11
@@ -374,6 +418,7 @@ _installUbuntuPackages() {
         tcllib \
         unzip \
         wget \
+        libyaml-cpp-dev \
         zlib1g-dev
 
     packages=()
@@ -424,7 +469,7 @@ _installRHELPackages() {
     yum -y update
     yum -y install tzdata
     yum -y install redhat-rpm-config rpm-build
-    yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+    yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${rhelVersion}.noarch.rpm
     yum -y install \
         autoconf \
         automake \
@@ -453,17 +498,33 @@ _installRHELPackages() {
         qt5-qtcharts-devel \
         qt5-qtimageformats \
         readline \
+        tcl-devel \
         tcl-tclreadline \
         tcl-tclreadline-devel \
         tcl-thread-devel \
         tcllib \
         wget \
+        yaml-cpp-devel \
         zlib-devel
 
-    yum install -y \
-        https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/flex-2.6.4-9.el9.x86_64.rpm \
-        https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/readline-devel-8.1-4.el9.x86_64.rpm \
-        https://rpmfind.net/linux/centos-stream/9-stream/AppStream/x86_64/os/Packages/tcl-devel-8.6.10-7.el9.x86_64.rpm
+    if [[ ${rhelVersion} == 8 ]]; then
+        pythonVersion=3.12
+        yum install -y \
+            gcc-toolset-13 \
+            python${pythonVersion} \
+            python${pythonVersion}-devel \
+            python${pythonVersion}-pip
+        update-alternatives --install /usr/bin/unversioned-python \
+            python $(command -v python${pythonVersion}) 50
+        update-alternatives --install /usr/bin/python3 \
+            python3 $(command -v python${pythonVersion}) 50
+    fi
+    if [[ ${rhelVersion} == 9 ]]; then
+        yum install -y \
+            https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/flex-2.6.4-9.el9.x86_64.rpm \
+            https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/readline-devel-8.1-4.el9.x86_64.rpm \
+            https://rpmfind.net/linux/centos-stream/9-stream/AppStream/x86_64/os/Packages/tcl-devel-8.6.10-7.el9.x86_64.rpm
+    fi
 
     eval wget https://github.com/jgm/pandoc/releases/download/${pandocVersion}/pandoc-${pandocVersion}-linux-${arch}.tar.gz
     tar xvzf pandoc-${pandocVersion}-linux-${arch}.tar.gz --strip-components 1 -C /usr/local/
@@ -511,6 +572,7 @@ _installOpenSusePackages() {
         tcl-devel \
         tcllib \
         wget \
+        yaml-cpp-devel \
         zlib-devel
 
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 50
@@ -555,16 +617,13 @@ Then, rerun this script.
 EOF
         exit 1
     fi
-    brew install bison boost cmake eigen flex fmt groff libomp or-tools pandoc pyqt5 python spdlog tcl-tk zlib
+    brew install bison boost cmake eigen flex fmt groff libomp or-tools pandoc pyqt5 python spdlog tcl-tk zlib swig yaml-cpp
 
     # Some systems need this to correctly find OpenMP package during build
     brew link --force libomp
 
     # Lemon is not in the homebrew-core repo
     brew install The-OpenROAD-Project/lemon-graph/lemon-graph
-
-    # Install swig 4.1.1
-    _installHomebrewPackage "swig" "c83c8aaa6505c3ea28c35bc45a54234f79e46c5d" "s/"
 }
 
 _installDebianCleanUp() {
@@ -612,6 +671,7 @@ _installDebianPackages() {
         tcllib \
         unzip \
         wget \
+        libyaml-cpp-dev \
         zlib1g-dev
 
     if [[ $1 == 10 ]]; then
@@ -642,11 +702,21 @@ _installCI() {
         apt-transport-https \
         ca-certificates \
         curl \
+        default-jdk \
         gnupg \
+        python3 \
+        python3-pip \
+        python3-pandas \
         jq \
         lsb-release \
         parallel \
-        software-properties-common
+        software-properties-common \
+        time \
+        unzip zip
+
+    curl -Lo bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+    chmod +x bazelisk
+    mv bazelisk /usr/local/bin/bazelisk
 
     if command -v docker &> /dev/null; then
         # The user can uninstall docker if they want to reinstall it,
@@ -726,12 +796,20 @@ Usage: $0 -all
                                 #    like working around a firewall. This opens
                                 #    vulnerability to man-in-the-middle (MITM)
                                 #    attacks.
+       $0 -skip-system-or-tools
+                                # If true, does not perform a search of system
+                                # paths for a pre-installed or-tools library.
+                                # Instead, will install a separate version 
+                                # of or-tools
        $0 -save-deps-prefixes=FILE
                                 # Dumps OpenROAD build arguments and variables
                                 # to FILE
        $0 -constant-build-dir
                                 # Use constant build directory, instead of
                                 #    random one.
+       $0 -threads=<N>          #
+                                # Limit number of compiling threads. Default is
+                                # all available numThreads.
 
 EOF
     exit "${1:-1}"
@@ -744,6 +822,8 @@ isLocal="false"
 equivalenceDeps="no"
 CI="no"
 saveDepsPrefixes=""
+numThreads=$(nproc)
+skipSystemOrTools="false"
 # temp dir to download and compile
 baseDir=$(mktemp -d /tmp/DependencyInstaller-XXXXXX)
 
@@ -814,8 +894,14 @@ while [ "$#" -gt 0 ]; do
             alias wget="wget --no-check-certificate"
             export GIT_SSL_NO_VERIFY=true
             ;;
+        -skip-system-or-tools)
+            skipSystemOrTools="true"
+            ;;
         -save-deps-prefixes=*)
-            saveDepsPrefixes=$(realpath ${1#-save-deps-prefixes=})
+            saveDepsPrefixes=$(realpath ${1#*=})
+            ;;
+        -threads=*)
+            numThreads=${1#*=}
             ;;
         *)
             echo "unknown option: ${1}" >&2
@@ -861,13 +947,13 @@ esac
 case "${os}" in
     "Ubuntu" )
         ubuntuVersion=$(awk -F= '/^VERSION_ID/{print $2}' /etc/os-release | sed 's/"//g')
-        if [[ ${CI} == "yes" ]]; then
-            _installCI "${ubuntuVersion}"
-        fi
         if [[ "${option}" == "base" || "${option}" == "all" ]]; then
             _checkIsLocal
             _installUbuntuPackages "${ubuntuVersion}"
             _installUbuntuCleanUp
+        fi
+        if [[ ${CI} == "yes" ]]; then
+            _installCI "${ubuntuVersion}"
         fi
         if [[ "${option}" == "common" || "${option}" == "all" ]]; then
             _installCommonDev
@@ -881,17 +967,19 @@ case "${os}" in
             else
                 ubuntuVersion=20.04
             fi
-            _installOrTools "ubuntu" "${ubuntuVersion}" "amd64"
+            _installOrTools "ubuntu" "${ubuntuVersion}" "amd64" ${skipSystemOrTools}
         fi
         ;;
-    "Red Hat Enterprise Linux" | "Rocky Linux")
+    "Red Hat Enterprise Linux" | "Rocky Linux" | "AlmaLinux")
     if [[ "${os}" == "Red Hat Enterprise Linux" ]]; then
         rhelVersion=$(rpm -q --queryformat '%{VERSION}' redhat-release | cut -d. -f1)
     elif  [[ "${os}" == "Rocky Linux" ]]; then
         rhelVersion=$(rpm -q --queryformat '%{VERSION}' rocky-release | cut -d. -f1)
+    elif [[ "${os}" == "AlmaLinux" ]]; then
+        rhelVersion=$(rpm -q --queryformat '%{VERSION}' almalinux-release | cut -d. -f1)
     fi
-        if [[ "${rhelVersion}" != "9" ]]; then
-            echo "ERROR: Unsupported ${rhelVersion} version. Only '9' is supported."
+        if [[ "${rhelVersion}" != "8" ]] && [[ "${rhelVersion}" != "9" ]]; then
+            echo "ERROR: Unsupported ${rhelVersion} version. Versions '8' and '9' are supported."
             exit 1
         fi
         if [[ ${CI} == "yes" ]]; then
@@ -899,12 +987,17 @@ case "${os}" in
         fi
         if [[ "${option}" == "base" || "${option}" == "all" ]]; then
             _checkIsLocal
-            _installRHELPackages
+            _installRHELPackages "${rhelVersion}"
             _installRHELCleanUp
         fi
         if [[ "${option}" == "common" || "${option}" == "all" ]]; then
             _installCommonDev
-            _installOrTools "rockylinux" "9" "amd64"
+            if [[ "${rhelVersion}" == "8" ]]; then
+                    _installOrTools "AlmaLinux" "8.10" "x86_64" ${skipSystemOrTools}
+            fi
+            if [[ "${rhelVersion}" == "9" ]]; then
+                    _installOrTools "rockylinux" "9" "amd64" ${skipSystemOrTools}
+            fi
         fi
         ;;
     "Darwin" )
@@ -924,7 +1017,7 @@ EOF
         fi
         if [[ "${option}" == "common" || "${option}" == "all" ]]; then
             _installCommonDev
-            _installOrTools "opensuse" "leap" "amd64"
+            _installOrTools "opensuse" "leap" "amd64" ${skipSystemOrTools}
         fi
         cat <<EOF
 To enable GCC-11 you need to run:
@@ -947,7 +1040,7 @@ EOF
         fi
         if [[ "${option}" == "common" || "${option}" == "all" ]]; then
             _installCommonDev
-            _installOrTools "debian" "${debianVersion}" "amd64"
+            _installOrTools "debian" "${debianVersion}" "amd64" ${skipSystemOrTools}
         fi
         ;;
     *)
@@ -958,4 +1051,8 @@ esac
 if [[ ! -z ${saveDepsPrefixes} ]]; then
     mkdir -p "$(dirname $saveDepsPrefixes)"
     echo "$CMAKE_PACKAGE_ROOT_ARGS" > $saveDepsPrefixes
+    # Fix permissions if running as root to allow user access
+    if [[ $(id -u) == 0 && ! -z "${SUDO_USER+x}" ]]; then
+        chown "$SUDO_USER:$(id -gn "$SUDO_USER")" "$saveDepsPrefixes" 2>/dev/null || true
+    fi
 fi

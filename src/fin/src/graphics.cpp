@@ -3,10 +3,12 @@
 
 #include "graphics.h"
 
-#include <algorithm>
 #include <cstdio>
-#include <limits>
 #include <string>
+
+#include "boost/polygon/polygon.hpp"
+#include "gui/gui.h"
+#include "odb/geom.h"
 
 namespace fin {
 
@@ -27,8 +29,8 @@ void Graphics::drawPolygon90Set(const Polygon90Set& set)
 
 void Graphics::drawObjects(gui::Painter& painter)
 {
-  painter.setPen(gui::Painter::transparent);
-  auto color = gui::Painter::yellow;
+  painter.setPen(gui::Painter::kTransparent);
+  auto color = gui::Painter::kYellow;
   color.a = 180;
   painter.setBrush(color);
 

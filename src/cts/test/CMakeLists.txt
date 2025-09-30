@@ -10,6 +10,7 @@ or_integration_tests(
     array
     array_ins_delay
     array_no_blockages
+    array_repair_clock_nets
     balance_levels
     check_buffers
     check_buffers_blockages
@@ -20,11 +21,19 @@ or_integration_tests(
     check_charBuf
     check_max_fanout1
     check_max_fanout2
+    check_max_fanout3
     check_wire_rc_cts
     dummy_load
     find_clock
     find_clock_pad
+    gated_clock1
+    gated_clock2
+    gated_clock3
+    gated_clock4
+    gated_clock5
+    hier_insertion_delay
     insertion_delay
+    inverters
     lvt_lib
     max_cap
     no_clocks

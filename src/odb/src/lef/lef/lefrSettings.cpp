@@ -30,6 +30,7 @@
 #include "lefrSettings.hpp"
 
 #include <cstring>
+#include <map>
 #include <string>
 
 #include "lef_parser.hpp"
@@ -85,10 +86,7 @@ lefrSettings::lefrSettings()
 
 void lefrSettings::reset()
 {
-  if (lefSettings) {
-    delete lefSettings;
-  }
-
+  delete lefSettings;
   lefSettings = new lefrSettings();
 }
 

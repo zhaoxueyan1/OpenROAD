@@ -4,30 +4,30 @@
 #include "ant/AntennaChecker.hh"
 
 #include <omp.h>
-#include <tcl.h>
 
 #include <algorithm>
-#include <boost/pending/disjoint_sets.hpp>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <map>
 #include <memory>
-#include <queue>
+#include <mutex>
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "Polygon.hh"
+#include "WireBuilder.hh"
+#include "boost/pending/disjoint_sets.hpp"
+#include "boost/polygon/polygon.hpp"
 #include "odb/db.h"
 #include "odb/dbShape.h"
 #include "odb/dbTypes.h"
+#include "odb/geom.h"
 #include "utl/Logger.h"
 
 namespace ant {
-
-using utl::ANT;
 
 // Abbreviations Index:
 //   `PAR`: Partial Area Ratio
@@ -55,21 +55,12 @@ struct AntennaModel
   double diff_metal_reduce_factor;
 };
 
-extern "C" {
-extern int Ant_Init(Tcl_Interp* interp);
-}
-
-AntennaChecker::AntennaChecker() = default;
-AntennaChecker::~AntennaChecker() = default;
-
-void AntennaChecker::init(odb::dbDatabase* db,
-                          GlobalRouteSource* global_route_source,
-                          utl::Logger* logger)
+AntennaChecker::AntennaChecker(odb::dbDatabase* db, utl::Logger* logger)
+    : db_(db), logger_(logger)
 {
-  db_ = db;
-  global_route_source_ = global_route_source;
-  logger_ = logger;
 }
+
+AntennaChecker::~AntennaChecker() = default;
 
 void AntennaChecker::initAntennaRules()
 {
@@ -141,7 +132,7 @@ void AntennaChecker::initAntennaRules()
       if ((PSR_ratio != 0 || !diffPSR.indices.empty())
           && layerType == odb::dbTechLayerType::ROUTING
           && wire_thickness_dbu == 0) {
-        logger_->warn(ANT,
+        logger_->warn(utl::ANT,
                       13,
                       "No THICKNESS is provided for layer {}.  Checks on this "
                       "layer will not be correct.",
@@ -213,6 +204,9 @@ void AntennaChecker::saveGates(odb::dbNet* db_net,
 {
   std::map<PinType, std::vector<int>, PinTypeCmp> pin_nbrs;
   std::vector<int> ids;
+  // struct to save pin polygons
+  using LayerAndPin = std::pair<int, PinType>;
+  std::vector<LayerAndPin> pin_polys;
   // iterate all instance pins
   for (odb::dbITerm* iterm : db_net->getITerms()) {
     odb::dbMTerm* mterm = iterm->getMTerm();
@@ -237,6 +231,8 @@ void AntennaChecker::saveGates(odb::dbNet* db_net,
         transform.apply(pin_rect);
         // convert rect -> polygon
         Polygon pin_pol = rectToPolygon(pin_rect);
+        // Save polygon to add on DSU
+        pin_polys.emplace_back(tech_layer->getRoutingLevel(), pin);
         // if has wire on same layer connect to pin
         ids = findNodesWithIntersection(node_by_layer_map[tech_layer], pin_pol);
         for (const int& index : ids) {
@@ -261,6 +257,13 @@ void AntennaChecker::saveGates(odb::dbNet* db_net,
       }
     }
   }
+  // Sort pin polygon based by layer level (greatest first)
+  std::sort(pin_polys.begin(),
+            pin_polys.end(),
+            [](const LayerAndPin& a, const LayerAndPin& b) {
+              return a.first > b.first;
+            });
+
   // run DSU from min_layer to max_layer
   std::vector<int> dsu_parent(node_count);
   std::vector<int> dsu_size(node_count);
@@ -275,12 +278,30 @@ void AntennaChecker::saveGates(odb::dbNet* db_net,
   odb::dbTechLayer* iter = tech->findRoutingLayer(1);
   odb::dbTechLayer* lower_layer;
   while (iter) {
-    // iterate each node of this layer to union set
-    for (auto& node_it : node_by_layer_map[iter]) {
-      int id_u = node_it->id;
-      // if has lower layer
-      lower_layer = iter->getLowerLayer();
-      if (lower_layer) {
+    // Get lower layer
+    lower_layer = iter->getLowerLayer();
+    if (lower_layer) {
+      // Check only vias layer to add pin connections
+      if (lower_layer->getRoutingLevel() != 0) {
+        int layer_level = lower_layer->getRoutingLevel();
+        // only include pin on layer below to the current
+        while (!pin_polys.empty() && layer_level >= pin_polys.back().first) {
+          PinType pin = pin_polys.back().second;
+          int last_id = -1;
+          pin_polys.pop_back();
+          // Set union of all wires connected to pin
+          for (const int& nbr_id : pin_nbrs[pin]) {
+            if (last_id != -1
+                && dsu.find_set(last_id) != dsu.find_set(nbr_id)) {
+              dsu.union_set(last_id, nbr_id);
+            }
+            last_id = nbr_id;
+          }
+        }
+      }
+      // iterate each node of this layer to union set
+      for (auto& node_it : node_by_layer_map[iter]) {
+        int id_u = node_it->id;
         // get lower neighbors and union
         for (const int& lower_it : node_it->low_adj) {
           int id_v = node_by_layer_map[lower_layer][lower_it]->id;
@@ -891,7 +912,7 @@ int AntennaChecker::checkGates(odb::dbNet* db_net,
               }
               if (diode_count_per_gate > max_diode_count_per_gate) {
                 debugPrint(logger_,
-                           ANT,
+                           utl::ANT,
                            "check_gates",
                            1,
                            "Net {} requires more than {} diodes per gate to "
@@ -1068,6 +1089,46 @@ Violations AntennaChecker::getAntennaViolations(odb::dbNet* net,
   return antenna_violations;
 }
 
+bool AntennaChecker::designIsPlaced()
+{
+  for (odb::dbBTerm* bterm : block_->getBTerms()) {
+    if (bterm->getFirstPinPlacementStatus() == odb::dbPlacementStatus::NONE) {
+      return false;
+    }
+  }
+
+  for (odb::dbNet* net : block_->getNets()) {
+    if (net->isSpecial()) {
+      continue;
+    }
+    for (odb::dbITerm* iterm : net->getITerms()) {
+      odb::dbInst* inst = iterm->getInst();
+      if (!inst->isPlaced()) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+bool AntennaChecker::haveGuides()
+{
+  if (!designIsPlaced()) {
+    return false;
+  }
+
+  for (odb::dbNet* net : block_->getNets()) {
+    // check term count due to 1-pin nets in multiple designs.
+    if (!net->isSpecial() && net->getGuides().empty() && net->getTermCount() > 1
+        && !net->isConnectedByAbutment()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 int AntennaChecker::checkAntennas(odb::dbNet* net,
                                   const int num_threads,
                                   bool verbose)
@@ -1086,18 +1147,19 @@ int AntennaChecker::checkAntennas(odb::dbNet* net,
   bool drt_routes = haveRoutedNets();
   bool grt_routes = false;
   if (!drt_routes) {
-    grt_routes = global_route_source_->haveRoutes();
+    grt_routes = haveGuides();
   }
   bool use_grt_routes = (grt_routes && !drt_routes);
   if (!grt_routes && !drt_routes) {
-    logger_->error(ANT,
+    logger_->error(utl::ANT,
                    8,
                    "No detailed or global routing found. Run global_route or "
                    "detailed_route first.");
   }
 
   if (use_grt_routes) {
-    global_route_source_->makeNetWires();
+    wire_builder_ = std::make_unique<ant::WireBuilder>(db_, logger_);
+    wire_builder_->makeNetWiresFromGuides();
   }
 
   int net_violation_count = 0;
@@ -1112,8 +1174,10 @@ int AntennaChecker::checkAntennas(odb::dbNet* net,
         net_violation_count++;
       }
     } else {
-      logger_->error(
-          ANT, 14, "Skipped net {} because it is special.", net->getName());
+      logger_->error(utl::ANT,
+                     14,
+                     "Skipped net {} because it is special.",
+                     net->getName());
     }
   } else {
     nets_.clear();
@@ -1141,9 +1205,9 @@ int AntennaChecker::checkAntennas(odb::dbNet* net,
     printReport(net);
   }
 
-  logger_->info(ANT, 2, "Found {} net violations.", net_violation_count);
+  logger_->info(utl::ANT, 2, "Found {} net violations.", net_violation_count);
   logger_->metric("antenna__violating__nets", net_violation_count);
-  logger_->info(ANT, 1, "Found {} pin violations.", pin_violation_count);
+  logger_->info(utl::ANT, 1, "Found {} pin violations.", pin_violation_count);
   logger_->metric("antenna__violating__pins", pin_violation_count);
 
   if (!report_file_name_.empty()) {
@@ -1152,7 +1216,7 @@ int AntennaChecker::checkAntennas(odb::dbNet* net,
   }
 
   if (use_grt_routes) {
-    global_route_source_->destroyNetWires();
+    block_->destroyNetWires();
   }
 
   net_violation_count_ = net_violation_count;
@@ -1189,6 +1253,16 @@ double AntennaChecker::diffArea(odb::dbMTerm* mterm)
 void AntennaChecker::setReportFileName(const char* file_name)
 {
   report_file_name_ = file_name;
+}
+
+void AntennaChecker::makeNetWiresFromGuides(
+    const std::vector<odb::dbNet*>& nets)
+{
+  if (block_ == nullptr) {
+    block_ = db_->getChip()->getBlock();
+  }
+  wire_builder_ = std::make_unique<ant::WireBuilder>(db_, logger_);
+  wire_builder_->makeNetWiresFromGuides(nets);
 }
 
 }  // namespace ant

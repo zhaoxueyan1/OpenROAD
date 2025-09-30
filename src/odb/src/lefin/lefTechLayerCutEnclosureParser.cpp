@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
-#include <functional>
 #include <string>
-#include <vector>
 
+#include "boost/bind/bind.hpp"
 #include "boostParser.h"
 #include "lefLayerPropParser.h"
 #include "odb/db.h"
 #include "odb/lefin.h"
+#include "parserUtils.h"
 
 namespace odb {
 
@@ -21,14 +21,7 @@ lefTechLayerCutEnclosureRuleParser::lefTechLayerCutEnclosureRuleParser(
 void lefTechLayerCutEnclosureRuleParser::parse(const std::string& s,
                                                odb::dbTechLayer* layer)
 {
-  std::vector<std::string> rules;
-  boost::split(rules, s, boost::is_any_of(";"));
-  for (auto& rule : rules) {
-    boost::algorithm::trim(rule);
-    if (rule.empty()) {
-      continue;
-    }
-    rule += " ; ";
+  processRules(s, [this, layer](const std::string& rule) {
     if (!parseSubRule(rule, layer)) {
       lefin_->warning(260,
                       "parse mismatch in layer property LEF58_ENCLOSURE for "
@@ -36,7 +29,7 @@ void lefTechLayerCutEnclosureRuleParser::parse(const std::string& s,
                       layer->getName(),
                       rule);
     }
-  }
+  });
 }
 void lefTechLayerCutEnclosureRuleParser::setCutClass(
     std::string val,
@@ -62,12 +55,12 @@ void lefTechLayerCutEnclosureRuleParser::setInt(
 {
   (rule->*func)(lefin_->dbdist(val));
 }
-bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
+bool lefTechLayerCutEnclosureRuleParser::parseSubRule(const std::string& s,
                                                       odb::dbTechLayer* layer)
 {
   odb::dbTechLayerCutEnclosureRule* rule
       = odb::dbTechLayerCutEnclosureRule::create(layer);
-  qi::rule<std::string::iterator, space_type> EOL
+  qi::rule<std::string::const_iterator, space_type> EOL
       = (lit("EOL")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setType,
              rule,
@@ -142,7 +135,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
                      rule,
                      &odb::dbTechLayerCutEnclosureRule::setExtension)])));
 
-  qi::rule<std::string::iterator, space_type> DEFAULT
+  qi::rule<std::string::const_iterator, space_type> DEFAULT
       = (double_[boost::bind(
              &lefTechLayerCutEnclosureRuleParser::setInt,
              this,
@@ -159,7 +152,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
                        rule,
                        odb::dbTechLayerCutEnclosureRule::ENC_TYPE::DEFAULT)];
 
-  qi::rule<std::string::iterator, space_type> ENDSIDE
+  qi::rule<std::string::const_iterator, space_type> ENDSIDE
       = (-lit("OFFCENTERLINE")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setOffCenterLine, rule, true)]
          >> lit("END") >> double_[boost::bind(
@@ -178,7 +171,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
                        rule,
                        odb::dbTechLayerCutEnclosureRule::ENC_TYPE::ENDSIDE)];
 
-  qi::rule<std::string::iterator, space_type> HORZ_AND_VERT
+  qi::rule<std::string::const_iterator, space_type> HORZ_AND_VERT
       = (lit("HORIZONTAL") >> double_[boost::bind(
              &lefTechLayerCutEnclosureRuleParser::setInt,
              this,
@@ -196,7 +189,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
               rule,
               odb::dbTechLayerCutEnclosureRule::ENC_TYPE::HORZ_AND_VERT)];
 
-  qi::rule<std::string::iterator, space_type> WIDTH_
+  qi::rule<std::string::const_iterator, space_type> WIDTH_
       = (lit("WIDTH")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setWidthValid, rule, true)]
          >> double_[boost::bind(&lefTechLayerCutEnclosureRuleParser::setInt,
@@ -223,7 +216,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
                        rule,
                        true)])));
 
-  qi::rule<std::string::iterator, space_type> LENGTH
+  qi::rule<std::string::const_iterator, space_type> LENGTH
       = (lit("LENGTH")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setLengthValid, rule, true)]
          >> double_[boost::bind(
@@ -233,13 +226,13 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
              rule,
              &odb::dbTechLayerCutEnclosureRule::setMinLength)]);
 
-  qi::rule<std::string::iterator, space_type> EXTRACUT
+  qi::rule<std::string::const_iterator, space_type> EXTRACUT
       = (lit("EXTRACUT")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setExtraCutValid, rule, true)]
          >> -lit("EXTRAONLY")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setExtraOnly, rule, true)]);
 
-  qi::rule<std::string::iterator, space_type> REDUNDANTCUT
+  qi::rule<std::string::const_iterator, space_type> REDUNDANTCUT
       = (lit("REDUNDANTCUT")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setRedundantCutValid,
              rule,
@@ -251,7 +244,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
              rule,
              &odb::dbTechLayerCutEnclosureRule::setCutWithin)]);
 
-  qi::rule<std::string::iterator, space_type> PARALLEL
+  qi::rule<std::string::const_iterator, space_type> PARALLEL
       = (lit("PARALLEL")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setConcaveCornersValid,
              rule,
@@ -291,7 +284,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
                   rule,
                   &odb::dbTechLayerCutEnclosureRule::setBelowEnclosure)]));
 
-  qi::rule<std::string::iterator, space_type> CONCAVECORNERS
+  qi::rule<std::string::const_iterator, space_type> CONCAVECORNERS
       = (lit("CONCAVECORNERS")[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setConcaveCornersValid,
              rule,
@@ -299,7 +292,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
          >> int_[boost::bind(
              &odb::dbTechLayerCutEnclosureRule::setNumCorners, rule, _1)]);
 
-  qi::rule<std::string::iterator, space_type> CUTCLASS
+  qi::rule<std::string::const_iterator, space_type> CUTCLASS
       = (-(lit("CUTCLASS") >> _string)[boost::bind(
              &lefTechLayerCutEnclosureRuleParser::setCutClass,
              this,
@@ -310,7 +303,7 @@ bool lefTechLayerCutEnclosureRuleParser::parseSubRule(std::string s,
                   &odb::dbTechLayerCutEnclosureRule::setAbove, rule, true)]
               | lit("BELOW")[boost::bind(
                   &odb::dbTechLayerCutEnclosureRule::setBelow, rule, true)]));
-  qi::rule<std::string::iterator, space_type> ENCLOSURE
+  qi::rule<std::string::const_iterator, space_type> ENCLOSURE
       = (lit("ENCLOSURE") >> CUTCLASS
          >> (EOL | DEFAULT | ENDSIDE | HORZ_AND_VERT) >> -WIDTH_ >> -LENGTH
          >> -EXTRACUT >> -REDUNDANTCUT >> -PARALLEL >> -CONCAVECORNERS

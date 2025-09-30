@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
+#include <memory>
 #include <vector>
 
-#include "SteinerTreeBuilder.h"
 #include "boost/multi_array.hpp"
+#include "stt/SteinerTreeBuilder.h"
 
 #pragma once
 
@@ -46,10 +47,10 @@ class Flute
   Tree flute(const std::vector<int>& x, const std::vector<int>& y, int acc);
   int wirelength(Tree t);
   void plottree(Tree t);
-  inline Tree flutes(const std::vector<int>& xs,
-                     const std::vector<int>& ys,
-                     const std::vector<int>& s,
-                     int acc)
+  Tree flutes(const std::vector<int>& xs,
+              const std::vector<int>& ys,
+              const std::vector<int>& s,
+              int acc)
   {
     int d = xs.size();
     if (FLUTE_REMOVE_DUPLICATE_PIN == 1) {
@@ -106,11 +107,11 @@ class Flute
                   std::vector<int> s,
                   int acc);
 
-  inline int flutes_wl_LMD(int d,
-                           const std::vector<int>& xs,
-                           const std::vector<int>& ys,
-                           const std::vector<int>& s,
-                           int acc)
+  int flutes_wl_LMD(int d,
+                    const std::vector<int>& xs,
+                    const std::vector<int>& ys,
+                    const std::vector<int>& s,
+                    int acc)
   {
     if (d <= FLUTE_D) {
       return flutes_wl_LD(d, xs, ys, s);
@@ -118,20 +119,20 @@ class Flute
     return flutes_wl_MD(d, xs, ys, s, acc);
   }
 
-  inline int flutes_wl_ALLD(int d,
-                            const std::vector<int>& xs,
-                            const std::vector<int>& ys,
-                            const std::vector<int>& s,
-                            int acc)
+  int flutes_wl_ALLD(int d,
+                     const std::vector<int>& xs,
+                     const std::vector<int>& ys,
+                     const std::vector<int>& s,
+                     int acc)
   {
     return flutes_wl_LMD(d, xs, ys, s, acc);
   }
 
-  inline int flutes_wl(int d,
-                       const std::vector<int>& xs,
-                       const std::vector<int>& ys,
-                       const std::vector<int>& s,
-                       int acc)
+  int flutes_wl(int d,
+                const std::vector<int>& xs,
+                const std::vector<int>& ys,
+                const std::vector<int>& s,
+                int acc)
   {
     if (FLUTE_REMOVE_DUPLICATE_PIN == 1) {
       return flutes_wl_RDP(d, xs, ys, s, acc);
@@ -139,11 +140,11 @@ class Flute
     return flutes_wl_ALLD(d, xs, ys, s, acc);
   }
 
-  inline Tree flutes_ALLD(int d,
-                          const std::vector<int>& xs,
-                          const std::vector<int>& ys,
-                          const std::vector<int>& s,
-                          int acc)
+  Tree flutes_ALLD(int d,
+                   const std::vector<int>& xs,
+                   const std::vector<int>& ys,
+                   const std::vector<int>& s,
+                   int acc)
   {
     if (d <= FLUTE_D) {
       return flutes_LD(d, xs, ys, s);
@@ -151,11 +152,11 @@ class Flute
     return flutes_MD(d, xs, ys, s, acc);
   }
 
-  inline Tree flutes_LMD(int d,
-                         const std::vector<int>& xs,
-                         const std::vector<int>& ys,
-                         const std::vector<int>& s,
-                         int acc)
+  Tree flutes_LMD(int d,
+                  const std::vector<int>& xs,
+                  const std::vector<int>& ys,
+                  const std::vector<int>& s,
+                  int acc)
   {
     if (d <= FLUTE_D) {
       return flutes_LD(d, xs, ys, s);
@@ -165,13 +166,14 @@ class Flute
 
  private:
   // Dynamically allocate LUTs.
-  LUT_TYPE LUT = nullptr;
-  NUMSOLN_TYPE numsoln = nullptr;
+  LUT_TYPE LUT_ = nullptr;
+  NUMSOLN_TYPE numsoln_ = nullptr;
   // LUTs are initialized to this order at startup.
-  const int lut_initial_d = 8;
-  int lut_valid_d = 0;
+  static constexpr int lut_initial_d = 8;
+  int lut_valid_d_ = 0;
 
-  const int numgrp[10] = {0, 0, 0, 0, 6, 30, 180, 1260, 10080, 90720};
+  static constexpr int numgrp[10]
+      = {0, 0, 0, 0, 6, 30, 180, 1260, 10080, 90720};
 };
 
 }  // namespace flt

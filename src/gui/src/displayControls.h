@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <QColor>
 #include <QColorDialog>
 #include <QDialog>
 #include <QDockWidget>
@@ -14,20 +15,24 @@
 #include <QRadioButton>
 #include <QSettings>
 #include <QStandardItemModel>
+#include <QString>
 #include <QStringList>
 #include <QTextEdit>
 #include <QTreeView>
 #include <QVBoxLayout>
+#include <QVariant>
+#include <QWidget>
 #include <functional>
 #include <map>
 #include <optional>
 #include <set>
 #include <string>
-#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "db_sta/dbNetwork.hh"
 #include "gui/gui.h"
+#include "odb/db.h"
 #include "odb/dbBlockCallBackObj.h"
 #include "options.h"
 
@@ -102,7 +107,7 @@ class DisplayColorDialog : public QDialog
 
   void buildUI();
 
-  static inline std::vector<std::vector<Qt::BrushStyle>> brush_patterns_{
+  static inline const std::vector<std::vector<Qt::BrushStyle>> kBrushPatterns{
       {Qt::NoBrush, Qt::SolidPattern},
       {Qt::HorPattern, Qt::VerPattern},
       {Qt::CrossPattern, Qt::DiagCrossPattern},
@@ -244,6 +249,7 @@ class DisplayControls : public QDockWidget,
   bool isModuleView() const override;
 
   bool isGCellGridVisible() const override;
+  bool isFlywireHighlightOnly() const override;
 
   // API from dbNetworkObserver
   void postReadLiberty() override;
@@ -279,10 +285,10 @@ class DisplayControls : public QDockWidget,
   // The columns in the tree view
   enum Column
   {
-    Name,
-    Swatch,
-    Visible,
-    Selectable
+    kName,
+    kSwatch,
+    kVisible,
+    kSelectable
   };
 
   // The *Models are groups in the tree
@@ -379,6 +385,7 @@ class DisplayControls : public QDockWidget,
     ModelRow module;
     ModelRow manufacturing_grid;
     ModelRow gcell_grid;
+    ModelRow flywires_only;
     ModelRow labels;
     ModelRow background;
   };
@@ -493,9 +500,9 @@ class DisplayControls : public QDockWidget,
 
   void checkLiberty(bool assume_loaded = false);
 
-  std::tuple<QColor*, Qt::BrushStyle*, bool> lookupColor(
-      QStandardItem* item,
-      const QModelIndex* index = nullptr);
+  std::pair<QColor*, Qt::BrushStyle*> lookupColor(QStandardItem* item,
+                                                  const QModelIndex* index
+                                                  = nullptr);
 
   QTreeView* view_;
   DisplayControlModel* model_;
@@ -574,11 +581,11 @@ class DisplayControls : public QDockWidget,
 
   QFont pin_markers_font_;
 
-  static constexpr int user_data_item_idx_ = Qt::UserRole;
-  static constexpr int callback_item_idx_ = Qt::UserRole + 1;
-  static constexpr int doubleclick_item_idx_ = Qt::UserRole + 2;
-  static constexpr int exclusivity_item_idx_ = Qt::UserRole + 3;
-  static constexpr int disable_row_item_idx_ = Qt::UserRole + 4;
+  static constexpr int kUserDataItemIdx = Qt::UserRole;
+  static constexpr int kCallbackItemIdx = Qt::UserRole + 1;
+  static constexpr int kDoubleclickItemIdx = Qt::UserRole + 2;
+  static constexpr int kExclusivityItemIdx = Qt::UserRole + 3;
+  static constexpr int kDisableRowItemIdx = Qt::UserRole + 4;
 };
 
 }  // namespace gui

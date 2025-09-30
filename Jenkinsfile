@@ -127,11 +127,38 @@ def getParallelTests(String image) {
                     stage('no-test Build') {
                         timeout(time: 20, unit: 'MINUTES') {
                             catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                                sh label: 'no-test Build', script: 'cmake -B build_no_tests -D ENABLE_TESTS=OFF 2>&1 | tee no_test.log';
+                                sh label: 'no-test Build', script: './etc/Build.sh -no-warnings -no-tests';
                             }
                         }
+                        sh 'mv build/openroad_build.log no_test.log'
                         archiveArtifacts artifacts: 'no_test.log';
                     }
+                }
+            }
+        },
+
+        'Build on RHEL8': {
+            node ('rhel8') {
+                stage('Setup RHEL8 Build') {
+                    checkout scm;
+                }
+                stage('Build on RHEL8') {
+                    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                        timeout(time: 20, unit: 'MINUTES') {
+                            sh label: 'Build on RHEL8', script: './etc/Build.sh 2>&1 | tee rhel8-build.log';
+                        }
+                    }
+                    archiveArtifacts artifacts: 'rhel8-build.log';
+                }
+                stage('Unit Tests CTest') {
+                    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                        timeout(time: 10, unit: 'MINUTES') {
+                            sh label: 'Run ctest', script: 'ctest --test-dir build -j $(nproc) --output-on-failure';
+                        }
+                    }
+                    sh label: 'Save ctest results', script: 'tar zcvf results-ctest-rhel8.tgz build/Testing';
+                    sh label: 'Save results', script: "find . -name results -type d -exec tar zcvf {}.tgz {} ';'";
+                    archiveArtifacts artifacts: 'results-ctest-rhel8.tgz, **/results.tgz';
                 }
             }
         },
@@ -150,11 +177,8 @@ def getParallelTests(String image) {
                         sh label: 'Configure git', script: "git config --system --add safe.directory '*'";
                         checkout scm;
                     }
-                    stage('C++ Unit Tests Setup') {
-                        sh label: 'C++ Unit Tests Setup', script: 'cmake -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -GNinja -B build .';
-                    }
-                    stage('C++ Unit Tests') {
-                        sh label: 'C++ Unit Tests', script: 'cd build && CLICOLOR_FORCE=1 ninja build_and_test';
+                    stage('C++ Build and Unit Tests') {
+                        sh label: 'C++ Build with Ninja', script: './etc/Build.sh -no-warnings -ninja';
                     }
                 }
             }
@@ -177,67 +201,41 @@ def getParallelTests(String image) {
                         checkout scm;
                     }
                     stage('Compile with C++20') {
-                        sh label: 'Compile C++20', script: "./etc/Build.sh -no-warnings -compiler='clang-16' -cmake='-DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=20'";
+                        sh label: 'Compile C++20', script: "./etc/Build.sh -cpp20"
                     }
                 }
             }
         }
     ];
 
-    if (env.BRANCH_NAME == 'master') {
-        deb_os = [
-            [name: 'Ubuntu 20.04' , artifact_name: 'ubuntu-20.04', image: 'openroad/ubuntu20.04-dev'],
-            [name: 'Ubuntu 22.04' , artifact_name: 'ubuntu-22.04', image: 'openroad/ubuntu22.04-dev'],
-            [name: 'Debian 11' , artifact_name: 'debian11', image: 'openroad/debian11-dev']
-        ];
-        deb_os.each { os ->
-            ret["Build .deb - ${os.name}"] = {
-                node {
-                    stage('Setup and Build') {
-                        sh label: 'Pull latest image', script: "docker pull ${os.image}:latest";
-                        withDockerContainer(args: '-u root', image: "${os.image}") {
-                            sh label: 'Configure git', script: "git config --system --add safe.directory '*'";
-                            checkout([
-                                    $class: 'GitSCM',
-                                    branches: [[name: scm.branches[0].name]],
-                                    doGenerateSubmoduleConfigurations: false,
-                                    extensions: [
-                                    [$class: 'CloneOption', noTags: false],
-                                    [$class: 'SubmoduleOption', recursiveSubmodules: true]
-                                    ],
-                                    submoduleCfg: [],
-                                    userRemoteConfigs: scm.userRemoteConfigs
-                            ]);
-                            def version = sh(script: 'git describe | sed s,^v,,', returnStdout: true).trim();
-                            sh label: 'Create Changelog', script: "./debian/create-changelog.sh ${version}";
-                            sh label: 'Run debuild', script: 'debuild --preserve-env --preserve-envvar=PATH -B -j$(nproc)';
-                            sh label: 'Move generated files', script: "./debian/move-artifacts.sh ${version} ${os.artifact_name}";
-                            archiveArtifacts artifacts: '*' + "${version}" + '*';
+    return ret;
+}
+
+def bazelTest = {
+    node {
+        stage('Setup') {
+            checkout scm;
+            sh label: 'Setup Docker Image', script: 'docker build -f docker/Dockerfile.bazel -t openroad/bazel-ci .';
+        }
+        withDockerContainer(args: '-u root -v /var/run/docker.sock:/var/run/docker.sock', image: 'openroad/bazel-ci:latest') {
+            stage('bazelisk test ...') {
+                withCredentials([string(credentialsId: 'bazel-auth-token-b64', variable: 'BAZEL_AUTH_TOKEN_B64')]) {
+                    timeout(time: 120, unit: 'MINUTES') {
+                        def cmd = 'bazelisk test --config=ci --show_timestamps --test_output=errors --curses=no --force_pic --remote_header="Authorization=Basic $BAZEL_AUTH_TOKEN_B64"'
+                        try {
+                            sh label: 'Bazel Build', script: cmd + ' ...';
+                        } catch (e) {
+                            currentBuild.result = 'FAILURE';
+                            sh label: 'Bazel Build (keep_going)', script: cmd + ' --keep_going ...';
                         }
                     }
                 }
             }
         }
     }
-
-    return ret;
 }
 
-node {
-
-    def isDefaultBranch = (env.BRANCH_NAME == 'master') 
-    def daysToKeep = '20';
-    def numToKeep = (isDefaultBranch ? '-1' : '10');
-
-    properties([
-        buildDiscarder(logRotator(
-            daysToKeepStr:         daysToKeep,
-            artifactDaysToKeepStr: daysToKeep,
-
-            numToKeepStr:          numToKeep,
-            artifactNumToKeepStr:  numToKeep
-        ))
-    ]);
+def dockerTests = {
     stage('Checkout') {
         checkout scm;
     }
@@ -256,7 +254,7 @@ node {
                 node {
                     checkout scm;
                     sh label: 'Build Docker image', script: "./etc/DockerHelper.sh create -target=builder -os=${os.image}";
-                    sh label: 'Test Docker image', script: "./etc/DockerHelper.sh test -target=builder -os=${os.image}";
+                    sh label: 'Test Docker image', script: "./etc/DockerHelper.sh test -target=builder -os=${os.image} -smoke";
                     dockerPush("${os.image}", 'openroad');
                 }
             }
@@ -266,6 +264,24 @@ node {
         echo "Docker image is ${DOCKER_IMAGE}";
     }
     parallel(getParallelTests(DOCKER_IMAGE));
+}
+
+node {
+    def isDefaultBranch = (env.BRANCH_NAME == 'master')
+    def daysToKeep = '20';
+    def numToKeep = (isDefaultBranch ? '-1' : '10');
+    properties([
+        buildDiscarder(logRotator(
+            daysToKeepStr:         daysToKeep,
+            artifactDaysToKeepStr: daysToKeep,
+            numToKeepStr:          numToKeep,
+            artifactNumToKeepStr:  numToKeep
+        ))
+    ]);
+    parallel(
+            "Bazel": bazelTest,
+            "Docker Tests": dockerTests
+    );
     stage('Send Email Report') {
         sendEmail();
     }

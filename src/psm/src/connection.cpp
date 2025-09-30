@@ -3,6 +3,7 @@
 
 #include "connection.h"
 
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <string>
@@ -206,7 +207,7 @@ TermConnection::TermConnection(Node* node0, Node* node1)
 Connection::Resistance TermConnection::getResistance(
     const ResistanceMap& res_map) const
 {
-  return resistance_;
+  return kResistance;
 }
 
 std::string TermConnection::describe() const

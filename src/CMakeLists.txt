@@ -105,6 +105,15 @@ if(USE_SYSTEM_OPENSTA)
   endif()
   include_directories(${OPENSTA_INCLUDE_DIR})
   message(STATUS "Using OPENSTA_INCLUDE_DIR=${OPENSTA_INCLUDE_DIR}")
+  add_library(OpenSTA STATIC IMPORTED)
+  set_target_properties(OpenSTA PROPERTIES
+    IMPORTED_LOCATION "${OPENSTA_LIBRARY}"
+  )
+  if(CUDD_LIB)
+    set_target_properties(OpenSTA PROPERTIES 
+      INTERFACE_LINK_LIBRARIES "${CUDD_LIB}"
+    )
+  endif()
 else()
   # local build of opensta
   set(OPENSTA_LIBRARY "sta_swig")
@@ -180,7 +189,7 @@ if (SWIG_VERSION VERSION_GREATER_EQUAL "4.1.0")
 endif()
 include(UseSWIG)
 
-find_package(Boost REQUIRED COMPONENTS iostreams)
+find_package(Boost CONFIG REQUIRED)
 message(STATUS "boost: ${Boost_VERSION}")
 
 if (ENABLE_TESTS)
@@ -300,7 +309,9 @@ add_subdirectory(exa)
 add_subdirectory(fin)
 add_subdirectory(ppl)
 add_subdirectory(rmp)
+add_subdirectory(cgt)
 add_subdirectory(cts)
+add_subdirectory(cut)
 add_subdirectory(grt)
 add_subdirectory(tap)
 add_subdirectory(rcx)
@@ -315,11 +326,16 @@ add_subdirectory(pdn)
 add_subdirectory(dft)
 add_subdirectory(mpl)
 add_subdirectory(par)
-# add_subdirectory(TritonSizer)
+add_subdirectory(est)
+
 ################################################################
 
 add_library(openroad
   ${OPENROAD_SOURCE}
+)
+
+set_target_properties(openroad PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 target_compile_options(openroad
@@ -363,7 +379,9 @@ target_link_libraries(openroad
   odbtcl
   rcx
   rmp
+  cgt
   cts
+  cut
   grt
   tap
   gui
@@ -377,6 +395,7 @@ target_link_libraries(openroad
   dft
   mpl
   par
+  est
   ${ABC_LIBRARY}
   ${TCL_LIBRARY}
   ${CMAKE_THREAD_LIBS_INIT}
@@ -443,6 +462,7 @@ if (Python3_FOUND AND BUILD_PYTHON)
     exa_py
     ppl_py
     tap_py
+    cgt_py
     cts_py
     drt_py
     fin_py

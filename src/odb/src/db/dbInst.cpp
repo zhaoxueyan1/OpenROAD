@@ -4,7 +4,10 @@
 #include "dbInst.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "dbAccessPoint.h"
@@ -15,6 +18,7 @@
 #include "dbBox.h"
 #include "dbChip.h"
 #include "dbCommon.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbGroup.h"
 #include "dbHier.h"
@@ -29,12 +33,14 @@
 #include "dbNet.h"
 #include "dbNullIterator.h"
 #include "dbRegion.h"
+#include "dbScanInst.h"
 #include "dbTable.h"
 #include "dbTable.hpp"
 #include "odb/db.h"
 #include "odb/dbBlockCallBackObj.h"
 #include "odb/dbSet.h"
 #include "odb/dbTransform.h"
+#include "odb/dbTypes.h"
 #include "utl/Logger.h"
 
 namespace odb {
@@ -123,8 +129,7 @@ _dbInst::_dbInst(_dbDatabase*, const _dbInst& i)
       pin_access_idx_(i.pin_access_idx_)
 {
   if (i._name) {
-    _name = strdup(i._name);
-    ZALLOCATED(_name);
+    _name = safe_strdup(i._name);
   }
 }
 
@@ -363,10 +368,20 @@ bool dbInst::rename(const char* name)
     return false;
   }
 
+  if (block->_journal) {
+    debugPrint(getImpl()->getLogger(),
+               utl::ODB,
+               "DB_ECO",
+               1,
+               "ECO: inst {}, rename to {}",
+               getId(),
+               name);
+    block->_journal->updateField(this, _dbInst::NAME, inst->_name, name);
+  }
+
   block->_inst_hash.remove(inst);
   free((void*) inst->_name);
-  inst->_name = strdup(name);
-  ZALLOCATED(inst->_name);
+  inst->_name = safe_strdup(name);
   block->_inst_hash.insert(inst);
 
   return true;
@@ -786,6 +801,22 @@ bool dbInst::isEndCap() const
   return getMaster()->isEndCap();
 }
 
+dbScanInst* dbInst::getScanInst() const
+{
+  _dbInst* inst = (_dbInst*) this;
+  _dbBlock* block = (_dbBlock*) inst->getOwner();
+  auto itr = block->_inst_scan_inst_map.find(inst->getId());
+
+  if (itr == block->_inst_scan_inst_map.end()) {
+    return nullptr;
+  }
+
+  dbId<_dbScanInst> scan_inst_id = itr->second;
+  _dbScanInst* scan_inst = block->_scan_inst_tbl->getPtr(scan_inst_id);
+
+  return (dbScanInst*) scan_inst;
+}
+
 dbSet<dbITerm> dbInst::getITerms()
 {
   _dbInst* inst = (_dbInst*) this;
@@ -804,7 +835,16 @@ dbITerm* dbInst::findITerm(const char* name)
     return nullptr;
   }
 
-  return (dbITerm*) block->_iterm_tbl->getPtr(inst->_iterms[mterm->_order_id]);
+  // sta may callback from inDbITermDestroy to find another iterm of
+  // the same instance (eg Latches::latchDtoQEnable).  We have to
+  // check if the entry is valid here as that iterm may already have
+  // been destroyed!
+
+  dbId<_dbITerm> id = inst->_iterms[mterm->_order_id];
+  if (!id.isValid()) {
+    return nullptr;
+  }
+  return (dbITerm*) block->_iterm_tbl->getPtr(id);
 }
 
 dbRegion* dbInst::getRegion()
@@ -1219,13 +1259,13 @@ uint dbInst::getPinAccessIdx() const
   return inst->pin_access_idx_;
 }
 
-dbInst* dbInst::create(dbBlock* block_,
-                       dbMaster* master_,
-                       const char* name_,
+dbInst* dbInst::create(dbBlock* block,
+                       dbMaster* master,
+                       const char* name,
                        bool physical_only,
-                       dbModule* target_module)
+                       dbModule* parent_module)
 {
-  return create(block_, master_, name_, nullptr, physical_only, target_module);
+  return create(block, master, name, nullptr, physical_only, parent_module);
 }
 
 dbInst* dbInst::create(dbBlock* block_,
@@ -1267,8 +1307,7 @@ dbInst* dbInst::create(dbBlock* block_,
     block->_journal->endAction();
   }
 
-  inst->_name = strdup(name_);
-  ZALLOCATED(inst->_name);
+  inst->_name = safe_strdup(name_);
   inst->_inst_hdr = inst_hdr->getOID();
   block->_inst_hash.insert(inst);
   inst_hdr->_inst_cnt++;
@@ -1293,7 +1332,10 @@ dbInst* dbInst::create(dbBlock* block_,
   block->add_rect(box->_shape._rect);
 
   inst->_flags._physical_only = physical_only;
-  if (!physical_only) {
+
+  // Add the new instance to the parent module.
+  bool parent_is_top = parent_module == nullptr || parent_module->isTop();
+  if (physical_only == false || parent_is_top) {
     if (parent_module) {
       parent_module->addInst((dbInst*) inst);
     } else {
@@ -1404,13 +1446,23 @@ void dbInst::destroy(dbInst* inst_)
                              inst->_name);
   }
 
+  dbScanInst* scan_inst = inst_->getScanInst();
+  if (scan_inst) {
+    inst->getLogger()->error(
+        utl::ODB,
+        505,
+        "Attempt to destroy instance {} with an associated scan inst.",
+        inst->_name);
+  }
+
   uint i;
   uint n = inst->_iterms.size();
 
   // Delete these in reverse order so undo creates the in
   // the correct order.
   for (i = 0; i < n; ++i) {
-    dbId<_dbITerm> id = inst->_iterms[n - 1 - i];
+    const int index = n - 1 - i;
+    dbId<_dbITerm> id = inst->_iterms[index];
     _dbITerm* _iterm = block->_iterm_tbl->getPtr(id);
     dbITerm* iterm = (dbITerm*) _iterm;
     iterm->disconnect();
@@ -1435,8 +1487,9 @@ void dbInst::destroy(dbInst* inst_)
 
     dbProperty::destroyProperties(_iterm);
     block->_iterm_tbl->destroy(_iterm);
-    inst->_iterms.pop_back();
+    inst->_iterms[index] = dbId<_dbITerm>();  // clear
   }
+  inst->_iterms.clear();
 
   dbModule* module = inst_->getModule();
   if (module) {

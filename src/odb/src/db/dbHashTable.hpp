@@ -5,6 +5,7 @@
 
 #include "dbCore.h"
 #include "dbHashTable.h"
+#include "odb/dbId.h"
 
 namespace odb {
 
@@ -20,21 +21,22 @@ inline unsigned int hash_string(const char* str)
   return hash;
 }
 
-template <class T>
-dbHashTable<T>::dbHashTable()
+template <class T, uint page_size>
+dbHashTable<T, page_size>::dbHashTable()
 {
   _obj_tbl = nullptr;
   _num_entries = 0;
 }
 
-template <class T>
-dbHashTable<T>::dbHashTable(const dbHashTable<T>& t)
+template <class T, uint page_size>
+dbHashTable<T, page_size>::dbHashTable(const dbHashTable<T, page_size>& t)
     : _hash_tbl(t._hash_tbl), _num_entries(t._num_entries), _obj_tbl(t._obj_tbl)
 {
 }
 
-template <class T>
-bool dbHashTable<T>::operator==(const dbHashTable<T>& rhs) const
+template <class T, uint page_size>
+bool dbHashTable<T, page_size>::operator==(
+    const dbHashTable<T, page_size>& rhs) const
 {
   if (_num_entries != rhs._num_entries) {
     return false;
@@ -47,8 +49,8 @@ bool dbHashTable<T>::operator==(const dbHashTable<T>& rhs) const
   return true;
 }
 
-template <class T>
-void dbHashTable<T>::growTable()
+template <class T, uint page_size>
+void dbHashTable<T, page_size>::growTable()
 {
   uint sz = _hash_tbl.size();
   dbId<T> entries;
@@ -89,8 +91,8 @@ void dbHashTable<T>::growTable()
   }
 }
 
-template <class T>
-void dbHashTable<T>::shrinkTable()
+template <class T, uint page_size>
+void dbHashTable<T, page_size>::shrinkTable()
 {
   uint sz = _hash_tbl.size();
   dbId<T> entries;
@@ -135,8 +137,8 @@ void dbHashTable<T>::shrinkTable()
   }
 }
 
-template <class T>
-void dbHashTable<T>::insert(T* object)
+template <class T, uint page_size>
+void dbHashTable<T, page_size>::insert(T* object)
 {
   ++_num_entries;
   uint sz = _hash_tbl.size();
@@ -160,8 +162,8 @@ void dbHashTable<T>::insert(T* object)
   e = object->getOID();
 }
 
-template <class T>
-T* dbHashTable<T>::find(const char* name)
+template <class T, uint page_size>
+T* dbHashTable<T, page_size>::find(const char* name)
 {
   uint sz = _hash_tbl.size();
 
@@ -185,8 +187,8 @@ T* dbHashTable<T>::find(const char* name)
   return nullptr;
 }
 
-template <class T>
-int dbHashTable<T>::hasMember(const char* name)
+template <class T, uint page_size>
+int dbHashTable<T, page_size>::hasMember(const char* name)
 {
   uint sz = _hash_tbl.size();
 
@@ -210,8 +212,8 @@ int dbHashTable<T>::hasMember(const char* name)
   return false;
 }
 
-template <class T>
-void dbHashTable<T>::remove(T* object)
+template <class T, uint page_size>
+void dbHashTable<T, page_size>::remove(T* object)
 {
   uint sz = _hash_tbl.size();
   uint hid = hash_string(object->_name) & (sz - 1);
@@ -245,16 +247,16 @@ void dbHashTable<T>::remove(T* object)
   }
 }
 
-template <class T>
-dbOStream& operator<<(dbOStream& stream, const dbHashTable<T>& table)
+template <class T, uint page_size>
+dbOStream& operator<<(dbOStream& stream, const dbHashTable<T, page_size>& table)
 {
   stream << table._hash_tbl;
   stream << table._num_entries;
   return stream;
 }
 
-template <class T>
-dbIStream& operator>>(dbIStream& stream, dbHashTable<T>& table)
+template <class T, uint page_size>
+dbIStream& operator>>(dbIStream& stream, dbHashTable<T, page_size>& table)
 {
   stream >> table._hash_tbl;
   stream >> table._num_entries;

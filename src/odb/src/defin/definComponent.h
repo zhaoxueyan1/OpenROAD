@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "definBase.h"
+#include "odb/dbTypes.h"
 #include "odb/odb.h"
 
 namespace odb {
@@ -57,8 +58,6 @@ class definComponent : public definBase
  public:
   definComponent();
   ~definComponent() override;
-
-  void init() override;
 
   void setLibs(std::vector<dbLib*>& libs) { _libs = libs; }
 };

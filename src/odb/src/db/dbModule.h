@@ -6,9 +6,11 @@
 
 #include "dbCore.h"
 #include "dbVector.h"
+#include "odb/dbId.h"
 #include "odb/dbSet.h"
 #include "odb/odb.h"
 // User Code Begin Includes
+#include <map>
 #include <string>
 #include <unordered_map>
 
@@ -25,7 +27,11 @@ class _dbModInst;
 class _dbModNet;
 class _dbModBTerm;
 // User Code Begin Classes
+class dbITerm;
 class dbInst;
+class dbModBTerm;
+class dbModInst;
+class dbModule;
 // User Code End Classes
 
 class _dbModule : public _dbObject
@@ -44,6 +50,31 @@ class _dbModule : public _dbObject
   // This is only used when destroying an inst
   void removeInst(dbInst* inst);
 
+  // Copy and uniquify a given module based on current instance
+  using modBTMap = std::map<dbModBTerm*, dbModBTerm*>;
+  using ITMap = std::map<dbITerm*, dbITerm*>;
+
+  static void copy(dbModule* old_module,
+                   dbModule* new_module,
+                   dbModInst* new_mod_inst);
+
+  static void copyModulePorts(dbModule* old_module,
+                              dbModule* new_module,
+                              modBTMap& mod_bt_map);
+  static void copyModuleInsts(dbModule* old_module,
+                              dbModule* new_module,
+                              dbModInst* new_mod_inst,
+                              ITMap& it_map);
+  static void copyModuleModNets(dbModule* old_module,
+                                dbModule* new_module,
+                                modBTMap& mod_bt_map,
+                                ITMap& it_map);
+  static void copyModuleBoundaryIO(dbModule* old_module,
+                                   dbModule* new_module,
+                                   dbModInst* new_mod_inst);
+
+  // Copy module to child block for future use
+  static bool copyToChildBlock(dbModule* module);
   // User Code End Methods
 
   char* _name;

@@ -14,7 +14,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake)
 include(CheckIPOSupported)
 check_ipo_supported(RESULT ipo_supported OUTPUT error)
 
-find_package(Boost REQUIRED COMPONENTS serialization)
+find_package(Boost CONFIG REQUIRED COMPONENTS serialization)
 find_package(OpenMP REQUIRED)
 find_package(VTune)
 
@@ -63,7 +63,6 @@ add_library(drt_lib
   src/db/drObj/drPin.cpp
   src/db/drObj/drShape.cpp
   src/db/drObj/drVia.cpp
-  src/db/infra/frTime_helper.cpp
   src/db/infra/frTime.cpp
   src/db/infra/KDTree.cpp
   src/db/taObj/taShape.cpp

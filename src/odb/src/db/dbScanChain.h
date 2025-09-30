@@ -9,6 +9,7 @@
 #include "dbCore.h"
 #include "dbScanPin.h"
 #include "dbVector.h"
+#include "odb/dbId.h"
 #include "odb/odb.h"
 
 namespace odb {
@@ -16,8 +17,6 @@ class dbIStream;
 class dbOStream;
 class _dbDatabase;
 class _dbScanPartition;
-template <class T>
-class dbTable;
 class dbScanPin;
 
 class _dbScanChain : public _dbObject

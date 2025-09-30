@@ -6,12 +6,11 @@
 #include "dbCore.h"
 #include "odb/dbId.h"
 #include "odb/dbTypes.h"
+#include "odb/geom.h"
 #include "odb/odb.h"
 
 namespace odb {
 
-template <class T>
-class dbTable;
 class dbIStream;
 class dbOStream;
 class dbSite;

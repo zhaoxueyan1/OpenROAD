@@ -6,25 +6,13 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 #include "odb/db.h"
+#include "odb/dbSet.h"
 #include "utl/Logger.h"
 namespace odb {
-
-definGroup::definGroup() : cur_group_(nullptr)
-{
-  init();
-}
-
-definGroup::~definGroup()
-{
-}
-
-void definGroup::init()
-{
-  definBase::init();
-}
 
 void definGroup::begin(const char* name)
 {

@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
@@ -15,6 +17,7 @@
 #include "ClockDomain.hh"
 #include "ClockDomainHash.hh"
 #include "ScanArchitectHeuristic.hh"
+#include "utl/Logger.h"
 
 namespace dft {
 
@@ -110,10 +113,10 @@ uint64_t ScanCellsBucket::numberOfCells(size_t hash_domain) const
 std::unique_ptr<ScanArchitect> ScanArchitect::ConstructScanScanArchitect(
     const ScanArchitectConfig& config,
     std::unique_ptr<ScanCellsBucket> scan_cells_bucket,
-    utl::Logger* logger_)
+    utl::Logger* logger)
 {
   return std::make_unique<ScanArchitectHeuristic>(
-      config, std::move(scan_cells_bucket), logger_);
+      config, std::move(scan_cells_bucket), logger);
 }
 
 ScanArchitect::ScanArchitect(const ScanArchitectConfig& config,

@@ -8,12 +8,13 @@
 
 #include "dbCore.h"
 #include "dbHashTable.h"
+#include "odb/dbId.h"
 #include "odb/odb.h"
 // User Code Begin Includes
-#include <boost/property_tree/json_parser.hpp>
 #include <fstream>
 #include <set>
-#include <string>
+
+#include "boost/property_tree/json_parser.hpp"
 // User Code End Includes
 
 namespace odb {
@@ -21,8 +22,6 @@ class dbIStream;
 class dbOStream;
 class _dbDatabase;
 class _dbMarker;
-template <class T>
-class dbTable;
 class _dbMarkerCategory;
 // User Code Begin Classes
 class _dbBlock;

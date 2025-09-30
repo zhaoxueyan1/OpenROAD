@@ -4,6 +4,8 @@
 #include "odb/util.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -14,6 +16,7 @@
 #include "odb/db.h"
 #include "odb/dbCCSegSet.h"
 #include "odb/dbShape.h"
+#include "odb/dbTypes.h"
 #include "utl/Logger.h"
 
 namespace odb {
@@ -238,7 +241,8 @@ std::string generateMacroPlacementString(dbBlock* block)
   for (odb::dbInst* inst : block->getInsts()) {
     if (inst->isBlock()) {
       macro_placement += fmt::format(
-          "place_macro -macro_name {} -location {{{} {}}} -orientation {}\n",
+          "place_macro -macro_name {{{}}} -location {{{} {}}} -orientation "
+          "{}\n",
           inst->getName(),
           block->dbuToMicrons(inst->getLocation().x()),
           block->dbuToMicrons(inst->getLocation().y()),
@@ -331,12 +335,19 @@ int64_t WireLengthEvaluator::hpwl(dbNet* net,
   }
 
   Rect bbox = net->getTermBBox();
+  if (bbox.isInverted()) {
+    hpwl_x = 0;
+    hpwl_y = 0;
+    return 0;
+  }
+
   hpwl_x = bbox.dx();
   hpwl_y = bbox.dy();
+
   return hpwl_x + hpwl_y;
 }
 
-void WireLengthEvaluator::report(utl::Logger* logger) const
+void WireLengthEvaluator::reportEachNetHpwl(utl::Logger* logger) const
 {
   for (dbNet* net : block_->getNets()) {
     int64_t tmp;
@@ -344,6 +355,11 @@ void WireLengthEvaluator::report(utl::Logger* logger) const
                    net->getConstName(),
                    block_->dbuToMicrons(hpwl(net, tmp, tmp)));
   }
+}
+
+void WireLengthEvaluator::reportHpwl(utl::Logger* logger) const
+{
+  logger->report("{}", block_->dbuToMicrons(hpwl()));
 }
 
 }  // namespace odb

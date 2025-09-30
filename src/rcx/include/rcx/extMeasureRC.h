@@ -3,13 +3,13 @@
 
 #pragma once
 
+#include <cstdio>
 #include <string>
 
-#include "extRCap.h"
+#include "odb/db.h"
+#include "rcx/extRCap.h"
 
 namespace rcx {
-
-using namespace odb;
 
 // Configuration settings for coupling flow
 
@@ -43,10 +43,12 @@ struct CouplingState
   // Update counts when processing tables
   void updateTableCounts(bool hasEmptyTable, bool hasOneCount)
   {
-    if (hasEmptyTable)
+    if (hasEmptyTable) {
       empty_table_count++;
-    if (hasOneCount)
+    }
+    if (hasOneCount) {
       one_count_table++;
+    }
   }
 
   // Print statistics
@@ -106,8 +108,9 @@ struct CouplingConfig
   }
   void reset_calc_flow_flag(uint level)
   {
-    if (metal_flag > 0)
+    if (metal_flag > 0) {
       new_calc_flow = level <= metal_flag ? true : false;
+    }
   }
   // Destructor to clean up resources
   ~CouplingConfig() {}
@@ -403,8 +406,8 @@ class extMeasureRC : public extMeasure
                          int metUnder = -1);
 
   // dkf 09212023
-  void OverSubRC_dist_new(dbRSeg* rseg1,
-                          dbRSeg* rseg2,
+  void OverSubRC_dist_new(odb::dbRSeg* rseg1,
+                          odb::dbRSeg* rseg2,
                           int ouCovered,
                           int diagCovered,
                           int srcCovered);
@@ -528,10 +531,12 @@ class extMeasureRC : public extMeasure
                        extDistRC* rc2,
                        bool use_weighted = true);
   bool useWeightedAvg(int& dist1, int& dist2, int underMet);
-  int computeAndStoreRC_new(dbRSeg* rseg1, dbRSeg* rseg2, int srcCovered);
+  int computeAndStoreRC_new(odb::dbRSeg* rseg1,
+                            odb::dbRSeg* rseg2,
+                            int srcCovered);
   //-----------------------------------------------------------
-  bool updateCoupCap(dbRSeg* rseg1,
-                     dbRSeg* rseg2,
+  bool updateCoupCap(odb::dbRSeg* rseg1,
+                     odb::dbRSeg* rseg2,
                      int jj,
                      double v,
                      const char* dbg_msg);
@@ -925,7 +930,7 @@ class extMeasureRC : public extMeasure
                                 Ath__array1D<extSegment*>* aboveTable);
 
   // dkf 10192023
-  dbRSeg* GetRseg(int id);
+  odb::dbRSeg* GetRseg(int id);
   bool VerticalCap(uint met,
                    uint tgtMet,
                    int rsegId1,
@@ -1022,9 +1027,12 @@ class extMeasureRC : public extMeasure
                          int metUnder,
                          int metOver,
                          FILE* segFP);
-  dbRSeg* GetRSeg(extSegment* cc);
-  dbRSeg* GetRSeg(uint rsegId);
-  double updateCoupCap(dbRSeg* rseg1, dbRSeg* rseg2, int jj, double v);
+  odb::dbRSeg* GetRSeg(extSegment* cc);
+  odb::dbRSeg* GetRSeg(uint rsegId);
+  double updateCoupCap(odb::dbRSeg* rseg1,
+                       odb::dbRSeg* rseg2,
+                       int jj,
+                       double v);
   void OverlapDown(int overMet,
                    extSegment* coupSeg,
                    extSegment* overlapSeg,

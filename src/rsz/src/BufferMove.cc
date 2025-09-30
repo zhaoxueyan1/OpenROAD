@@ -3,11 +3,19 @@
 
 #include "BufferMove.hh"
 
-#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 #include "BaseMove.hh"
+#include "sta/ArcDelayCalc.hh"
+#include "sta/Delay.hh"
+#include "sta/Graph.hh"
+#include "sta/NetworkClass.hh"
+#include "sta/Path.hh"
+#include "sta/PathExpanded.hh"
+#include "sta/TimingArc.hh"
+#include "utl/Logger.h"
 
 namespace rsz {
 
@@ -29,6 +37,10 @@ using sta::Slew;
 using sta::TimingArc;
 using sta::Vertex;
 
+BufferMove::BufferMove(Resizer* resizer) : BaseMove(resizer)
+{
+}
+
 bool BufferMove::doMove(const Path* drvr_path,
                         int drvr_index,
                         Slack drvr_slack,
@@ -47,16 +59,7 @@ bool BufferMove::doMove(const Path* drvr_path,
   if (fanout >= rebuffer_max_fanout_) {
     return false;
   }
-  const bool tristate_drvr = resizer_->isTristateDriver(drvr_pin);
-  if (tristate_drvr) {
-    return false;
-  }
-  const Net* net = db_network_->dbToSta(db_network_->flatNet(drvr_pin));
-  if (resizer_->dontTouch(net)) {
-    return false;
-  }
-  dbNet* db_net = db_network_->staToDb(net);
-  if (db_net->isConnectedByAbutment()) {
+  if (!resizer_->okToBufferNet(drvr_pin)) {
     return false;
   }
 
@@ -96,8 +99,9 @@ void BufferMove::debugCheckMultipleBuffers(Path* path, PathExpanded* expanded)
     const int start_index = expanded->startIndex();
     for (int i = start_index; i < path_length; i++) {
       const Path* path = expanded->path(i);
+      const Vertex* path_vertex = path->vertex(sta_);
       const Pin* path_pin = path->pin(sta_);
-      if (i > 0 && network_->isDriver(path_pin)
+      if (i > 0 && path_vertex->isDriver(network_)
           && !network_->isTopLevelPort(path_pin)) {
         const TimingArc* prev_arc = path->prevArc(sta_);
         printf("repair_setup %s: %s ---> %s \n",

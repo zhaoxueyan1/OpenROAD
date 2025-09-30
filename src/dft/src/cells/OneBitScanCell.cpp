@@ -3,12 +3,16 @@
 
 #include "OneBitScanCell.hh"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "ClockDomain.hh"
 #include "db_sta/dbSta.hh"
+#include "odb/db.h"
+#include "odb/geom.h"
+#include "sta/Liberty.hh"
 
 namespace dft {
 
@@ -51,6 +55,11 @@ void OneBitScanCell::connectScanOut(const ScanLoad& load) const
   Connect(load,
           ScanDriver(findITerm(getLibertyScanOut(test_cell_))),
           /*preserve=*/true);
+}
+
+ScanLoad OneBitScanCell::getScanEnable() const
+{
+  return ScanLoad(findITerm(getLibertyScanEnable(test_cell_)));
 }
 
 ScanDriver OneBitScanCell::getScanOut() const

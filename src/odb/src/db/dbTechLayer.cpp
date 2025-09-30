@@ -35,14 +35,13 @@
 #include "odb/db.h"
 #include "odb/dbSet.h"
 // User Code Begin Includes
-#include <spdlog/fmt/ostr.h>
-
 #include "dbHashTable.hpp"
 #include "dbTech.h"
 #include "dbTechLayerAntennaRule.h"
 #include "dbTechLayerSpacingRule.h"
 #include "dbTechMinCutOrAreaRule.h"
 #include "odb/lefout.h"
+#include "spdlog/fmt/ostr.h"
 #include "utl/Logger.h"
 // User Code End Includes
 namespace odb {
@@ -500,29 +499,23 @@ _dbTechLayer::_dbTechLayer(_dbDatabase* db)
       (GetObjTbl_t) &_dbTechLayer::getObjectTable,
       dbTechLayerSpacingRuleObj);
 
-  _min_cut_rules_tbl = new dbTable<_dbTechMinCutRule>(
+  _min_cut_rules_tbl = new dbTable<_dbTechMinCutRule, 8>(
       db,
       this,
       (GetObjTbl_t) &_dbTechLayer::getObjectTable,
-      dbTechMinCutRuleObj,
-      8,
-      3);
+      dbTechMinCutRuleObj);
 
-  _min_enc_rules_tbl = new dbTable<_dbTechMinEncRule>(
+  _min_enc_rules_tbl = new dbTable<_dbTechMinEncRule, 8>(
       db,
       this,
       (GetObjTbl_t) &_dbTechLayer::getObjectTable,
-      dbTechMinEncRuleObj,
-      8,
-      3);
+      dbTechMinEncRuleObj);
 
-  _v55inf_tbl = new dbTable<_dbTechV55InfluenceEntry>(
+  _v55inf_tbl = new dbTable<_dbTechV55InfluenceEntry, 8>(
       db,
       this,
       (GetObjTbl_t) &_dbTechLayer::getObjectTable,
-      dbTechV55InfluenceEntryObj,
-      8,
-      3);
+      dbTechV55InfluenceEntryObj);
   // User Code End Constructor
 }
 
@@ -635,9 +628,7 @@ dbOStream& operator<<(dbOStream& stream, const _dbTechLayer& obj)
   static_assert(sizeof(obj.flags_) == sizeof(flags_bit_field));
   std::memcpy(&flags_bit_field, &obj.flags_, sizeof(obj.flags_));
   stream << flags_bit_field;
-  if (obj.getDatabase()->isSchema(db_schema_orth_spc_tbl)) {
-    stream << obj.orth_spacing_tbl_;
-  }
+  stream << obj.orth_spacing_tbl_;
   stream << *obj.cut_class_rules_tbl_;
   stream << obj.cut_class_rules_hash_;
   stream << *obj.spacing_eol_rules_tbl_;
@@ -651,25 +642,14 @@ dbOStream& operator<<(dbOStream& stream, const _dbTechLayer& obj)
   stream << *obj.eol_ext_rules_tbl_;
   stream << *obj.array_spacing_rules_tbl_;
   stream << *obj.eol_keep_out_rules_tbl_;
-  if (obj.getDatabase()->isSchema(db_schema_max_spacing)) {
-    stream << *obj.max_spacing_rules_tbl_;
-  }
+  stream << *obj.max_spacing_rules_tbl_;
   stream << *obj.width_table_rules_tbl_;
   stream << *obj.min_cuts_rules_tbl_;
   stream << *obj.area_rules_tbl_;
-  if (obj.getDatabase()->isSchema(db_schema_lef58_forbidden_spacing)) {
-    stream << *obj.forbidden_spacing_rules_tbl_;
-  }
-  if (obj.getDatabase()->isSchema(db_schema_keepout_zone)) {
-    stream << *obj.keepout_zone_rules_tbl_;
-  }
-  if (obj.getDatabase()->isSchema(db_schema_wrongdir_spacing)) {
-    stream << *obj.wrongdir_spacing_rules_tbl_;
-  }
-  if (obj.getDatabase()->isSchema(
-          db_schema_lef58_two_wires_forbidden_spacing)) {
-    stream << *obj.two_wires_forbidden_spc_rules_tbl_;
-  }
+  stream << *obj.forbidden_spacing_rules_tbl_;
+  stream << *obj.keepout_zone_rules_tbl_;
+  stream << *obj.wrongdir_spacing_rules_tbl_;
+  stream << *obj.two_wires_forbidden_spc_rules_tbl_;
   // User Code Begin <<
   stream << obj.layer_adjustment_;
   stream << obj._pitch_x;
@@ -710,12 +690,8 @@ dbOStream& operator<<(dbOStream& stream, const _dbTechLayer& obj)
   stream << obj._two_widths_sp_spacing;
   stream << obj._oxide1;
   stream << obj._oxide2;
-  if (obj.getDatabase()->isSchema(db_schema_wrongway_width)) {
-    stream << obj.wrong_way_width_;
-  }
-  if (obj.getDatabase()->isSchema(db_schema_lef58_pitch)) {
-    stream << obj._first_last_pitch;
-  }
+  stream << obj.wrong_way_width_;
+  stream << obj._first_last_pitch;
   // User Code End <<
   return stream;
 }
@@ -1287,9 +1263,8 @@ void dbTechLayer::setAlias(const char* alias)
     free((void*) layer->_alias);
   }
 
-  layer->flags_.has_alias_ = 1;
-  layer->_alias = strdup(alias);
-  ZALLOCATED(layer->_alias);
+  layer->flags_.has_alias_ = true;
+  layer->_alias = safe_strdup(alias);
 }
 
 uint dbTechLayer::getWidth() const
@@ -1871,7 +1846,7 @@ bool dbTechLayer::getThickness(uint& inthk) const
 void dbTechLayer::setThickness(uint thickness)
 {
   _dbTechLayer* layer = (_dbTechLayer*) this;
-  layer->flags_.has_thickness_ = 1;
+  layer->flags_.has_thickness_ = true;
   layer->_thickness = thickness;
 }
 
@@ -1895,7 +1870,7 @@ dbTechLayer::getArea() const
 void dbTechLayer::setArea(double area)
 {
   _dbTechLayer* layer = (_dbTechLayer*) this;
-  layer->flags_.has_area_ = 1;
+  layer->flags_.has_area_ = true;
   layer->_area = area;
 }
 
@@ -1918,7 +1893,7 @@ uint dbTechLayer::getMaxWidth() const
 void dbTechLayer::setMaxWidth(uint max_width)
 {
   _dbTechLayer* layer = (_dbTechLayer*) this;
-  layer->flags_.has_max_width_ = 1;
+  layer->flags_.has_max_width_ = true;
   layer->_max_width = max_width;
 }
 
@@ -1997,7 +1972,7 @@ void dbTechLayer::setProtrusion(uint pt_width,
                                 uint pt_from_width)
 {
   _dbTechLayer* layer = (_dbTechLayer*) this;
-  layer->flags_.has_protrusion_ = 1;
+  layer->flags_.has_protrusion_ = true;
   layer->_pt._width = pt_width;
   layer->_pt._length = pt_length;
   layer->_pt._from_width = pt_from_width;
@@ -2252,8 +2227,7 @@ dbTechLayer* dbTechLayer::create(dbTech* tech_,
 
   _dbTech* tech = (_dbTech*) tech_;
   _dbTechLayer* layer = tech->_layer_tbl->create();
-  layer->_name = strdup(name_);
-  ZALLOCATED(layer->_name);
+  layer->_name = safe_strdup(name_);
   layer->_number = tech->_layer_cnt++;
   layer->flags_.type_ = type.getValue();
 

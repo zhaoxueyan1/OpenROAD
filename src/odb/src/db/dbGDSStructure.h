@@ -8,6 +8,7 @@
 #include "dbTable.h"
 #include "dbVector.h"
 #include "odb/db.h"
+#include "odb/dbId.h"
 #include "odb/odb.h"
 
 namespace odb {
@@ -15,8 +16,6 @@ class dbIStream;
 class dbOStream;
 class _dbDatabase;
 class _dbGDSBoundary;
-template <class T>
-class dbTable;
 class _dbGDSBox;
 class _dbGDSPath;
 class _dbGDSSRef;

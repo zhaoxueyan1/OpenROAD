@@ -3,22 +3,16 @@
 
 #include "definBase.h"
 
+#include <cassert>
+
 #include "defiUtil.hpp"
 #include "odb/db.h"
+#include "odb/dbTypes.h"
+#include "odb/defin.h"
 
 namespace odb {
 
 definBase::definBase()
-{
-  _mode = defin::DEFAULT;
-  _tech = nullptr;
-  _block = nullptr;
-  _logger = nullptr;
-  _errors = 0;
-  _dist_factor = 10;
-}
-
-void definBase::init()
 {
   _mode = defin::DEFAULT;
   _tech = nullptr;

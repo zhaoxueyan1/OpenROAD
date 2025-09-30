@@ -4,7 +4,6 @@
 #include "Evaluator.h"
 
 #include <algorithm>
-#include <boost/range/iterator_range_core.hpp>
 #include <cmath>
 #include <fstream>
 #include <functional>
@@ -21,6 +20,7 @@
 
 #include "Hypergraph.h"
 #include "Utilities.h"
+#include "boost/range/iterator_range_core.hpp"
 #include "utl/Logger.h"
 
 // ------------------------------------------------------------------------------
@@ -719,7 +719,7 @@ void GoldenEvaluator::UpdateTiming(const HGraphPtr& hgraph,
     // the remaining vertices are all sinks
     // It will stop if the sink vertex is a FF or IO
     for (const int v : timing_graph_->Vertices(e)) {
-      if (timing_graph_->GetVertexType(v) != COMB_STD_CELL) {
+      if (timing_graph_->GetVertexType(v) != kCombStdCell) {
         continue;  // the current vertex is port or seq_std_cell or macro
       }
       // find all the hyperedges connected to this hyperedge
@@ -749,7 +749,7 @@ void GoldenEvaluator::UpdateTiming(const HGraphPtr& hgraph,
     const int src_id = *range.begin();
     // Stop backward traversing if the current vertex is port or seq_std_cell or
     // macro
-    if (timing_graph_->GetVertexType(src_id) != COMB_STD_CELL) {
+    if (timing_graph_->GetVertexType(src_id) != kCombStdCell) {
       return;  // the current vertex is port or seq_std_cell or macro
     }
     // find all the hyperedges driving this vertex

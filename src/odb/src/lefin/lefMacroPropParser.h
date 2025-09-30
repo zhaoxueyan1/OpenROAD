@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "boost/fusion/container/vector.hpp"
 #include "odb/db.h"
 #include "odb/lefin.h"
 
@@ -23,7 +24,7 @@ class lefMacroEdgeTypeParser
   {
   }
   void parse(const std::string&);
-  bool parseSubRule(std::string);
+  bool parseSubRule(const std::string&);
   void setRange(boost::fusion::vector<double, double>& params);
 
  private:

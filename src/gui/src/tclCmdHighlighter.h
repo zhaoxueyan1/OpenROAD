@@ -4,9 +4,11 @@
 #pragma once
 
 #include <QRegularExpression>
+#include <QString>
 #include <QSyntaxHighlighter>
 #include <QTextBlockUserData>
 #include <QTextCharFormat>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -76,7 +78,7 @@ class TclCmdHighlighter : public QSyntaxHighlighter
                        const std::string& end_of_command);
   void initOther();
 
-  static const std::string escape(const std::string& preregex);
+  static std::string escape(const std::string& preregex);
   static CommandRulePtr buildKeywordRule(const int command_id,
                                          const std::string& command,
                                          const std::string& start_of_command,
@@ -112,7 +114,7 @@ class TclCmdHighlighter : public QSyntaxHighlighter
   std::vector<CommandRuleGroup> syntax_rules_;
   // string formatting, needs to be handled separately since it can span
   // multiple lines
-  CommandRuleGroup string_rule;
+  CommandRuleGroup string_rule_;
 
   std::map<int, ArgumentRulePtr> argument_rules_;
 

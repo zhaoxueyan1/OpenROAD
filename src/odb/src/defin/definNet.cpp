@@ -3,13 +3,19 @@
 
 #include "definNet.h"
 
+#include <cassert>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
 
 #include "odb/db.h"
+#include "odb/dbSet.h"
 #include "odb/dbShape.h"
+#include "odb/dbTypes.h"
 #include "odb/dbWireCodec.h"
+#include "odb/defin.h"
 #include "utl/Logger.h"
 
 namespace odb {
@@ -34,38 +40,6 @@ inline uint get_net_dbid(const char* name)
   }
 
   return dbid;
-}
-
-definNet::definNet()
-{
-  init();
-  _skip_signal_connections = false;
-  _skip_wires = false;
-}
-
-definNet::~definNet()
-{
-}
-
-void definNet::init()
-{
-  definBase::init();
-  _net_cnt = 0;
-  _update_cnt = 0;
-  _net_iterm_cnt = 0;
-  _cur_net = nullptr;
-  _cur_layer = nullptr;
-  _wire = nullptr;
-  _wire_type = dbWireType::NONE;
-  _wire_shape_type = dbWireShapeType::NONE;
-  _prev_x = 0;
-  _prev_y = 0;
-  _width = 0;
-  _point_cnt = 0;
-  _taper_rule = nullptr;
-  _non_default_rule = nullptr;
-  _rule_for_path = nullptr;
-  _rotated_vias.clear();
 }
 
 void definNet::begin(const char* name)
@@ -412,7 +386,7 @@ dbVia* definNet::getRotatedVia(const char* via_name, dbOrientType orient)
       break;
 
     default:
-      throw ZException("Unknown orientation");
+      throw std::runtime_error("Unknown orientation");
       break;
   }
 

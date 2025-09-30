@@ -9,14 +9,18 @@ constexpr int GRDEMANDSIZE = 16;
 constexpr int GRFRACSIZE = 1;
 
 #include <algorithm>
+#include <bitset>
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <vector>
 
 #include "db/grObj/grPin.h"
+#include "db/tech/frTechObject.h"
 #include "dr/FlexMazeTypes.h"
 #include "frBaseTypes.h"
 #include "frDesign.h"
+#include "global.h"
 #include "gr/FlexGRWavefront.h"
 
 namespace drt {
@@ -68,7 +72,7 @@ class FlexGRGridGraph
     zDim = zCoords_.size();
   }
 
-  Point& getPoint(frMIdx x, frMIdx y, Point& in) const
+  odb::Point& getPoint(frMIdx x, frMIdx y, odb::Point& in) const
   {
     in = {xCoords_[x], yCoords_[y]};
     return in;
@@ -306,12 +310,16 @@ class FlexGRGridGraph
       auto idx = getIdx(x, y, z);
       switch (dir) {
         case frDirEnum::E:
-          return setBit(idx, 3);
+          setBit(idx, 3);
+          break;
         case frDirEnum::N:
-          return setBit(idx, 4);
+          setBit(idx, 4);
+          break;
         case frDirEnum::U:
-          return setBit(idx, 5);
-        default:;
+          setBit(idx, 5);
+          break;
+        default:
+          break;
       }
     }
   }
@@ -323,12 +331,16 @@ class FlexGRGridGraph
       auto idx = getIdx(x, y, z);
       switch (dir) {
         case frDirEnum::E:
-          return resetBit(idx, 3);
+          resetBit(idx, 3);
+          break;
         case frDirEnum::N:
-          return resetBit(idx, 4);
+          resetBit(idx, 4);
+          break;
         case frDirEnum::U:
-          return resetBit(idx, 5);
-        default:;
+          resetBit(idx, 5);
+          break;
+        default:
+          break;
       }
     }
   }
@@ -370,11 +382,14 @@ class FlexGRGridGraph
       auto idx = getIdx(x, y, z);
       switch (dir) {
         case frDirEnum::E:
-          return setBits(idx, 24, GRSUPPLYSIZE, supplyIn);
+          setBits(idx, 24, GRSUPPLYSIZE, supplyIn);
+          break;
         case frDirEnum::N:
-          return setBits(idx, 16, GRSUPPLYSIZE, supplyIn);
+          setBits(idx, 16, GRSUPPLYSIZE, supplyIn);
+          break;
         default:
           std::cout << "Error: unexpected dir in FlexGRGridGraph::setSupply\n";
+          break;
       }
     }
   }
@@ -387,13 +402,14 @@ class FlexGRGridGraph
       auto idx = getIdx(x, y, z);
       switch (dir) {
         case frDirEnum::E:
-          return setBits(
-              idx, 48 + GRFRACSIZE, GRDEMANDSIZE - GRFRACSIZE, demandIn);
+          setBits(idx, 48 + GRFRACSIZE, GRDEMANDSIZE - GRFRACSIZE, demandIn);
+          break;
         case frDirEnum::N:
-          return setBits(
-              idx, 32 + GRFRACSIZE, GRDEMANDSIZE - GRFRACSIZE, demandIn);
+          setBits(idx, 32 + GRFRACSIZE, GRDEMANDSIZE - GRFRACSIZE, demandIn);
+          break;
         default:
           std::cout << "Error: unexpected dir in FlexGRGridGraph::setDemand\n";
+          break;
       }
     }
   }
@@ -410,12 +426,15 @@ class FlexGRGridGraph
       auto idx = getIdx(x, y, z);
       switch (dir) {
         case frDirEnum::E:
-          return setBits(idx, 48, GRDEMANDSIZE, rawDemandIn);
+          setBits(idx, 48, GRDEMANDSIZE, rawDemandIn);
+          break;
         case frDirEnum::N:
-          return setBits(idx, 32, GRDEMANDSIZE, rawDemandIn);
+          setBits(idx, 32, GRDEMANDSIZE, rawDemandIn);
+          break;
         default:
           std::cout
               << "Error: unexpected dir in FlexGRGridGraph::setRawDemand\n";
+          break;
       }
     }
   }
@@ -562,7 +581,7 @@ class FlexGRGridGraph
               std::vector<FlexMazeIdx>& path,
               FlexMazeIdx& ccMazeIdx1,
               FlexMazeIdx& ccMazeIdx2,
-              const Point& centerPt);
+              const odb::Point& centerPt);
 
   void cleanup()
   {
@@ -638,7 +657,7 @@ class FlexGRGridGraph
     auto it = std::lower_bound(zCoords_.begin(), zCoords_.end(), in);
     return it - zCoords_.begin();
   }
-  FlexMazeIdx& getMazeIdx(const Point& p,
+  FlexMazeIdx& getMazeIdx(const odb::Point& p,
                           frLayerNum layerNum,
                           FlexMazeIdx& mIdx) const
   {
@@ -771,7 +790,7 @@ class FlexGRGridGraph
   void expandWavefront(FlexGRWavefrontGrid& currGrid,
                        const FlexMazeIdx& dstMazeIdx1,
                        const FlexMazeIdx& dstMazeIdx2,
-                       const Point& centerPt);
+                       const odb::Point& centerPt);
   bool isExpandable(const FlexGRWavefrontGrid& currGrid, frDirEnum dir);
   FlexMazeIdx getTailIdx(const FlexMazeIdx& currIdx,
                          const FlexGRWavefrontGrid& currGrid);
@@ -779,7 +798,7 @@ class FlexGRGridGraph
               const frDirEnum& dir,
               const FlexMazeIdx& dstMazeIdx1,
               const FlexMazeIdx& dstMazeIdx2,
-              const Point& centerPt);
+              const odb::Point& centerPt);
 
   friend class FlexGRWorker;
 };

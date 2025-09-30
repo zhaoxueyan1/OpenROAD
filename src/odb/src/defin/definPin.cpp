@@ -6,43 +6,19 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "odb/db.h"
+#include "odb/dbSet.h"
 #include "odb/dbShape.h"
 #include "odb/dbTransform.h"
+#include "odb/dbTypes.h"
+#include "odb/defin.h"
+#include "odb/geom.h"
 #include "utl/Logger.h"
 
 namespace odb {
-
-definPin::definPin()
-    : _bterm_cnt(0),
-      _update_cnt(0),
-      _cur_bterm(nullptr),
-      _status(dbPlacementStatus::NONE),
-      _orient(dbOrientType::R0),
-      _orig_x(0),
-      _orig_y(0),
-      _min_spacing(0),
-      _effective_width(0),
-      _left_bus('['),
-      _right_bus(']'),
-      _layer(nullptr),
-      _has_min_spacing(false),
-      _has_effective_width(false),
-      _has_placement(false)
-{
-  init();
-}
-
-definPin::~definPin()
-{
-}
-
-void definPin::init()
-{
-  definBase::init();
-}
 
 void definPin::pinsBegin(int /* unused: n */)
 {

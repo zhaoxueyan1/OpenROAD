@@ -5,10 +5,10 @@ read_lef Nangate45_io/dummy_pads.lef
 
 read_def Nangate45_blackparrot/floorplan.def
 
-add_global_connect -pin_pattern "VDD" -net VDD -power
-add_global_connect -pin_pattern "DVDD" -net DVDD -power
-add_global_connect -pin_pattern "VSS" -net VSS -ground
-add_global_connect -pin_pattern "DVSS" -net DVSS -ground
+add_global_connection -pin_pattern "VDD" -net VDD -power
+add_global_connection -pin_pattern "DVDD" -net DVDD -power
+add_global_connection -pin_pattern "VSS" -net VSS -ground
+add_global_connection -pin_pattern "DVSS" -net DVSS -ground
 
 # Make IO Sites
 make_io_sites -horizontal_site IOSITE -vertical_site IOSITE -corner_site IOSITE -offset 35
@@ -268,7 +268,8 @@ place_io_fill -row IO_WEST PAD_FILL5_V PAD_FILL1_V
 connect_by_abutment
 
 # Make bump array
-make_io_bump_array -bump DUMMY_BUMP_TWO_PORTS -origin "210.0 215.0" -pitch "160 160" -rows 17 -columns 17
+make_io_bump_array -bump DUMMY_BUMP_TWO_PORTS -origin "210.0 215.0" \
+  -pitch "160 160" -rows 17 -columns 17
 remove_io_bump BUMP_5_8
 remove_io_bump BUMP_6_8
 remove_io_bump BUMP_7_8

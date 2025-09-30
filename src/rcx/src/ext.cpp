@@ -3,9 +3,12 @@
 
 #include "rcx/ext.h"
 
-#include <functional>
+#include <cstdio>
+#include <list>
 #include <string>
 
+#include "odb/db.h"
+#include "odb/dbObject.h"
 #include "odb/wOrder.h"
 #include "parse.h"
 #include "rcx/extMeasureRC.h"
@@ -18,22 +21,15 @@ using utl::Logger;
 using utl::RCX;
 
 // Ext::Ext() : _ext(std::make_unique<extMain>())
-Ext::Ext()
+Ext::Ext(odb::dbDatabase* db, Logger* logger, const char* spef_version)
+    : _db(db), _ext(new extMain()), logger_(logger), spef_version_(spef_version)
 {
-  _ext = new extMain();
+  _ext->init(db, logger);
 }
 
 Ext::~Ext()
 {
   delete _ext;
-}
-
-void Ext::init(odb::dbDatabase* db, Logger* logger, const char* spef_version)
-{
-  _db = db;
-  logger_ = logger;
-  spef_version_ = spef_version;
-  _ext->init(db, logger);
 }
 
 void Ext::setLogger(Logger* logger)
@@ -135,10 +131,11 @@ void Ext::bench_wires(const BenchWiresOptions& bwo)
     parser.getDoubleArray(&opt._densityTable, 0);
   }
   // _ext->benchWires(&opt);
-  if (opt._gen_def_patterns && opt._v1)  // New patterns v1=true
+  if (opt._gen_def_patterns && opt._v1) {  // New patterns v1=true
     _ext->DefWires(&opt);
-  else
+  } else {
     _ext->benchWires(&opt);
+  }
 }
 void Ext::bench_wires_gen(const PatternOptions& opt)
 {
@@ -220,15 +217,16 @@ void Ext::extract(ExtractOptions options)
 
   _ext->_lef_res = options.lef_res;
   if (options.lef_rc) {
-    if (!_ext->checkLayerResistance())
+    if (!_ext->checkLayerResistance()) {
       return;
+    }
     logger_->info(RCX, 375, "Using LEF RC values to extract!");
   }
   _ext->setExtractionOptions_v2(options);
 
-  if (_ext->_v2)
+  if (_ext->_v2) {
     _ext->makeBlockRCsegs_v2(options.net, options.ext_model_file);
-  else
+  } else {
     _ext->makeBlockRCsegs(options.net,
                           options.cc_up,
                           options.cc_model,
@@ -237,6 +235,7 @@ void Ext::extract(ExtractOptions options)
                           options.coupling_threshold,
                           options.context_depth,
                           options.ext_model_file);
+  }
 }
 
 void Ext::adjust_rc(float res_factor, float cc_factor, float gndc_factor)
@@ -431,12 +430,14 @@ bool Ext::gen_rcx_model(const std::string& spef_file_list,
 {
   _ext->setBlockFromChip();
 
-  if (spef_file_list.empty())
+  if (spef_file_list.empty()) {
     logger_->error(
         RCX, 144, "\nSpef List option -spef_file_list is required\n");
-  if (corner_list.empty())
+  }
+  if (corner_list.empty()) {
     logger_->error(
         RCX, 145, "\nCorner List option -corner_list  is required\n");
+  }
 
   Ath__parser parser(logger_);
   int n = parser.mkWords(spef_file_list.c_str());
@@ -447,8 +448,9 @@ bool Ext::gen_rcx_model(const std::string& spef_file_list,
     file_list.push_back(name);
   }
   int n1 = parser.mkWords(corner_list.c_str());
-  if (n != n1)
+  if (n != n1) {
     logger_->error(RCX, 150, "\nMismatch of number Corners and Spef Files\n");
+  }
 
   std::list<std::string> corners_list;
   for (int ii = 0; ii < n; ii++) {
@@ -465,9 +467,10 @@ bool Ext::gen_rcx_model(const std::string& spef_file_list,
 }
 bool Ext::define_rcx_corners(const std::string& corner_list)
 {
-  if (corner_list.empty())
+  if (corner_list.empty()) {
     logger_->error(
         RCX, 146, "\nCorner List option -corner_list  is required\n");
+  }
 
   _ext->setBlockFromChip();
 
@@ -491,15 +494,17 @@ bool Ext::rc_estimate(const std::string& ext_model_file,
   uint extDbCnt = corner_list.size();
 
   uint cornerTable[10];
-  for (uint ii = 0; ii < extDbCnt; ii++)
+  for (uint ii = 0; ii < extDbCnt; ii++) {
     cornerTable[ii] = ii;
+  }
 
   dbTech* tech = _db->getTech();
 
   int dbunit = tech->getDbUnitsPerMicron();
   double dbFactor = 1;
-  if (dbunit > 1000)
+  if (dbunit > 1000) {
     dbFactor = dbunit * 0.001;
+  }
 
   if (!(m->readRules((char*) ext_model_file.c_str(),
                      false,

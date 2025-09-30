@@ -4,8 +4,7 @@
 #pragma once
 
 #include <Eigen/Sparse>
-#include <boost/geometry.hpp>
-#include <boost/polygon/polygon.hpp>
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <optional>
@@ -13,11 +12,14 @@
 #include <string>
 #include <vector>
 
+#include "boost/geometry/geometry.hpp"
+#include "boost/polygon/polygon.hpp"
 #include "connection.h"
 #include "debug_gui.h"
 #include "ir_network.h"
 #include "node.h"
 #include "odb/db.h"
+#include "odb/geom.h"
 #include "psm/pdnsim.h"
 #include "utl/Logger.h"
 
@@ -26,8 +28,8 @@ class dbSta;
 class Corner;
 }  // namespace sta
 
-namespace rsz {
-class Resizer;
+namespace est {
+class EstimateParasitics;
 }
 
 namespace psm {
@@ -57,15 +59,15 @@ class IRSolver
   };
   struct ConnectivityResults
   {
-    std::set<Node*, Node::Compare> unconnected_nodes_;
-    std::set<ITermNode*, Node::Compare> unconnected_iterms_;
+    std::set<Node*, Node::Compare> unconnected_nodes;
+    std::set<ITermNode*, Node::Compare> unconnected_iterms;
   };
 
   IRSolver(
       odb::dbNet* net,
       bool floorplanning,
       sta::dbSta* sta,
-      rsz::Resizer* resizer,
+      est::EstimateParasitics* estimate_parasitics,
       utl::Logger* logger,
       const std::map<odb::dbNet*, std::map<sta::Corner*, Voltage>>&
           user_voltages,
@@ -183,14 +185,14 @@ class IRSolver
       const ValueNodeMap<Current>& currents,
       const Connection::ConnectionMap<Connection::Conductance>& conductance,
       const std::map<Node*, std::size_t>& node_index,
-      Eigen::SparseMatrix<Connection::Conductance>& G,
-      Eigen::VectorXd& J) const;
+      Eigen::SparseMatrix<Connection::Conductance>& g_matrix,
+      Eigen::VectorXd& j_vector) const;
   void addSourcesToMatrixAndVoltages(
       Voltage src_voltage,
       const std::vector<std::unique_ptr<psm::SourceNode>>& sources,
       const std::map<Node*, std::size_t>& node_index,
-      Eigen::SparseMatrix<Connection::Conductance>& G,
-      Eigen::VectorXd& J) const;
+      Eigen::SparseMatrix<Connection::Conductance>& g_matrix,
+      Eigen::VectorXd& j_vector) const;
 
   std::string getMetricKey(const std::string& key, sta::Corner* corner) const;
 
@@ -204,7 +206,7 @@ class IRSolver
   odb::dbNet* net_;
 
   utl::Logger* logger_;
-  rsz::Resizer* resizer_;
+  est::EstimateParasitics* estimate_parasitics_;
   sta::dbSta* sta_;
 
   std::unique_ptr<IRNetwork> network_;
@@ -224,7 +226,7 @@ class IRSolver
   std::map<sta::Corner*, ValueNodeMap<Voltage>> voltages_;
   std::map<sta::Corner*, ValueNodeMap<Current>> currents_;
 
-  static constexpr Current spice_file_min_current_ = 1e-18;
+  static constexpr Current kSpiceFileMinCurrent = 1e-18;
 };
 
 }  // namespace psm

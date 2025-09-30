@@ -3,14 +3,20 @@
 
 #include "Utils.hh"
 
-#include <iostream>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
 #include "db_sta/dbNetwork.hh"
+#include "db_sta/dbSta.hh"
+#include "odb/db.h"
 #include "odb/dbTransform.h"
+#include "odb/dbTypes.h"
+#include "sta/Liberty.hh"
+#include "sta/NetworkClass.hh"
+#include "sta/SdcClass.hh"
 
 namespace dft::utils {
 
@@ -121,9 +127,9 @@ std::optional<sta::Clock*> GetClock(sta::dbSta* sta, odb::dbITerm* iterm)
   return std::nullopt;
 }
 
-bool IsScanCell(const sta::LibertyCell* libertyCell)
+bool IsScanCell(const sta::LibertyCell* liberty_cell)
 {
-  const sta::TestCell* test_cell = libertyCell->testCell();
+  const sta::TestCell* test_cell = liberty_cell->testCell();
   if (test_cell) {
     return getLibertyScanIn(test_cell) != nullptr
            && getLibertyScanEnable(test_cell) != nullptr;

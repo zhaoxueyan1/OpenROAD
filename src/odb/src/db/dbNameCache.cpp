@@ -3,11 +3,17 @@
 
 #include "dbNameCache.h"
 
+#include <cstdlib>
+#include <cstring>
+
+#include "dbCommon.h"
 #include "dbDatabase.h"
+#include "dbHashTable.h"
 #include "dbHashTable.hpp"
 #include "dbName.h"
 #include "dbTable.h"
 #include "dbTable.hpp"
+#include "odb/dbObject.h"
 #include "odb/dbSet.h"
 
 namespace odb {
@@ -22,8 +28,7 @@ _dbName::_dbName(_dbDatabase*, const _dbName& n)
     : _name(nullptr), _next_entry(n._next_entry), _ref_cnt(n._ref_cnt)
 {
   if (n._name) {
-    _name = strdup(n._name);
-    ZALLOCATED(_name);
+    _name = safe_strdup(n._name);
   }
 }
 
@@ -134,8 +139,7 @@ uint _dbNameCache::addName(const char* name)
 
   if (n == nullptr) {
     n = _name_tbl->create();
-    n->_name = strdup(name);
-    ZALLOCATED(n->_name);
+    n->_name = safe_strdup(name);
     _name_hash.insert(n);
   }
 

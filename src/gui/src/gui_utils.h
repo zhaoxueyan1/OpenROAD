@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <QColor>
 #include <QString>
 #include <QWidget>
 
@@ -28,7 +29,7 @@ class Utils
   static QString wrapInCurly(const QString& q_string);
 
   // Cache of size in pixels to limit ~1.5GB in memory
-  inline static const int MAX_IMAGE_SIZE = 7200;
+  static constexpr int kMaxImageSize = 7200;
 };
 
 }  // namespace gui

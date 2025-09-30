@@ -155,16 +155,19 @@ class RouteBase
   // Functions using fastroute on grt are saved as backup.
   void updateGrtRoute();
   void getGrtResult();
+  // TODO: understand why this function is breaking RUDY.
+  // Allow for grt heatmap during gpl execution.
+  void loadGrt();
   float getGrtRC() const;
 
   void updateRudyRoute();
   void getRudyResult();
-  float getRudyRC() const;
+  float getRudyRC(bool verbose = true) const;
 
   // first: is Routability Need
   // second: reverting procedure need in NesterovPlace
   //         (e.g. calling NesterovPlace's init())
-  std::pair<bool, bool> routability();
+  std::pair<bool, bool> routability(int routability_driven_revert_count);
 
   int64_t inflatedAreaDelta() const;
   int numCall() const;
@@ -190,10 +193,11 @@ class RouteBase
   // GCell's width and height
   float minRc_ = 1e30;
   float minRcTargetDensity_ = 0;
-  int minRcViolatedCnt_ = 0;
+  int min_RC_violated_cnt_ = 0;
+  int max_routability_no_improvement_ = 3;
+  int max_routability_revert_ = 50;
 
   void init();
-  void reset();
   void resetRoutabilityResources();
 
   // update numCall_

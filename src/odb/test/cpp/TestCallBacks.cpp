@@ -1,8 +1,7 @@
 #define BOOST_TEST_MODULE TestCallbacks
-#include <boost/test/included/unit_test.hpp>
-#include <iostream>
 
 #include "CallBack.h"
+#include "boost/test/included/unit_test.hpp"
 #include "helper.h"
 #include "odb/db.h"
 
@@ -268,6 +267,35 @@ BOOST_AUTO_TEST_CASE(test_swire)
   BOOST_TEST(cb->events[0] == "PreDestroySBoxes");
   BOOST_TEST(cb->events[1] == "PostDestroySBoxes");
   BOOST_TEST(cb->events[2] == "Destroy swire");
+}
+BOOST_AUTO_TEST_CASE(test_findInst_in_callback)
+{
+  class FindCallback : public dbBlockCallBackObj
+  {
+   public:
+    void inDbITermDestroy(dbITerm* iterm) override
+    {
+      dbInst* inst = iterm->getInst();
+      if (auto it = inst->findITerm("a")) {
+        BOOST_TEST(it->getId() != 0);
+      }
+      if (auto it = inst->findITerm("b")) {
+        BOOST_TEST(it->getId() != 0);
+      }
+      if (auto it = inst->findITerm("o")) {
+        BOOST_TEST(it->getId() != 0);
+      }
+    }
+  };
+
+  db = createSimpleDB();
+  block = db->getChip()->getBlock();
+  FindCallback cb;
+  cb.addOwner(block);
+  dbLib* lib = db->findLib("lib1");
+  auto and2 = lib->findMaster("and2");
+  dbInst* i1 = dbInst::create(block, and2, "i1");
+  dbInst::destroy(i1);
 }
 BOOST_AUTO_TEST_SUITE_END()
 

@@ -3,9 +3,6 @@
 
 #pragma once
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/index/rtree.hpp>
-#include <boost/iterator/function_output_iterator.hpp>
 #include <map>
 #include <set>
 #include <string>
@@ -15,11 +12,16 @@
 #include <vector>
 
 #include "ant/AntennaChecker.hh"
+#include "boost/geometry/geometry.hpp"
+#include "boost/geometry/index/rtree.hpp"
+#include "boost/iterator/function_output_iterator.hpp"
 #include "dpl/Opendp.h"
 #include "grt/GRoute.h"
 #include "grt/RoutePt.h"
 #include "odb/db.h"
 #include "odb/dbShape.h"
+#include "odb/dbTypes.h"
+#include "odb/geom.h"
 #include "odb/wOrder.h"
 #include "sta/Liberty.hh"
 
@@ -114,9 +116,6 @@ class RepairAntennas
   }
   int getDiodesCount() { return diode_insts_.size(); }
   void clearViolations() { antenna_violations_.clear(); }
-  void makeNetWires(NetRouteMap& routing,
-                    const std::vector<odb::dbNet*>& nets_to_repair,
-                    int max_routing_layer);
   void destroyNetWires(const std::vector<odb::dbNet*>& nets_to_repair);
   odb::dbMTerm* findDiodeMTerm();
   double diffArea(odb::dbMTerm* mterm);
@@ -139,24 +138,28 @@ class RepairAntennas
                         const int& init_y,
                         const int& final_x,
                         const int& final_y,
-                        const int& layer_level);
+                        const int& layer_level,
+                        odb::dbNet* db_net);
   void addJumperToRoute(GRoute& route,
                         const int& seg_id,
                         const int& jumper_init_pos,
                         const int& jumper_final_pos,
-                        const int& layer_level);
+                        const int& layer_level,
+                        odb::dbNet* db_net);
   void findSegments(const GRoute& route,
                     odb::dbITerm* iterm,
                     const SegmentNodeIds& segment_ids,
                     LayerToSegmentNodeVector& segment_graph,
                     const int& num_nodes,
                     const int& violation_layer,
-                    SegmentToJumperPos& segments_to_repair);
+                    SegmentToJumperPos& segments_to_repair,
+                    odb::dbNet* db_net);
   bool findPosToJumper(const GRoute& route,
                        LayerToSegmentNodeVector& segment_graph,
                        const SegmentNode& seg_node,
                        const odb::Point& parent_pos,
-                       int& jumper_position);
+                       int& jumper_position,
+                       odb::dbNet* db_net);
   int getJumperPosition(const int& init_pos,
                         const int& final_pos,
                         const int& target_pos);
@@ -170,7 +173,10 @@ class RepairAntennas
   int getSegmentsPerLayer(const GRoute& route,
                           const int& max_layer,
                           LayerToSegmentNodeVector& segment_by_layer);
-  void addJumper(GRoute& route, const int& segment_id, const int& jumper_pos);
+  void addJumper(GRoute& route,
+                 const int& segment_id,
+                 const int& jumper_pos,
+                 odb::dbNet* db_net);
   void findJumperCandidatePositions(const int& init_x,
                                     const int& init_y,
                                     const int& final_x,
@@ -186,7 +192,8 @@ class RepairAntennas
                      std::vector<int>& violation_id_to_repair,
                      int& max_layer_to_repair);
   int addJumperOnSegments(const SegmentToJumperPos& segments_to_repair,
-                          GRoute& route);
+                          GRoute& route,
+                          odb::dbNet* db_net);
   void insertDiode(odb::dbNet* net,
                    odb::dbMTerm* diode_mterm,
                    odb::dbITerm* sink_iterm,
@@ -227,25 +234,7 @@ class RepairAntennas
   odb::Rect getInstRect(odb::dbInst* inst, odb::dbITerm* iterm);
   bool diodeInRow(odb::Rect diode_rect);
   odb::dbOrientType getRowOrient(const odb::Point& point);
-  odb::dbWire* makeNetWire(
-      odb::dbNet* db_net,
-      GRoute& route,
-      std::map<odb::dbTechLayer*, odb::dbTechVia*>& default_vias);
   RoutePtPinsMap findRoutePtPins(Net* net);
-  void addWireTerms(Net* net,
-                    GRoute& route,
-                    int grid_x,
-                    int grid_y,
-                    int layer,
-                    odb::dbTechLayer* tech_layer,
-                    RoutePtPinsMap& route_pt_pins,
-                    odb::dbWireEncoder& wire_encoder,
-                    std::map<odb::dbTechLayer*, odb::dbTechVia*>& default_vias,
-                    bool connect_to_segment);
-  void makeWire(odb::dbWireEncoder& wire_encoder,
-                odb::dbTechLayer* layer,
-                const odb::Point& start,
-                const odb::Point& end);
   bool pinOverlapsGSegment(const odb::Point& pin_position,
                            const int pin_layer,
                            const std::vector<odb::Rect>& pin_boxes,

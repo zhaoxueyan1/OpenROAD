@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
-#include <functional>
-#include <iostream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "boost/bind/bind.hpp"
 #include "boostParser.h"
 #include "lefLayerPropParser.h"
 #include "odb/db.h"
@@ -328,7 +327,7 @@ bool parse(
     odb::lefinReader* lefinReader,
     std::vector<std::pair<odb::dbObject*, std::string>>& incomplete_props)
 {
-  qi::rule<std::string::iterator, space_type> LAYER_CUTCLASS
+  qi::rule<std::string::const_iterator, space_type> LAYER_CUTCLASS
       = (lit("CUTCLASS")
          >> _string[boost::bind(&setCutClass, _1, parser, layer)] >> -(
              lit("SHORTEDGEONLY")[boost::bind(
@@ -376,7 +375,7 @@ bool parse(
                  parser,
                  &odb::dbTechLayerCutSpacingRule::setWrongDirection,
                  true)]));
-  qi::rule<std::string::iterator, space_type> LAYER
+  qi::rule<std::string::const_iterator, space_type> LAYER
       = (lit("LAYER") >> _string[boost::bind(
              &addLayerSubRule, _1, parser, layer, boost::ref(incomplete_props))]
          >> -(
@@ -388,7 +387,7 @@ bool parse(
                    &setOrthogonalSpacing, _1, parser, lefinReader)]
              | LAYER_CUTCLASS));
 
-  qi::rule<std::string::iterator, space_type> ADJACENTCUTS
+  qi::rule<std::string::const_iterator, space_type> ADJACENTCUTS
       = (lit("ADJACENTCUTS") >> (string("1") | string("2") | string("3"))
          >> -(lit("EXACTALIGNED") >> int_)
          >> -(lit("TWOCUTS") >> int_ >> -lit("SAMECUT")[boost::bind(
@@ -406,12 +405,12 @@ bool parse(
          >> -string("SAMEMASK"))[boost::bind(
           &addAdjacentCutsSubRule, _1, parser, layer, lefinReader)];
 
-  qi::rule<std::string::iterator, space_type> PARALLELOVERLAP
+  qi::rule<std::string::const_iterator, space_type> PARALLELOVERLAP
       = (lit("PARALLELOVERLAP")
          >> -(string("EXCEPTSAMENET") | string("EXCEPTSAMEMETAL")
               | string("EXCEPTSAMEVIA") | string("EXCEPTSAMEMETALOVERLAP")))
           [boost::bind(&addParallelOverlapSubRule, _1, parser)];
-  qi::rule<std::string::iterator, space_type> PARALLELWITHIN_CUTCLASS
+  qi::rule<std::string::const_iterator, space_type> PARALLELWITHIN_CUTCLASS
       = (lit("CUTCLASS")
          >> _string[boost::bind(&setCutClass, _1, parser, layer)]
          >> -(lit("LONGEDGEONLY")[boost::bind(
@@ -424,23 +423,23 @@ bool parse(
                  >> double_ >> lit("WITHIN") >> double_)[boost::bind(
                   &setParWithinEnclosure, _1, parser, lefinReader)]));
 
-  qi::rule<std::string::iterator, space_type> PARALLELWITHIN
+  qi::rule<std::string::const_iterator, space_type> PARALLELWITHIN
       = ((lit("PARALLELWITHIN") >> double_
           >> -string("EXCEPTSAMENET"))[boost::bind(
              &addParallelWithinSubRule, _1, parser, lefinReader)]
          >> -PARALLELWITHIN_CUTCLASS);
 
-  qi::rule<std::string::iterator, space_type> SAMEMETALSHAREDEDGE
+  qi::rule<std::string::const_iterator, space_type> SAMEMETALSHAREDEDGE
       = (lit("SAMEMETALSHAREDEDGE") >> double_ >> -string("ABOVE")
          >> -(lit("CUTCLASS") >> _string) >> -string("EXCEPTTWOEDGES")
          >> -(lit("EXCEPTSAMEVIA") >> int_))[boost::bind(
           &addSameMetalSharedEdgeSubRule, _1, parser, layer, lefinReader)];
 
-  qi::rule<std::string::iterator, space_type> AREA
+  qi::rule<std::string::const_iterator, space_type> AREA
       = (lit("AREA")
          >> double_)[boost::bind(&addAreaSubRule, _1, parser, lefinReader)];
 
-  qi::rule<std::string::iterator, space_type> LEF58_SPACING = (+(
+  qi::rule<std::string::const_iterator, space_type> LEF58_SPACING = (+(
       lit("SPACING")
       >> double_[boost::bind(&setCutSpacing, _1, parser, layer, lefinReader)]
       >> -(lit("MAXXY")[boost::bind(&addMaxXYSubRule, parser)]
@@ -470,7 +469,7 @@ bool parse(
 namespace odb {
 
 bool lefTechLayerCutSpacingParser::parse(
-    std::string s,
+    const std::string& s,
     odb::dbTechLayer* layer,
     odb::lefinReader* l,
     std::vector<std::pair<odb::dbObject*, std::string>>& incomplete_props)

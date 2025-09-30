@@ -4,18 +4,24 @@
 #pragma once
 #include <dst/JobMessage.h>
 
-#include <boost/asio.hpp>
-#include <boost/enable_shared_from_this.hpp>
-#include <boost/make_shared.hpp>
 #include <cstddef>
-namespace asio = boost::asio;
-using asio::ip::tcp;
+
+#include "boost/asio.hpp"
+#include "boost/enable_shared_from_this.hpp"
+#include "boost/make_shared.hpp"
+
 namespace utl {
 class Logger;
 }
+
 namespace dst {
+
+namespace asio = boost::asio;
+using asio::ip::tcp;
+
 class Distributed;
 class Worker;
+
 class WorkerConnection : public boost::enable_shared_from_this<WorkerConnection>
 {
  public:

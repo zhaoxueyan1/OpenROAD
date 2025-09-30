@@ -3,8 +3,7 @@
 
 #pragma once
 
-#include <boost/geometry.hpp>
-#include <boost/polygon/polygon.hpp>
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <optional>
@@ -12,9 +11,12 @@
 #include <string>
 #include <vector>
 
+#include "boost/geometry/geometry.hpp"
+#include "boost/polygon/polygon.hpp"
 #include "connection.h"
 #include "node.h"
 #include "odb/db.h"
+#include "odb/geom.h"
 #include "psm/pdnsim.h"
 #include "utl/Logger.h"
 
@@ -201,8 +203,8 @@ class IRNetwork
 
   std::map<odb::dbTechLayer*, int> min_node_pitch_;
 
-  static constexpr int min_node_pitch_multiplier_ = 10;
-  static constexpr double min_node_pitch_um_ = 10.0;
+  static constexpr int kMinNodePitchMultiplier = 10;
+  static constexpr double kMinNodePitchInUm = 10.0;
 };
 
 }  // namespace psm

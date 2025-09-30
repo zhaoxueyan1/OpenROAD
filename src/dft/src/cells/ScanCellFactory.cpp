@@ -4,7 +4,6 @@
 #include "ScanCellFactory.hh"
 
 #include <algorithm>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -13,9 +12,12 @@
 #include "ClockDomain.hh"
 #include "Utils.hh"
 #include "db_sta/dbNetwork.hh"
+#include "db_sta/dbSta.hh"
+#include "odb/db.h"
 #include "sta/Clock.hh"
 #include "sta/FuncExpr.hh"
 #include "sta/Liberty.hh"
+#include "sta/NetworkClass.hh"
 #include "sta/Sequential.hh"
 
 namespace dft {
@@ -24,8 +26,8 @@ namespace {
 
 enum class TypeOfCell
 {
-  OneBitCell,
-  NotSupported
+  kOneBitCell,
+  kNotSupported
 };
 
 sta::LibertyCell* GetLibertyCell(odb::dbMaster* master,
@@ -60,12 +62,13 @@ TypeOfCell IdentifyCell(odb::dbInst* inst, sta::dbSta* sta)
   sta::dbNetwork* db_network = sta->getDbNetwork();
   sta::LibertyCell* liberty_cell
       = GetLibertyCell(inst->getMaster(), db_network);
-  if (liberty_cell->hasSequentials() && !inst->getMaster()->isBlock()) {
+  if (liberty_cell != nullptr && liberty_cell->hasSequentials()
+      && !inst->getMaster()->isBlock()) {
     // we assume that we are only dealing with one bit cells, but in the future
     // we could deal with multibit cells too
-    return TypeOfCell::OneBitCell;
+    return TypeOfCell::kOneBitCell;
   }
-  return TypeOfCell::NotSupported;
+  return TypeOfCell::kNotSupported;
 }
 
 std::unique_ptr<ClockDomain> GetClockDomainFromClock(
@@ -163,7 +166,7 @@ std::unique_ptr<ScanCell> ScanCellFactory(odb::dbInst* inst,
   TypeOfCell type_of_cell = IdentifyCell(inst, sta);
 
   switch (type_of_cell) {
-    case TypeOfCell::OneBitCell:
+    case TypeOfCell::kOneBitCell:
       return CreateOneBitCell(inst, sta, logger);
     default:
       return nullptr;
