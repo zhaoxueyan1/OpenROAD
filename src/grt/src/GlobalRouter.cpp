@@ -278,8 +278,6 @@ bool GlobalRouter::haveDetailedRoutes(const std::vector<odb::dbNet*>& db_nets)
 }
 
 void GlobalRouter::globalRoute(bool save_guides,
-                               bool fast,
-                               int slack_max_iter,
                                bool start_incremental,
                                bool end_incremental)
 {
