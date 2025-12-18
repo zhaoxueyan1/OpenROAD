@@ -7,11 +7,11 @@
 #include <map>
 #include <vector>
 
-#include "odb/array1.h"
 #include "odb/db.h"
 #include "odb/dbSet.h"
 #include "odb/dbShape.h"
 #include "odb/odb.h"
+#include "rcx/array1.h"
 #include "rcx/extRCap.h"
 
 namespace utl {
@@ -20,7 +20,6 @@ class Logger;
 
 namespace rcx {
 
-using odb::Ath__array1D;
 using odb::uint;
 using utl::Logger;
 

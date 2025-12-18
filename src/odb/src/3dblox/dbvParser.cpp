@@ -5,12 +5,16 @@
 
 #include <exception>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
+#include "baseParser.h"
 #include "objects.h"
 #include "odb/db.h"
 #include "utl/Logger.h"
+#include "yaml-cpp/yaml.h"
 
 namespace odb {
 
@@ -204,10 +208,12 @@ void DbvParser::parseRegion(ChipletRegion& region,
 {
   if (region_node["bmap"]) {
     extractValue(region_node, "bmap", region.bmap);
+    region.bmap = resolvePath(region.bmap);
   }
 
   if (region_node["pmap"]) {
     extractValue(region_node, "pmap", region.pmap);
+    region.pmap = resolvePath(region.pmap);
   }
 
   if (region_node["side"]) {

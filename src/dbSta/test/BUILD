@@ -4,12 +4,16 @@
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//test:regression.bzl", "regression_test")
 
+package(features = ["layering_check"])
+
 # From CMakeLists.txt or_integration_tests(TESTS
 COMPULSORY_TESTS = [
     "block_sta1",
     "check_axioms",
     "clock_pin",
     "constant1",
+    # "escape_slash", # different result compared to CMake
+    # "escape_slash_hier", # different result compared to CMake
     "find_clks1",
     "find_clks2",
     "get_ports1",
@@ -22,6 +26,7 @@ COMPULSORY_TESTS = [
     "network_edit1",
     "power1",
     "read_liberty1",
+    "read_vcd",
     "read_verilog1",
     "read_verilog2",
     "read_verilog3",
@@ -150,6 +155,13 @@ filegroup(
                 test_name + ".*",
             ],
         ) + {
+            "read_vcd": glob(
+                [
+                    "Element.*",
+                    "MockArray.*",
+                    "asap7/*",
+                ],
+            ),
             "report_cell_usage_file": [
                 "report_cell_usage.def",
             ],
@@ -174,9 +186,37 @@ filegroup(
 cc_test(
     name = "dbsta_hconn_unittest",
     srcs = ["cpp/TestHconn.cpp"],
-    linkstatic = True,  # TODO: remove once deps define all symbols
+    data = [
+        "Nangate45/Nangate45.lef",
+        "Nangate45/Nangate45_typ.lib",
+    ],
     deps = [
         "//src/dbSta",
+        "//src/dbSta:dbNetwork",
+        "//src/odb",
+        "//src/sta:opensta_lib",
+        "//src/tst",
+        "//src/utl",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dbsta_unittest",
+    srcs = ["cpp/TestDbSta.cc"],
+    data = [
+        "Nangate45/Nangate45.lef",
+        "Nangate45/Nangate45_typ.lib",
+        "cpp/TestDbSta_0.v",
+    ],
+    deps = [
+        "//src/dbSta",
+        "//src/dbSta:dbNetwork",
+        "//src/odb",
+        "//src/sta:opensta_lib",
+        "//src/tst:integrated_fixture",
+        "//src/utl",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

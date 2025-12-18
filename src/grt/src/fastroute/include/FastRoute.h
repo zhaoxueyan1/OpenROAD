@@ -103,6 +103,7 @@ class FastRouteCore
   void addHCapacity(short horizontalCapacity, int layer);
   void setLowerLeft(int x, int y);
   void setTileSize(int size);
+  void setResistanceAware(bool resistance_aware);
   void addLayerDirection(int layer_idx, const odb::dbTechLayerDir& direction);
   FrNet* addNet(odb::dbNet* db_net,
                 bool is_clock,
@@ -120,6 +121,8 @@ class FastRouteCore
   void clearNetsToRoute() { net_ids_.clear(); }
   void initEdges();
   void init3DEdges();
+  void initLowerBoundCapacities();
+  void setEdgeCapacity(int x1, int y1, int x2, int y2, int layer, int capacity);
   int getDbNetLayerEdgeCost(odb::dbNet* db_net, int layer);
   void initEdgesCapacityPerLayer();
   void setNumAdjustments(int nAdjustments);
@@ -249,6 +252,8 @@ class FastRouteCore
   std::string getSttInputFileName();
   const odb::dbNet* getDebugNet();
   bool hasSaveSttInput();
+
+  // NDR related functions
   void clearNDRnets();
   void computeCongestedNDRnets();
   void updateSoftNDRNetUsage(int net_id, int edge_cost);
@@ -267,6 +272,8 @@ class FastRouteCore
       std::vector<std::pair<odb::Point, bool>>& overflow_pos);
 
   NetRouteMap getPlanarRoutes();
+  void getPlanarRoute(odb::dbNet* db_net, GRoute& route);
+  void get3DRoute(odb::dbNet* db_net, GRoute& route);
 
  private:
   int getEdgeCapacity(FrNet* net, int x1, int y1, EdgeDirection direction);
@@ -276,6 +283,9 @@ class FastRouteCore
   double dbuToMicrons(int dbu);
   odb::Rect globalRoutingToBox(const GSegment& route);
   NetRouteMap getRoutes();
+  void updateSlacks(float percentage = 1);
+  void preProcessTechLayers();
+  odb::dbTechLayer* getTechLayer(int layer, bool is_via);
 
   // maze functions
   // Maze-routing in different orders
@@ -354,6 +364,14 @@ class FastRouteCore
   void reInitTree(int netID);
 
   // maze3D functions
+  float getMazeRouteCost3D(int net_id,
+                           int from_layer,
+                           int to_layer,
+                           int from_x,
+                           int from_y,
+                           int to_x,
+                           int to_y,
+                           bool is_via);
   void mazeRouteMSMDOrder3D(int expand, int ripupTHlb, int ripupTHub);
   void addNeighborPoints(int netID,
                          int n1,
@@ -502,6 +520,7 @@ class FastRouteCore
   void printEdge(int netID, int edgeID);
   void ConvertToFull3DType2();
   void fillVIA();
+  void ensurePinCoverage();
   void getViaStackRange(int netID,
                         int nodeID,
                         int16_t& bot_pin_l,
@@ -515,8 +534,12 @@ class FastRouteCore
                          int l,
                          bool horizontal,
                          int& best_cost,
-                         multi_array<int, 2>& layer_grid);
+                         multi_array<int, 2>& layer_grid,
+                         int net_cost);
   void assignEdge(int netID, int edgeID, bool processDIR);
+  int getLayerResistance(int layer, int length, FrNet* net);
+  int getViaResistance(int from_layer, int to_layer);
+  bool needResistanceAware(int net_id);
   void recoverEdge(int netID, int edgeID);
   void layerAssignmentV4();
   void netpinOrderInc();
@@ -591,9 +614,14 @@ class FastRouteCore
   int congestion_report_iter_step_;
   std::string congestion_file_name_;
   std::vector<odb::dbTechLayerDir> layer_directions_;
+  std::vector<odb::dbTechLayer*> db_layers_;
   int x_range_;
   int y_range_;
 
+  bool en_estimate_parasitics_ = false;
+  bool resistance_aware_ = false;
+  bool enable_resistance_aware_ = false;
+  bool is_3d_step_ = false;
   int num_adjust_;
   int v_capacity_;
   int h_capacity_;

@@ -5,11 +5,15 @@
 
 #include <exception>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 
+#include "baseParser.h"
+#include "objects.h"
 #include "odb/db.h"
 #include "utl/Logger.h"
+#include "yaml-cpp/yaml.h"
 
 namespace odb {
 

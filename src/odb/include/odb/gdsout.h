@@ -10,6 +10,7 @@
 
 #include "odb/db.h"
 #include "odb/dbTypes.h"
+#include "odb/gdsUtil.h"
 #include "odb/gdsin.h"
 #include "odb/geom.h"
 
@@ -95,11 +96,11 @@ class GDSWriter
   void writeTextPres(const dbGDSTextPres& pres);
 
   /** Output filestream */
-  std::ofstream _file;
+  std::ofstream file_;
   /** Current dbGDSLib object */
-  dbGDSLib* _lib{nullptr};
+  dbGDSLib* lib_{nullptr};
 
-  utl::Logger* _logger{nullptr};
+  utl::Logger* logger_{nullptr};
 };
 
 }  // namespace odb::gds

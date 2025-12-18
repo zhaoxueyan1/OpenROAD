@@ -9,14 +9,14 @@
 
 #include "name.h"
 #include "odb/db.h"
+#include "odb/dbSet.h"
 #include "odb/dbShape.h"
 #include "parse.h"
+#include "rcx/array1.h"
 #include "rcx/extRCap.h"
 #include "rcx/extSpef.h"
 #include "rcx/grids.h"
 #include "utl/Logger.h"
-
-namespace rcx {
 
 using odb::dbBTerm;
 using odb::dbCapNode;
@@ -32,6 +32,8 @@ using odb::dbWirePath;
 using odb::dbWirePathItr;
 using odb::dbWirePathShape;
 using utl::RCX;
+
+namespace rcx {
 
 dbInst* extSpef::getDbInst(const uint id)
 {

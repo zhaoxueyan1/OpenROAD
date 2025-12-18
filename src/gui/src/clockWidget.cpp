@@ -4,8 +4,10 @@
 #include "clockWidget.h"
 
 #include <QApplication>
+#include <QColor>
 #include <QComboBox>
 #include <QFontMetrics>
+#include <QGraphicsItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsSceneHoverEvent>
 #include <QGraphicsTextItem>
@@ -16,6 +18,7 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
+#include <QPolygonF>
 #include <QPushButton>
 #include <QString>
 #include <QToolTip>
@@ -819,7 +822,7 @@ ClockTreeView::ClockTreeView(std::shared_ptr<ClockTree> tree,
           &ClockTreeScene::clearPath,
           this,
           &ClockTreeView::clearHighlightTo);
-  connect(scene_, &ClockTreeScene::save, [=] { save(); });
+  connect(scene_, &ClockTreeScene::save, [this] { save(); });
   connect(scene_,
           &ClockTreeScene::colorDepth,
           this,
@@ -1568,7 +1571,7 @@ ClockWidget::ClockWidget(QWidget* parent)
   container->setLayout(layout);
   setWidget(container);
 
-  connect(update_button_, &QPushButton::clicked, [=] { populate(); });
+  connect(update_button_, &QPushButton::clicked, [this] { populate(); });
   connect(fit_button_, &QPushButton::clicked, this, &ClockWidget::fit);
 
   update_button_->setEnabled(false);

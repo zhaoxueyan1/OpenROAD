@@ -7,10 +7,6 @@
 #include <Eigen/SparseCore>
 #include <memory>
 
-#ifdef ENABLE_GPU
-#include "gpuSolver.h"
-#endif
-#include "graphics.h"
 #include "odb/db.h"
 #include "placerBase.h"
 #include "utl/Logger.h"
@@ -29,7 +25,6 @@ struct ResidualError
 
 using Eigen::BiCGSTAB;
 using Eigen::IdentityPreconditioner;
-using utl::GPL;
 
 using SMatrix = Eigen::SparseMatrix<float, Eigen::RowMajor>;
 

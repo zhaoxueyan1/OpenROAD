@@ -41,7 +41,6 @@ bool MacroPlacer::place(const int num_threads,
                         const int max_num_level,
                         const float coarsening_ratio,
                         const int large_net_threshold,
-                        const int signature_net_threshold,
                         const float halo_width,
                         const float halo_height,
                         const float fence_lx,
@@ -56,11 +55,11 @@ bool MacroPlacer::place(const int num_threads,
                         const float boundary_weight,
                         const float notch_weight,
                         const float macro_blockage_weight,
-                        const float pin_access_th,
                         const float target_util,
                         const float target_dead_space,
                         const float min_ar,
-                        const char* report_directory)
+                        const char* report_directory,
+                        const bool keep_clustering_data)
 {
   hier_rtlmp_->setClusterSize(
       max_num_macro, min_num_macro, max_num_inst, min_num_inst);
@@ -68,7 +67,6 @@ bool MacroPlacer::place(const int num_threads,
   hier_rtlmp_->setMaxNumLevel(max_num_level);
   hier_rtlmp_->setClusterSizeRatioPerLevel(coarsening_ratio);
   hier_rtlmp_->setLargeNetThreshold(large_net_threshold);
-  hier_rtlmp_->setSignatureNetThreshold(signature_net_threshold);
   hier_rtlmp_->setHaloWidth(halo_width);
   hier_rtlmp_->setHaloHeight(halo_height);
   hier_rtlmp_->setGlobalFence(fence_lx, fence_ly, fence_ux, fence_uy);
@@ -80,12 +78,12 @@ bool MacroPlacer::place(const int num_threads,
   hier_rtlmp_->setBoundaryWeight(boundary_weight);
   hier_rtlmp_->setNotchWeight(notch_weight);
   hier_rtlmp_->setMacroBlockageWeight(macro_blockage_weight);
-  hier_rtlmp_->setPinAccessThreshold(pin_access_th);
   hier_rtlmp_->setTargetUtil(target_util);
   hier_rtlmp_->setTargetDeadSpace(target_dead_space);
   hier_rtlmp_->setMinAR(min_ar);
   hier_rtlmp_->setReportDirectory(report_directory);
   hier_rtlmp_->setNumThreads(num_threads);
+  hier_rtlmp_->setKeepClusteringData(keep_clustering_data);
 
   hier_rtlmp_->setGuidanceRegions(guidance_regions_);
 

@@ -2,6 +2,7 @@
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "odb/db.h"
+#include "rcx/array1.h"
 #include "rcx/dbUtil.h"
 #include "rcx/extMeasureRC.h"
 #include "rcx/extRCap.h"
@@ -14,11 +15,10 @@
 // #define CHECK_SAME_NET
 // #define MIN_FOR_LOOPS
 
-namespace rcx {
-
+using odb::dbRSeg;
 using utl::RCX;
 
-using namespace odb;
+namespace rcx {
 
 bool extMeasureRC::measure_RC_new(extSegment* s, bool skip_res_calc)
 {

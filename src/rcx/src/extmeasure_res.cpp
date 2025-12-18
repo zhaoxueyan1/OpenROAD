@@ -4,6 +4,7 @@
 #include <cassert>
 
 #include "gseq.h"
+#include "rcx/array1.h"
 #include "rcx/dbUtil.h"
 #include "rcx/extRCap.h"
 #include "utl/Logger.h"

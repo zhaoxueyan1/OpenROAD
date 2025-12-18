@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2024-2025, The OpenROAD Authors
 
+#include "rcx/array1.h"
 #include "rcx/dbUtil.h"
 #include "rcx/extMeasureRC.h"
 #include "rcx/extRCap.h"
@@ -10,7 +11,6 @@
 namespace rcx {
 
 using utl::RCX;
-using namespace odb;
 
 int extMeasureRC::GetDx1Dx2(Wire* w1, Wire* w2, int& dx2)
 {

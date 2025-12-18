@@ -8,9 +8,9 @@ workspace(name = "openroad")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-rules_hdl_git_hash = "cf2bd95334741db74b39b47fa1d4622b0d45ce6c"
+rules_hdl_git_hash = "8cc8977cc305ed94ec7852495ed576fcbde1c18d"
 
-rules_hdl_git_sha256 = "137e1fbde970a41f295ca348f9105bc7eedd6640374ec7f4a8abaee9a2cfc2d0"
+rules_hdl_git_sha256 = "046193f4a0b006f43bd5f9615c218d2171d0169e231028a22d8d9c011c675ad6"
 
 http_archive(
     name = "rules_hdl",
@@ -25,7 +25,6 @@ http_archive(
 # This essentially reads as a TODO list of what needs to be upstreamed to BCR
 load("@rules_hdl//dependency_support/com_github_quantamhd_lemon:com_github_quantamhd_lemon.bzl", "com_github_quantamhd_lemon")
 load("@rules_hdl//dependency_support/com_github_westes_flex:com_github_westes_flex.bzl", "com_github_westes_flex")
-load("@rules_hdl//dependency_support/edu_berkeley_abc:edu_berkeley_abc.bzl", "edu_berkeley_abc")
 load("@rules_hdl//dependency_support/net_invisible_island_ncurses:net_invisible_island_ncurses.bzl", "net_invisible_island_ncurses")
 load("@rules_hdl//dependency_support/net_zlib:net_zlib.bzl", "net_zlib")
 load("@rules_hdl//dependency_support/org_gnu_bison:org_gnu_bison.bzl", "org_gnu_bison")
@@ -36,8 +35,6 @@ load("@rules_hdl//dependency_support/tk_tcl:tk_tcl.bzl", "tk_tcl")
 
 # Direct dependencies needed in Openroad
 com_github_quantamhd_lemon()
-
-edu_berkeley_abc()
 
 tk_tcl()
 

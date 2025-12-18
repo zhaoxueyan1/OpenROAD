@@ -4,8 +4,6 @@
 // This file is only used when we can't find Qt5 and are thus
 // disabling the GUI.  It is not included when Qt5 is found.
 
-#include <tcl.h>
-
 #include <any>
 #include <cstdio>
 #include <map>
@@ -17,6 +15,7 @@
 #include "gui/gui.h"
 #include "odb/db.h"
 #include "odb/geom.h"
+#include "tcl.h"
 
 // empty gif writer class
 struct GifWriter
@@ -24,8 +23,6 @@ struct GifWriter
 };
 
 namespace gui {
-
-Gui* Gui::singleton_ = nullptr;
 
 // Used by toString to convert dbu to microns
 DBUToString Descriptor::Property::convert_dbu
@@ -55,7 +52,7 @@ Gui::Gui() : continue_after_close_(false), logger_(nullptr), db_(nullptr)
 
 Gui* gui::Gui::get()
 {
-  return singleton_;
+  return nullptr;
 }
 
 bool gui::Gui::enabled()
@@ -134,6 +131,12 @@ void Gui::setSelected(const Selected& selection)
 {
 }
 
+const SelectionSet& Gui::selection()
+{
+  static SelectionSet dummy;
+  return dummy;
+}
+
 void Gui::registerDescriptor(const std::type_info& type,
                              const Descriptor* descriptor)
 {
@@ -201,15 +204,17 @@ void initGui(Tcl_Interp* interp,
   Tcl_Eval(interp, enabled_supported.c_str());
 }
 
-void Gui::gifStart(const std::string& filename)
+int Gui::gifStart(const std::string& filename)
+{
+  return 0;
+}
+
+void Gui::gifEnd(const int key)
 {
 }
 
-void Gui::gifEnd()
-{
-}
-
-void Gui::gifAddFrame(const odb::Rect& region,
+void Gui::gifAddFrame(const int key,
+                      const odb::Rect& region,
                       int width_px,
                       double dbu_per_pixel,
                       std::optional<int> delay)
@@ -261,6 +266,14 @@ int Gui::select(const std::string& type,
 }
 
 void Gui::setDisplayControlsVisible(const std::string& name, bool value)
+{
+}
+
+void Gui::clearHighlights(int highlight_group)
+{
+}
+
+void Gui::addNetToHighlightSet(const char* name, int highlight_group)
 {
 }
 

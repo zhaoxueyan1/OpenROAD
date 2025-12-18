@@ -4,6 +4,8 @@
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//test:regression.bzl", "regression_test")
 
+package(features = ["layering_check"])
+
 # From CMakeLists.txt or_integration_tests(TESTS
 COMPULSORY_TESTS = [
     "aes",
@@ -33,6 +35,7 @@ COMPULSORY_TESTS = [
     "fillers8",
     "fillers9",
     "fillers9_verbose",
+    "fillers10",
     "fragmented_row01",
     "fragmented_row02",
     "fragmented_row03",
@@ -88,6 +91,16 @@ COMPULSORY_TESTS = [
 MANUAL_TESTS = [
     "dpl_man_tcl_check",
     "dpl_readme_msgs_check",
+]
+
+# TODO: Enable once difference between bazel and ctest is resolved.
+MANUAL_FOR_BAZEL_TESTS = [
+    "aes",
+    "cell_on_block2",
+    "gcd",
+    "ibex",
+    "mirror1",
+    "obstruction2",
 ]
 
 ALL_TESTS = COMPULSORY_TESTS + MANUAL_TESTS
@@ -193,6 +206,9 @@ filegroup(
             "fillers1": [
                 "simple01.def",
             ],
+            "fillers10": [
+                "simple09.def",
+            ],
             "fillers2": [
                 "simple01.def",
             ],
@@ -243,7 +259,8 @@ filegroup(
     regression_test(
         name = test_name,
         data = [":" + test_name + "_resources"],
-        tags = [] if test_name in COMPULSORY_TESTS else ["manual"],
+        tags = ["manual"] if test_name in MANUAL_TESTS or
+                             test_name in MANUAL_FOR_BAZEL_TESTS else [],
         visibility = ["//visibility:public"],
     )
     for test_name in ALL_TESTS
@@ -252,9 +269,11 @@ filegroup(
 cc_test(
     name = "dpl_unittest",
     srcs = ["dpl_test.cc"],
-    linkstatic = True,  # TODO: remove once deps define all symbols
     deps = [
         "//src/dpl",
+        "//src/odb",
+        "//src/tst",
+        "//src/utl",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

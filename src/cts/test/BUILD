@@ -4,13 +4,14 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 # Copyright (c) 2022-2025, The OpenROAD Authors
 load("//test:regression.bzl", "regression_test")
 
+package(features = ["layering_check"])
+
 # From CMakeLists.txt or_integration_tests(TESTS
 COMPULSORY_TESTS = [
     "array",
     "array_ins_delay",
     "array_no_blockages",
     "array_repair_clock_nets",
-    "balance_levels",
     "check_buffers",
     "check_buffers_blockages",
     "check_buffers_blockages_merge",
@@ -42,6 +43,7 @@ COMPULSORY_TESTS = [
     "simple_test_clustered",
     "simple_test_clustered_max_cap",
     "simple_test_hier",
+    "skip_nets",
     "twice",
 ]
 
@@ -49,6 +51,16 @@ COMPULSORY_TESTS = [
 MANUAL_TESTS = [
     "cts_man_tcl_check",
     "cts_readme_msgs_check",
+]
+
+# TODO: Enable once difference between bazel and ctest is resolved.
+MANUAL_FOR_BAZEL_TESTS = [
+    "array",
+    "array_ins_delay",
+    "array_no_blockages",
+    "array_repair_clock_nets",
+    "gated_clock4",
+    "simple_test_hier",
 ]
 
 ALL_TESTS = COMPULSORY_TESTS + MANUAL_TESTS
@@ -161,6 +173,9 @@ filegroup(
             "max_cap": [
                 "//src/rsz/test:hi_fanout.tcl",
             ],
+            "skip_nets": [
+                "gated_clock2.def",
+            ],
         }.get(test_name, []),
     )
     for test_name in ALL_TESTS
@@ -170,7 +185,8 @@ filegroup(
     regression_test(
         name = test_name,
         data = [":" + test_name + "_resources"],
-        tags = [] if test_name in COMPULSORY_TESTS else ["manual"],
+        tags = ["manual"] if test_name in MANUAL_TESTS or
+                             test_name in MANUAL_FOR_BAZEL_TESTS else [],
         visibility = ["//visibility:public"],
     )
     for test_name in ALL_TESTS
@@ -179,10 +195,9 @@ filegroup(
 cc_test(
     name = "cts_unittest",
     srcs = ["cts_unittest.cc"],
-    linkstatic = True,  # TODO: remove once deps define all symbols
+    features = ["-layering_check"],  # TODO: accesses private headers
     deps = [
         "//src/cts",
-        "//src/grt",  # work around cyclic dependncy between rsz and grt
         "//src/utl",
         "@googletest//:gtest",
         "@googletest//:gtest_main",

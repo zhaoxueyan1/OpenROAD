@@ -13,6 +13,7 @@
 
 #include "db_sta/dbNetwork.hh"
 #include "odb/db.h"
+#include "sta/NetworkClass.hh"
 #include "utl/Logger.h"
 
 namespace sta {
@@ -292,8 +293,8 @@ void dbEditHierarchy::hierarchicalConnect(dbITerm* source_pin,
     source_pin->connect(source_db_net);
     dlogHierConnConnectSrcToFlatNet(source_pin, connection_name);
   }
-  if (!db_network_->connected(db_network_->dbToSta(source_pin),
-                              db_network_->dbToSta(dest_pin))) {
+  if (!db_network_->isConnected(db_network_->dbToSta(source_pin),
+                                db_network_->dbToSta(dest_pin))) {
     dest_pin->connect(source_db_net);
     dlogHierConnConnectDstToFlatNet(dest_pin, source_db_net);
   }
@@ -429,7 +430,10 @@ void dbEditHierarchy::hierarchicalConnect(dbITerm* source_pin,
     db_network_->reassociatePinConnection(sta_source_pin);
     db_network_->reassociatePinConnection(sta_dest_pin);
 
-    // 3.7. During the addition of new ports and new wiring we may
+    // 3.7. Rename flat net name if needed
+    source_db_net->renameWithModNetInHighestHier();
+
+    // 3.8. During the addition of new ports and new wiring we may
     // leave orphaned pins, clean them up.
     cleanUnusedHierPins(source_parent_tree, dest_parent_tree);
   }
@@ -559,7 +563,10 @@ void dbEditHierarchy::hierarchicalConnect(dbITerm* source_pin,
   db_network_->reassociatePinConnection(sta_source_pin);
   db_network_->reassociatePinConnection(sta_dest_pin);
 
-  // 3.7. During the addition of new ports and new wiring we may
+  // 3.7. Rename flat net name if needed
+  new_flat_net->renameWithModNetInHighestHier();
+
+  // 3.8. During the addition of new ports and new wiring we may
   // leave orphaned pins, clean them up.
   cleanUnusedHierPins(source_parent_tree, dest_parent_tree);
 

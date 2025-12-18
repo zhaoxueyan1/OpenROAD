@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "odb/db.h"
+#include "rcx/array1.h"
 #include "rcx/dbUtil.h"
 #include "rcx/extMeasureRC.h"
 #include "rcx/extSegment.h"
@@ -15,8 +16,9 @@
 // #define CHECK_SAME_NET
 // #define MIN_FOR_LOOPS
 
-namespace rcx {
 using utl::RCX;
+
+namespace rcx {
 
 void extMeasureRC::VerticalCap(Ath__array1D<extSegment*>* segTable,
                                bool look_up)

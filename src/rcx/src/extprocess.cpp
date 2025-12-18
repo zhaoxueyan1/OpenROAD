@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "parse.h"
+#include "rcx/array1.h"
 #include "utl/Logger.h"
 
 namespace rcx {

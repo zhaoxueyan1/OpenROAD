@@ -38,7 +38,9 @@
 #include "frBaseTypes.h"
 #include "frDesign.h"
 #include "global.h"
+#include "gtest/gtest.h"
 #include "odb/db.h"
+#include "odb/dbTypes.h"
 #include "utl/Logger.h"
 
 namespace odb {
@@ -48,16 +50,16 @@ class dbTechLayerCutSpacingTableDefRule;
 namespace drt {
 
 // General Fixture for tests using db objects.
-class Fixture
+class Fixture : public ::testing::Test
 {
- public:
+ protected:
   Fixture();
   virtual ~Fixture() = default;
 
   void addLayer(frTechObject* tech,
                 const char* name,
-                dbTechLayerType type,
-                dbTechLayerDir dir = dbTechLayerDir::NONE);
+                odb::dbTechLayerType type,
+                odb::dbTechLayerDir dir = odb::dbTechLayerDir::NONE);
 
   odb::dbInst* createDummyInst(odb::dbMaster* master);
 
@@ -267,11 +269,5 @@ class Fixture
  private:
   odb::dbDatabase* db_;
 };
-
-// BOOST_TEST wants an operator<< for any type it compares.  We
-// don't have those for enums and they are tedious to write.
-// Just compare them as integers to avoid this requirement.
-#define TEST_ENUM_EQUAL(L, R) \
-  BOOST_TEST(static_cast<int>(L) == static_cast<int>(R))
 
 }  // namespace drt

@@ -35,9 +35,15 @@ or_integration_tests(
     rebuffer1
     rebuffer1_hier
     recover_power_verbose
+    remove_buffers_hier1
     remove_buffers1
     remove_buffers2
     remove_buffers3
+    remove_buffers4
+    remove_buffers4_hier
+    remove_buffers5
+    remove_buffers5_hier
+    remove_buffers6
     repair_cap1
     repair_cap2
     repair_cap3
@@ -91,7 +97,8 @@ or_integration_tests(
     repair_setup8
     repair_setup9
     repair_setup9_hier
-    repair_setup_undo
+    repair_setup_undo1
+    repair_setup_undo2
     repair_slew1
     repair_slew2
     repair_slew3
@@ -132,6 +139,7 @@ or_integration_tests(
     repair_wire9
     repair_wire10
     repair_wire11
+    report_design_area
     report_dont_touch
     report_dont_use
     report_dont_use_corners
@@ -166,12 +174,15 @@ or_integration_tests(
     repair_setup7_multi
     report_equiv_cells
     replace_arith_modules1
+    replace_arith_modules2
     report_buffers_asap7
     report_buffers_nangate45
     report_buffers_ihp
     report_buffers_sky130hs
     report_buffers_sky130hd
     report_buffers_gf180
+    repair_setup_vt_swap
+    repair_setup_vt_swap2
     repair_fanout7_skip_pin_swap
   PASSFAIL_TESTS
     cpp_tests

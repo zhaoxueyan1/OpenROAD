@@ -7,6 +7,8 @@
 #include <string>
 
 #include "odb/db.h"
+#include "odb/util.h"
+#include "rcx/array1.h"
 #include "rcx/extRCap.h"
 
 namespace rcx {
@@ -48,21 +50,6 @@ struct CouplingState
     }
     if (hasOneCount) {
       one_count_table++;
-    }
-  }
-
-  // Print statistics
-  void printStats(FILE* fp, uint dir) const
-  {
-    if (fp) {
-      fprintf(fp,
-              "\nDir=%d  wireCnt=%d  NotOrderedCnt=%d  oneEmptyTable=%d  "
-              "oneCntTable=%d\n",
-              dir,
-              wire_count,
-              not_ordered_count,
-              empty_table_count,
-              one_count_table);
     }
   }
 };
@@ -972,20 +959,20 @@ class extMeasureRC : public extMeasure
                        Ath__array1D<extSegment*>* segTable,
                        Ath__array1D<extSegment*>* whiteTable);
   // void PrintCrossOvelaps(Wire *w, uint tgt_met, int x1, int x2,
-  // Ath__array1D<extSegment *> *segTable, int totLen, const char *prefix, int
-  // metOver=-1, int metUnder=-1);
+  // Ath__array1D<extSegment *> *segTable, int totLen, const char *prefix,
+  // int metOver=-1, int metUnder=-1);
 
   // dkf 10212023
   // void PrintCrossOvelapsOU(Wire *w, uint tgt_met, int x1, int len,
-  // Ath__array1D<extSegment *> *segTable, int totLen, const char *prefix, int
-  // metOver, int metUnder);
+  // Ath__array1D<extSegment *> *segTable, int totLen, const char *prefix,
+  // int metOver, int metUnder);
 
   // dkf 10232023
   // void PrintOverlapSeg(FILE *fp, extSegment *s, int tgt_met, const char
   // *prefix); void PrintOvelaps(extSegment *w, uint met, uint tgt_met,
-  // Ath__array1D<extSegment *> *segTable, const char *ou); void PrintOUSeg(FILE
-  // *fp, int x1, int len, int met, int metOver, int metUnder, const char
-  // *prefix, int up_dist, int down_dist);
+  // Ath__array1D<extSegment *> *segTable, const char *ou); void
+  // PrintOUSeg(FILE *fp, int x1, int len, int met, int metOver, int metUnder,
+  // const char *prefix, int up_dist, int down_dist);
   void OverUnder(extSegment* cc,
                  uint met,
                  int overMet,

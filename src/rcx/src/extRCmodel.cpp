@@ -13,15 +13,18 @@
 
 #include "odb/db.h"
 #include "parse.h"
+#include "rcx/array1.h"
+#include "rcx/ext2dBox.h"
 #include "rcx/extRCap.h"
 #include "rcx/extprocess.h"
 #include "rcx/grids.h"
+#include "rcx/util.h"
 #include "utl/Logger.h"
-
-namespace rcx {
 
 using odb::dbRSeg;
 using utl::RCX;
+
+namespace rcx {
 
 int extRCModel::getMaxMetIndexOverUnder(int met, int layerCnt)
 {
@@ -2172,7 +2175,6 @@ extRCModel::extRCModel(uint layerCnt, const char* name, Logger* logger)
   _solverFileName = new char[1024];
   _wireFileName = new char[1024];
   _capLogFP = nullptr;
-  _logFP = nullptr;
 
   _readCapLog = false;
   _commentFlag = false;
@@ -2208,7 +2210,6 @@ extRCModel::extRCModel(const char* name, Logger* logger)
   _solverFileName = new char[1024];
   _wireFileName = new char[1024];
   _capLogFP = nullptr;
-  _logFP = nullptr;
 
   _readCapLog = false;
   _commentFlag = false;
@@ -2615,22 +2616,6 @@ void extMeasure::printMets(FILE* fp)
   }
 }
 
-void extMeasure::printStats(FILE* fp)
-{
-  fprintf(fp,
-          "<==> w= %g[%g %g]  s= %g[%g]  th= %g[%g]  h= %g[%g]  r= %g",
-          _w_m,
-          _topWidth,
-          _botWidth,
-          _s_m,
-          _seff,
-          _t,
-          _teff,
-          _h,
-          _heff,
-          _r);
-}
-
 FILE* extRCModel::openFile(const char* topDir,
                            const char* name,
                            const char* suffix,
@@ -2701,9 +2686,6 @@ void extRCModel::mkFileNames(extMeasure* m, char* wiresNameSuffix)
   } else {
     sprintf(_wireFileName, "%s", "wires");
   }
-
-  fprintf(_logFP, "PATTERN %s\n\n", _wireDirName);
-  fflush(_logFP);
 }
 
 double get_nm(extMeasure* m, double n)
@@ -2762,9 +2744,6 @@ void extRCModel::mkNet_prefix(extMeasure* m, const char* wiresNameSuffix)
   } else {
     sprintf(_wireFileName, "%s", "wires");
   }
-
-  // fprintf(_logFP, "pattern Dir %s\n\n", _wireDirName);
-  fflush(_logFP);
 }
 
 FILE* extRCModel::mkPatternFile()
@@ -2779,16 +2758,6 @@ FILE* extRCModel::mkPatternFile()
   fprintf(fp, "PATTERN %s\n\n", _wireDirName);
   if (strcmp("TYP/Under3/M6uM7/W0.42_W0.42/S0.84_S0.84", _wireDirName) == 0) {
     fprintf(stdout, "%s\n", _wireDirName);
-  }
-
-  return fp;
-}
-
-FILE* extRCModel::openSolverFile()
-{
-  FILE* fp = openFile(_wireDirName, _wireFileName, ".out", "r");
-  if (fp != nullptr) {
-    _parser->setInputFP(fp);
   }
 
   return fp;
@@ -3045,7 +3014,6 @@ void extRCModel::setOptions(const char* topDir,
                             const char* pattern,
                             bool writeFiles)
 {
-  _logFP = openFile("./", "rulesGen", ".log", "w");
   _filesFP = openFile("./", "patternFiles.", pattern, "w");
   // strcpy(_topDir, topDir);
   strcpy(_topDir, pattern);
@@ -3058,7 +3026,6 @@ void extRCModel::setOptions(const char* topDir,
 
 void extRCModel::setOptions(const char* topDir, const char* pattern)
 {
-  _logFP = openFile("./", "rulesGen", ".log", "w");
   strcpy(_topDir, topDir);
   strcpy(_patternName, pattern);
 
@@ -3069,11 +3036,6 @@ void extRCModel::setOptions(const char* topDir, const char* pattern)
 
 void extRCModel::closeFiles()
 {
-  fflush(_logFP);
-
-  if (_logFP != nullptr) {
-    fclose(_logFP);
-  }
   fflush(_filesFP);
   if (_filesFP != nullptr) {
     fclose(_filesFP);
@@ -3842,9 +3804,6 @@ bool extRCModel::measurePatternVar(extMeasure* m,
   mkFileNames(m, wiresNameSuffix);
 
   printCommentLine('$', m);
-  fprintf(_logFP, "%s\n", _commentLine);
-  fprintf(_logFP, "%c %g thicknessChange\n", '$', thicknessChange);
-  fflush(_logFP);
 
   if (_writeFiles) {
     FILE* wfp = mkPatternFile();

@@ -9,6 +9,9 @@
 #include <cstdlib>
 
 #include "odb/db.h"
+#include "odb/isotropy.h"
+#include "rcx/array1.h"
+#include "rcx/util.h"
 
 namespace rcx {
 
@@ -258,7 +261,7 @@ int Wire::getRsegId()
 }
 int Wire::getShapeProperty(int id)
 {
-  dbNet* net = getNet();
+  odb::dbNet* net = getNet();
   if (net == nullptr) {
     return 0;
   }
@@ -271,15 +274,15 @@ int Wire::getShapeProperty(int id)
   int rcid = p->getValue();
   return rcid;
 }
-dbNet* Wire::getNet()
+odb::dbNet* Wire::getNet()
 {
   GridTable* gtb = _track->getGrid()->getGridTable();
-  dbBlock* block = gtb->getBlock();
+  odb::dbBlock* block = gtb->getBlock();
   if (_otherId == 0) {
     return (odb::dbSBox::getSBox(block, _boxId)->getSWire()->getNet());
   }
   if (gtb->usingDbSdb()) {
-    return dbNet::getNet(block, _boxId);
+    return odb::dbNet::getNet(block, _boxId);
   }
   return (odb::dbRSeg::getRSeg(block, _boxId)->getNet());
 }
@@ -1683,7 +1686,7 @@ uint Grid::placeWire(Wire* w)
 
   return trackNum1;
 }
-uint Grid::placeBox(dbBox* box, uint wtype, uint id)
+uint Grid::placeBox(odb::dbBox* box, uint wtype, uint id)
 {
   int ll[2] = {box->xMin(), box->yMin()};
   int ur[2] = {box->xMax(), box->yMax()};
@@ -2492,7 +2495,7 @@ Grid* GridTable::getGrid(uint row, uint col)
 {
   return _gridTable[row][col];
 }
-bool GridTable::addBox(uint row, uint col, dbBox* bb)
+bool GridTable::addBox(uint row, uint col, odb::dbBox* bb)
 {
   Grid* g = _gridTable[row][col];
 
@@ -2500,7 +2503,7 @@ bool GridTable::addBox(uint row, uint col, dbBox* bb)
 
   return true;
 }
-Wire* GridTable::addBox(dbBox* bb, uint wtype, uint id)
+Wire* GridTable::addBox(odb::dbBox* bb, uint wtype, uint id)
 {
   uint row = 0;
   uint col = 0;
@@ -2596,7 +2599,7 @@ void GridTable::removeMarkedNetWires()
   fprintf(stdout, "remove %d sdb wires.\n", cnt);
 }
 
-void GridTable::setExtControl(dbBlock* block,
+void GridTable::setExtControl(odb::dbBlock* block,
                               bool useDbSdb,
                               uint adj,
                               uint npsrc,
@@ -2646,7 +2649,7 @@ void GridTable::setExtControl(dbBlock* block,
   _dgContextTrackBase = dgContextTrackBase;
   _seqPool = seqPool;
 }
-void GridTable::setExtControl_v2(dbBlock* block,
+void GridTable::setExtControl_v2(odb::dbBlock* block,
                                  bool useDbSdb,
                                  uint adj,
                                  uint npsrc,

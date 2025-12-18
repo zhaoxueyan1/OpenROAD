@@ -545,7 +545,11 @@ class Renderer
                          T& value)
   {
     if (settings.count(key) == 1) {
-      value = std::get<T>(settings.at(key));
+      try {
+        value = std::get<T>(settings.at(key));
+      } catch (const std::bad_variant_access&) {
+        // Stay with current value
+      }
     }
   }
 
@@ -634,6 +638,9 @@ class Gui
 
   // Add an instance to the selection set
   void addSelectedInst(const char* name);
+
+  // Return the selected set
+  const SelectionSet& selection();
 
   // check if any object(inst/net) is present in sect/highlight set
   bool anyObjectInSet(bool selection_set, odb::dbObjectType obj_type) const;
@@ -817,12 +824,15 @@ class Gui
   const Selected& getInspectorSelection();
 
   // GIF API
-  void gifStart(const std::string& filename);
-  void gifAddFrame(const odb::Rect& region = odb::Rect(),
+  // Start returns the key for use by add and end.  This allows multiple
+  // gifs to be open at once.
+  int gifStart(const std::string& filename);
+  void gifAddFrame(int key,
+                   const odb::Rect& region = odb::Rect(),
                    int width_px = 0,
                    double dbu_per_pixel = 0,
                    std::optional<int> delay = {});
-  void gifEnd();
+  void gifEnd(int key);
 
   void setHeatMapSetting(const std::string& name,
                          const std::string& option,
@@ -940,10 +950,8 @@ class Gui
   std::unique_ptr<PlacementDensityDataSource> placement_density_heat_map_;
   std::unique_ptr<PowerDensityDataSource> power_density_heat_map_;
 
-  std::unique_ptr<GIF> gif_;
+  std::vector<std::unique_ptr<GIF>> gifs_;
   static constexpr int kDefaultGifDelay = 250;
-
-  static Gui* singleton_;
 
   std::string main_window_title_ = "OpenROAD";
 };

@@ -171,6 +171,8 @@ class Cluster
 
   void setAsArrayOfInterconnectedMacros();
   bool isArrayOfInterconnectedMacros() const;
+  void setAsMacroArray() { is_macro_array_ = true; }
+  bool isMacroArray() const { return is_macro_array_; }
   bool isEmpty() const;
   bool correspondsToLogicalModule() const;
 
@@ -212,10 +214,7 @@ class Cluster
   void addConnection(Cluster* cluster, float connection_weight);
   void removeConnection(int cluster_id);
   const ConnectionsMap& getConnectionsMap() const;
-  bool isSameConnSignature(const Cluster& cluster, float net_threshold);
-  bool hasMacroConnectionWith(const Cluster& cluster, float net_threshold);
-  int getCloseCluster(const std::vector<int>& candidate_clusters,
-                      float net_threshold);
+  float allConnectionsWeight() const;
 
   // virtual connections
   // TODO: return const reference iff precondition ok (see comment in Cluster)
@@ -247,6 +246,7 @@ class Cluster
   bool is_io_pad_cluster_{false};
   bool is_io_bundle_{false};
   bool is_array_of_interconnected_macros_ = false;
+  bool is_macro_array_{false};
   bool is_fixed_macro_{false};
 
   std::unique_ptr<SoftMacro> soft_macro_;
@@ -402,7 +402,7 @@ class SoftMacro
 {
  public:
   SoftMacro(Cluster* cluster);
-  SoftMacro(float width, float height, const std::string& name);
+  SoftMacro(const Rect& blockage, const std::string& name);
   SoftMacro(const std::pair<float, float>& location,
             const std::string& name,
             float width,
@@ -452,6 +452,7 @@ class SoftMacro
   void setLocationF(float x, float y);
   void setShapeF(float width, float height);
   int getNumMacro() const;
+  bool isBlockage() const;
   // Align Flag support
   void setAlignFlag(bool flag);
   bool getAlignFlag() const;
@@ -482,6 +483,7 @@ class SoftMacro
   // Interfaces with hard macro
   Cluster* cluster_ = nullptr;
   bool fixed_ = false;  // if the macro is fixed
+  bool is_blockage_ = false;
 
   // Alignment support
   // if the cluster has been aligned related to other macro_cluster or
@@ -489,7 +491,6 @@ class SoftMacro
   bool align_flag_ = false;
 };
 
-// In our netlist model, we only have two-pin nets
 struct BundledNet
 {
   BundledNet(int src, int target, float weight)
@@ -498,13 +499,7 @@ struct BundledNet
     this->weight = weight;
   }
 
-  BundledNet(const std::pair<int, int>& terminals, float weight)
-  {
-    this->terminals = terminals;
-    this->weight = weight;
-  }
-
-  bool operator==(const BundledNet& net)
+  bool operator==(const BundledNet& net) const
   {
     return (terminals.first == net.terminals.first)
            && (terminals.second == net.terminals.second);
@@ -512,11 +507,6 @@ struct BundledNet
 
   std::pair<int, int> terminals;  // source_id <--> target_id (undirected)
   float weight;  // Number of bundled connections (can be timing-related)
-
-  // In our framework, we only bundled connections between clusters.
-  // Thus each net must have both src_cluster_id and target_cluster_id
-  int src_cluster_id = -1;
-  int target_cluster_id = -1;
 };
 
 struct SequencePair

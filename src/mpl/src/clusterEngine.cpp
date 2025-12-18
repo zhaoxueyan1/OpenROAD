@@ -871,7 +871,7 @@ DataFlowHypergraph ClusteringEngine::computeHypergraph(
     for (int i = 1; i < hyperedge.size(); i++) {
       graph.backward_vertices[hyperedge[i]].push_back(graph.hyperedges.size());
     }
-    graph.hyperedges.push_back(hyperedge);
+    graph.hyperedges.push_back(std::move(hyperedge));
   }
 
   return graph;
@@ -1021,20 +1021,17 @@ void ClusteringEngine::buildDataFlowConnections()
 
   // bterm, macros or ffs
   for (const auto& [bterm, insts] : data_connections_.io_and_regs) {
-    const auto itr = tree_->maps.bterm_to_cluster_id.find(bterm);
-    if (itr == tree_->maps.bterm_to_cluster_id.end()) {
-      continue;
-    }
-
-    const int driver_id = itr->second;
+    const int driver_id = tree_->maps.bterm_to_cluster_id.at(bterm);
     Cluster* driver_cluster = tree_->maps.id_to_cluster.at(driver_id);
 
     for (int hops = 0; hops < max_num_of_hops_; hops++) {
       std::set<int> sink_clusters = computeSinks(insts[hops]);
       const float conn_weight = computeConnWeight(hops);
-      for (auto& sink : sink_clusters) {
-        Cluster* sink_cluster = tree_->maps.id_to_cluster.at(sink);
-        connect(driver_cluster, sink_cluster, conn_weight);
+      for (const int sink_id : sink_clusters) {
+        if (driver_id != sink_id) {
+          Cluster* sink_cluster = tree_->maps.id_to_cluster.at(sink_id);
+          connect(driver_cluster, sink_cluster, conn_weight);
+        }
       }
     }
   }
@@ -1047,9 +1044,11 @@ void ClusteringEngine::buildDataFlowConnections()
     for (int hops = 0; hops < max_num_of_hops_; hops++) {
       std::set<int> sink_clusters = computeSinks(insts[hops]);
       const float conn_weight = computeConnWeight(hops);
-      for (auto& sink : sink_clusters) {
-        Cluster* sink_cluster = tree_->maps.id_to_cluster.at(sink);
-        connect(driver_cluster, sink_cluster, conn_weight);
+      for (const int sink_id : sink_clusters) {
+        if (driver_id != sink_id) {
+          Cluster* sink_cluster = tree_->maps.id_to_cluster.at(sink_id);
+          connect(driver_cluster, sink_cluster, conn_weight);
+        }
       }
     }
   }
@@ -1062,9 +1061,11 @@ void ClusteringEngine::buildDataFlowConnections()
     for (int hops = 0; hops < max_num_of_hops_; hops++) {
       std::set<int> sink_clusters = computeSinks(insts[hops]);
       const float conn_weight = computeConnWeight(hops);
-      for (auto& sink : sink_clusters) {
-        Cluster* sink_cluster = tree_->maps.id_to_cluster.at(sink);
-        connect(driver_cluster, sink_cluster, conn_weight);
+      for (const int sink_id : sink_clusters) {
+        if (driver_id != sink_id) {
+          Cluster* sink_cluster = tree_->maps.id_to_cluster.at(sink_id);
+          connect(driver_cluster, sink_cluster, conn_weight);
+        }
       }
     }
   }
@@ -1599,7 +1600,7 @@ void ClusteringEngine::breakLargeFlatCluster(Cluster* parent)
         && loads_id.size() < tree_->large_net_threshold) {
       std::vector<int> hyperedge;
       hyperedge.insert(hyperedge.end(), loads_id.begin(), loads_id.end());
-      hyperedges.push_back(hyperedge);
+      hyperedges.push_back(std::move(hyperedge));
     }
   }
 
@@ -1742,23 +1743,10 @@ void ClusteringEngine::mergeChildrenBelowThresholds(
     }
     // Firstly we perform Type 1 merge
     for (int i = 0; i < num_small_children; i++) {
-      const int cluster_id = small_children[i]->getCloseCluster(
-          small_children_ids, tree_->min_net_count_for_connection);
-      debugPrint(
-          logger_,
-          MPL,
-          "multilevel_autoclustering",
-          1,
-          "Candidate cluster: {} - {}",
-          small_children[i]->getName(),
-          (cluster_id != -1 ? tree_->maps.id_to_cluster[cluster_id]->getName()
-                            : "   "));
-      if (cluster_id != -1
-          && !tree_->maps.id_to_cluster[cluster_id]->isIOCluster()) {
-        Cluster* close_cluster = tree_->maps.id_to_cluster[cluster_id];
-        if (attemptMerge(close_cluster, small_children[i])) {
-          cluster_class[i] = close_cluster->getId();
-        }
+      Cluster* close_cluster = findSingleWellFormedConnectedCluster(
+          small_children[i], small_children_ids);
+      if (close_cluster && attemptMerge(close_cluster, small_children[i])) {
+        cluster_class[i] = close_cluster->getId();
       }
     }
 
@@ -1771,8 +1759,7 @@ void ClusteringEngine::mergeChildrenBelowThresholds(
             continue;
           }
 
-          if (small_children[i]->isSameConnSignature(
-                  *small_children[j], tree_->min_net_count_for_connection)) {
+          if (sameConnectionSignature(small_children[i], small_children[j])) {
             if (attemptMerge(small_children[i], small_children[j])) {
               cluster_class[j] = i;
             } else {
@@ -1859,6 +1846,128 @@ void ClusteringEngine::mergeChildrenBelowThresholds(
              "Finished merging clusters");
 }
 
+bool ClusteringEngine::sameConnectionSignature(Cluster* a, Cluster* b) const
+{
+  std::vector<int> a_neighbors = findNeighbors(a, /* ignore */ b);
+  if (a_neighbors.empty()) {
+    return false;
+  }
+
+  std::vector<int> b_neighbors = findNeighbors(b, /* ignore */ a);
+  if (b_neighbors.size() != a_neighbors.size()) {
+    return false;
+  }
+
+  std::ranges::sort(a_neighbors);
+  std::ranges::sort(b_neighbors);
+
+  for (int i = 0; i < a_neighbors.size(); i++) {
+    if (a_neighbors[i] != b_neighbors[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+std::vector<int> ClusteringEngine::findNeighbors(Cluster* target_cluster,
+                                                 Cluster* ignored_cluster) const
+{
+  std::vector<int> neighbors;
+  const ConnectionsMap& target_connections
+      = target_cluster->getConnectionsMap();
+
+  for (const auto& [cluster_id, connection_weight] : target_connections) {
+    if (cluster_id == target_cluster->getId()) {
+      logger_->error(MPL,
+                     53,
+                     "Cluster {} is connected to itself.",
+                     target_cluster->getName());
+    }
+
+    if (cluster_id == ignored_cluster->getId()) {
+      continue;
+    }
+
+    const float connection_ratio
+        = connection_weight / target_cluster->allConnectionsWeight();
+
+    if (connection_ratio >= minimum_connection_ratio_) {
+      neighbors.push_back(cluster_id);
+    }
+  }
+
+  return neighbors;
+}
+
+bool ClusteringEngine::strongConnection(Cluster* a,
+                                        Cluster* b,
+                                        const float* connection_weight) const
+{
+  if (a == b) {
+    logger_->error(
+        MPL,
+        61,
+        "Attempt to evaluate if cluster {} has strong connection with itself.",
+        a->getName());
+  }
+
+  // Attention that we need to subtract the weight of the connection that
+  // we're evaluating otherwise we'll be taking it into account twice.
+  float total_weight = a->allConnectionsWeight() + b->allConnectionsWeight();
+  float connection_ratio = 0.0;
+  if (connection_weight) {
+    total_weight -= *connection_weight;
+    connection_ratio = *connection_weight / total_weight;
+  } else {
+    const ConnectionsMap& a_connections = a->getConnectionsMap();
+    auto itr = a_connections.find(b->getId());
+
+    if (itr != a_connections.end()) {
+      const float conn_weight = itr->second;
+      total_weight -= conn_weight;
+      connection_ratio = conn_weight / total_weight;
+    }
+  }
+
+  return connection_ratio >= minimum_connection_ratio_;
+}
+
+Cluster* ClusteringEngine::findSingleWellFormedConnectedCluster(
+    Cluster* target_cluster,
+    const std::vector<int>& small_clusters_id_list) const
+{
+  int number_of_close_clusters = 0;
+  Cluster* close_cluster = nullptr;
+  const ConnectionsMap& target_connections
+      = target_cluster->getConnectionsMap();
+
+  for (auto& [cluster_id, connection_weight] : target_connections) {
+    Cluster* candidate = tree_->maps.id_to_cluster.at(cluster_id);
+
+    if (candidate->isIOCluster()) {
+      continue;
+    }
+
+    if (strongConnection(target_cluster, candidate, &connection_weight)) {
+      auto small_child_found
+          = std::ranges::find(small_clusters_id_list, cluster_id);
+
+      // A small child is not well-formed, so we avoid them.
+      if (small_child_found == small_clusters_id_list.end()) {
+        number_of_close_clusters++;
+        close_cluster = candidate;
+      }
+    }
+  }
+
+  if (number_of_close_clusters == 1) {
+    return close_cluster;
+  }
+
+  return nullptr;
+}
+
 bool ClusteringEngine::attemptMerge(Cluster* receiver, Cluster* incomer)
 {
   // Cache incomer data in case it is deleted.
@@ -1874,7 +1983,13 @@ bool ClusteringEngine::attemptMerge(Cluster* receiver, Cluster* incomer)
       for (const auto& [cluster_id, connection_weight] : incomer_connections) {
         Cluster* cluster = tree_->maps.id_to_cluster.at(cluster_id);
         cluster->removeConnection(incomer_id);
-        cluster->addConnection(receiver, connection_weight);
+
+        // If the incomer and the receiver were connected, we forget that
+        // connection, otherwise we'll end up with the receiver connected
+        // to itself.
+        if (cluster_id != receiver->getId()) {
+          cluster->addConnection(receiver, connection_weight);
+        }
       }
     }
 
@@ -1903,50 +2018,60 @@ void ClusteringEngine::clearConnections()
 
 void ClusteringEngine::buildNetListConnections()
 {
-  for (odb::dbNet* net : block_->getNets()) {
-    if (!isValidNet(net)) {
+  for (odb::dbNet* db_net : block_->getNets()) {
+    if (!isValidNet(db_net)) {
       continue;
     }
 
-    int driver_cluster_id = -1;
-    std::vector<int> load_clusters_ids;
+    Net net = buildNet(db_net);
+    connectClusters(net);
+  }
+}
 
-    for (odb::dbITerm* iterm : net->getITerms()) {
-      odb::dbInst* inst = iterm->getInst();
-      const int cluster_id = tree_->maps.inst_to_cluster_id.at(inst);
+ClusteringEngine::Net ClusteringEngine::buildNet(odb::dbNet* db_net) const
+{
+  Net net;
 
-      if (iterm->getIoType() == odb::dbIoType::OUTPUT) {
-        driver_cluster_id = cluster_id;
+  for (odb::dbITerm* iterm : db_net->getITerms()) {
+    odb::dbInst* inst = iterm->getInst();
+    const int cluster_id = tree_->maps.inst_to_cluster_id.at(inst);
+
+    if (iterm->getIoType() == odb::dbIoType::OUTPUT) {
+      net.driver_id = cluster_id;
+    } else {
+      net.loads_ids.push_back(cluster_id);
+    }
+  }
+
+  if (tree_->io_pads.empty()) {
+    for (odb::dbBTerm* bterm : db_net->getBTerms()) {
+      const int cluster_id = tree_->maps.bterm_to_cluster_id.at(bterm);
+
+      if (bterm->getIoType() == odb::dbIoType::INPUT) {
+        net.driver_id = cluster_id;
       } else {
-        load_clusters_ids.push_back(cluster_id);
+        net.loads_ids.push_back(cluster_id);
       }
     }
+  }
 
-    bool net_has_io_pin = false;
-    if (tree_->io_pads.empty()) {
-      for (odb::dbBTerm* bterm : net->getBTerms()) {
-        const int cluster_id = tree_->maps.bterm_to_cluster_id.at(bterm);
-        net_has_io_pin = true;
+  return net;
+}
 
-        if (bterm->getIoType() == odb::dbIoType::INPUT) {
-          driver_cluster_id = cluster_id;
-        } else {
-          load_clusters_ids.push_back(cluster_id);
-        }
-      }
-    }
+void ClusteringEngine::connectClusters(const Net& net)
+{
+  if (net.driver_id == -1 || net.loads_ids.empty()
+      || net.loads_ids.size() >= tree_->large_net_threshold) {
+    return;
+  }
 
-    if (driver_cluster_id != -1 && !load_clusters_ids.empty()
-        && load_clusters_ids.size() < tree_->large_net_threshold) {
-      const float weight = net_has_io_pin ? tree_->virtual_weight : 1.0;
-      Cluster* driver_cluster = tree_->maps.id_to_cluster.at(driver_cluster_id);
+  const float connection_weight = 1.0;
+  Cluster* driver = tree_->maps.id_to_cluster.at(net.driver_id);
 
-      for (const int load_cluster_id : load_clusters_ids) {
-        if (load_cluster_id != driver_cluster_id) {
-          Cluster* load_cluster = tree_->maps.id_to_cluster.at(load_cluster_id);
-          connect(driver_cluster, load_cluster, weight);
-        }
-      }
+  for (const int load_cluster_id : net.loads_ids) {
+    if (load_cluster_id != net.driver_id) {
+      Cluster* load = tree_->maps.id_to_cluster.at(load_cluster_id);
+      connect(driver, load, connection_weight);
     }
   }
 }
@@ -1991,7 +2116,7 @@ void ClusteringEngine::fetchMixedLeaves(
   // We push the leaves after finishing searching the children so
   // that each vector of clusters represents the children of one
   // parent.
-  mixed_leaves.push_back(sister_mixed_leaves);
+  mixed_leaves.push_back(std::move(sister_mixed_leaves));
 }
 
 void ClusteringEngine::breakMixedLeaves(
@@ -2080,13 +2205,16 @@ void ClusteringEngine::breakMixedLeaf(Cluster* mixed_leaf)
       continue;  // this macro cluster has been merged
     }
 
+    Cluster* movable_macro_cluster = movable_macro_clusters[i];
+    movable_macro_cluster->setAsMacroArray();
+
     if (interconn_class[i] != -1) {
-      movable_macro_clusters[i]->setAsArrayOfInterconnectedMacros();
+      movable_macro_cluster->setAsArrayOfInterconnectedMacros();
     }
 
-    movable_macro_clusters[i]->setClusterType(HardMacroCluster);
-    setClusterMetrics(movable_macro_clusters[i]);
-    virtual_conn_clusters.push_back(movable_macro_clusters[i]->getId());
+    movable_macro_cluster->setClusterType(HardMacroCluster);
+    setClusterMetrics(movable_macro_cluster);
+    virtual_conn_clusters.push_back(movable_macro_cluster->getId());
   }
 
   // Deal with the fixed macros.
@@ -2200,8 +2328,7 @@ void ClusteringEngine::classifyMacrosByConnSignature(
           continue;
         }
 
-        if (macro_clusters[i]->isSameConnSignature(
-                *macro_clusters[j], tree_->min_net_count_for_connection)) {
+        if (sameConnectionSignature(macro_clusters[i], macro_clusters[j])) {
           signature_class[j] = i;
         }
       }
@@ -2229,8 +2356,11 @@ void ClusteringEngine::classifyMacrosByInterconn(
     if (interconn_class[i] == -1) {
       interconn_class[i] = i;
       for (int j = 0; j < macro_clusters.size(); j++) {
-        if (macro_clusters[i]->hasMacroConnectionWith(
-                *macro_clusters[j], tree_->min_net_count_for_connection)) {
+        if (macro_clusters[i] == macro_clusters[j]) {
+          continue;
+        }
+
+        if (strongConnection(macro_clusters[i], macro_clusters[j])) {
           if (interconn_class[j] != -1) {
             interconn_class[i] = interconn_class[j];
             break;

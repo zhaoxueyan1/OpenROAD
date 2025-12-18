@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -93,6 +94,7 @@ struct FrNet  // A Net is a set of connected MazePoints
   const std::vector<int>& getPinX() const { return pin_x_; }
   const std::vector<int>& getPinY() const { return pin_y_; }
   const std::vector<int>& getPinL() const { return pin_l_; }
+  int getPinIdxFromPosition(int x, int y, int count);
 
   void addPin(int x, int y, int layer);
   void reset(odb::dbNet* db_net,
@@ -109,6 +111,8 @@ struct FrNet  // A Net is a set of connected MazePoints
   void setIsCritical(bool is_critical) { is_critical_ = is_critical; }
   void setIsSoftNDR(bool is_soft) { is_soft_ndr_ = is_soft; }
   bool isSoftNDR() { return is_soft_ndr_; }
+  void setIsResAware(bool res_aware) { is_res_aware_ = res_aware; }
+  bool isResAware() { return is_res_aware_; }
 
  private:
   odb::dbNet* db_net_;
@@ -123,6 +127,7 @@ struct FrNet  // A Net is a set of connected MazePoints
   int max_layer_;
   float slack_;
   bool is_soft_ndr_ = false;
+  bool is_res_aware_ = false;
   // Non-null when an NDR has been applied to the net.
   std::unique_ptr<std::vector<int8_t>> edge_cost_per_layer_;
 };
@@ -227,6 +232,7 @@ struct StTree
   // The nodes (pin and Steiner nodes) in the tree.
   std::vector<TreeNode> nodes;
   std::vector<TreeEdge> edges;
+  std::map<int, int> node_to_pin_idx;
 
   int num_edges() const { return edges.size(); }
   int num_nodes() const { return nodes.size(); }
@@ -238,6 +244,9 @@ struct OrderNetPin
   int minX;
   float length_per_pin;  // net length over pin count
   int ndr_priority;      // NDR nets are assigned first
+  int res_aware;
+  float slack;
+  int clock;
 };
 
 struct OrderTree

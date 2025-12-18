@@ -2,8 +2,6 @@
 // Copyright (c) 2021-2025, The OpenROAD Authors
 
 #pragma once
-#include <omp.h>
-
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -22,12 +20,13 @@
 #include "distributed/RoutingJobDescription.h"
 #include "distributed/frArchive.h"
 #include "dr/FlexDR.h"
+#include "drt/TritonRoute.h"
 #include "dst/Distributed.h"
 #include "dst/JobCallBack.h"
 #include "dst/JobMessage.h"
 #include "global.h"
+#include "omp.h"
 #include "pa/FlexPA.h"
-#include "triton_route/TritonRoute.h"
 #include "utl/Logger.h"
 
 namespace asio = boost::asio;

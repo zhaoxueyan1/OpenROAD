@@ -11,15 +11,16 @@
 #include <vector>
 
 #include "odb/db.h"
+#include "odb/dbSet.h"
 #include "odb/dbTypes.h"
 #include "parse.h"
+#include "rcx/array1.h"
 #include "rcx/extRCap.h"
 #include "rcx/extSpef.h"
 #include "rcx/extViaModel.h"
 #include "rcx/extprocess.h"
+#include "rcx/util.h"
 #include "utl/Logger.h"
-
-namespace rcx {
 
 using odb::dbBTerm;
 using odb::dbCapNode;
@@ -30,6 +31,8 @@ using odb::dbObstruction;
 using odb::dbSet;
 using odb::dbTechLayer;
 using utl::RCX;
+
+namespace rcx {
 
 extMetRCTable* extRCModel::initCapTables(uint layerCnt, uint widthCnt)
 {
@@ -466,10 +469,11 @@ uint extRCModel::benchDB_WS(extMainOptions* opt, extMeasure* measure)
     return 0;
     wTable->resetCnt();
     sTable->resetCnt();
-    dbSet<dbTechNonDefaultRule> nd_rules = opt->_tech->getNonDefaultRules();
-    dbSet<dbTechNonDefaultRule>::iterator nditr;
-    dbTechLayerRule* tst_rule;
-    //		dbTechNonDefaultRule  *wdth_rule = nullptr;
+    dbSet<odb::dbTechNonDefaultRule> nd_rules
+        = opt->_tech->getNonDefaultRules();
+    dbSet<odb::dbTechNonDefaultRule>::iterator nditr;
+    odb::dbTechLayerRule* tst_rule;
+    //		odb::dbTechNonDefaultRule  *wdth_rule = nullptr;
 
     for (nditr = nd_rules.begin(); nditr != nd_rules.end(); ++nditr) {
       tst_rule = (*nditr)->getLayerRule(layer);

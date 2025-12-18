@@ -314,8 +314,13 @@ void SACoreSoftMacro::initialize()
   graphics_ = nullptr;
 
   for (int i = 0; i < num_perturb_per_step_; i++) {
+    saveState();
     perturb();
-    // store current penalties
+    if (!invalid_states_allowed_ && !isValid()) {
+      restoreState();
+      continue;
+    }
+
     width_list.push_back(width_);
     height_list.push_back(height_);
     area_penalty_list.push_back(width_ * height_ / outline_.getWidth()
@@ -454,8 +459,8 @@ void SACoreSoftMacro::calBoundaryPenalty()
       y_dist_from_root
           = std::min(global_ly, std::abs(root_->getHeight() - global_uy));
 
-      boundary_penalty_ += std::min(x_dist_from_root, y_dist_from_root)
-                           * soft_macro.getNumMacro();
+      boundary_penalty_
+          += (x_dist_from_root + y_dist_from_root) * soft_macro.getNumMacro();
     }
   }
   // normalization
@@ -866,7 +871,7 @@ void SACoreSoftMacro::fillDeadSpace()
   const int num_y = y_grid.size() - 1;
   for (int j = 0; j < num_y; j++) {
     std::vector<int> macro_ids(num_x, -1);
-    grids.push_back(macro_ids);
+    grids.push_back(std::move(macro_ids));
   }
 
   for (int macro_id = 0; macro_id < pos_seq_.size(); macro_id++) {

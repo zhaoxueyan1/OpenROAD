@@ -221,8 +221,8 @@ class TreeBuilder
 
   float getAveSinkArrival() const { return aveArrival_; }
   void setAveSinkArrival(float arrival) { aveArrival_ = arrival; }
-  float getTopBufferDelay() const { return topBufferDelay_; }
-  void setTopBufferDelay(float delay) { topBufferDelay_ = delay; }
+  float getNDummies() const { return nDummies_; }
+  void setNDummies(float nDummies) { nDummies_ = nDummies; }
   odb::dbInst* getTopBuffer() const { return topBuffer_; }
   void setTopBuffer(odb::dbInst* inst) { topBuffer_ = inst; }
   std::string getTopBufferName() const { return topBufferName_; }
@@ -258,7 +258,7 @@ class TreeBuilder
       insertionDelays_;
   TreeType type_ = TreeType::RegularTree;
   float aveArrival_ = 0.0;
-  float topBufferDelay_ = 0.0;
+  int nDummies_ = 0;
   odb::dbInst* topBuffer_ = nullptr;
   std::string topBufferName_;
   odb::dbNet* drivingNet_ = nullptr;

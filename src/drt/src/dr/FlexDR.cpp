@@ -4,7 +4,6 @@
 #include "dr/FlexDR.h"
 
 #include <dst/JobMessage.h>
-#include <omp.h>
 
 #include <algorithm>
 #include <atomic>
@@ -49,11 +48,14 @@
 #include "gc/FlexGC.h"
 #include "io/io.h"
 #include "odb/dbTypes.h"
+#include "omp.h"
 #include "serialization.h"
 #include "utl/Logger.h"
 #include "utl/Progress.h"
 #include "utl/ScopedTemporaryFile.h"
 #include "utl/exception.h"
+
+using odb::dbTechLayerType;
 
 BOOST_CLASS_EXPORT(drt::RoutingJobDescription)
 

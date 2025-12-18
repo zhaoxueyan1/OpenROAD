@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <map>
 #include <string>
 
 #include "baseParser.h"
 #include "objects.h"
+#include "yaml-cpp/yaml.h"
 
 namespace odb {
 

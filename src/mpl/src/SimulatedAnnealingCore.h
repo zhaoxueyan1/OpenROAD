@@ -67,6 +67,7 @@ class SimulatedAnnealingCore
   void setFences(const std::map<int, Rect>& fences);
   void setGuides(const std::map<int, Rect>& guides);
   void setInitialSequencePair(const SequencePair& sequence_pair);
+  void disallowInvalidStates() { invalid_states_allowed_ = false; }
 
   virtual bool isValid() const;
   bool fitsIn(const Rect& outline) const;
@@ -115,9 +116,10 @@ class SimulatedAnnealingCore
   virtual void calPenalty() = 0;
   void calOutlinePenalty();
   void calWirelength();
-  void computeWLForClusterOfUnplacedIOPins(const T& macro,
-                                           const T& unplaced_ios,
-                                           float net_weight);
+  float computeNetsWireLength(const std::vector<BundledNet>& nets) const;
+  double computeWLForClusterOfUnplacedIOPins(const T& macro,
+                                             const T& unplaced_ios,
+                                             float net_weight) const;
   bool isOutsideTheOutline(const T& macro) const;
   void calGuidancePenalty();
   void calFencePenalty();
@@ -220,6 +222,7 @@ class SimulatedAnnealingCore
   static constexpr float acc_tolerance_ = 0.001;
 
   bool has_initial_sequence_pair_ = false;
+  bool invalid_states_allowed_{true};
 };
 
 // SACore wrapper function

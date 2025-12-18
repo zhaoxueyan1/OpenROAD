@@ -96,6 +96,7 @@ class RepairSetup : public sta::dbStaState
                    // reduce tns (0.0-1.0).
                    double repair_tns_end_percent,
                    int max_passes,
+                   int max_iterations,
                    int max_repairs_per_pass,
                    bool verbose,
                    const std::vector<MoveType>& sequence,
@@ -105,7 +106,8 @@ class RepairSetup : public sta::dbStaState
                    bool skip_buffering,
                    bool skip_buffer_removal,
                    bool skip_last_gasp,
-                   bool skip_vt_swap);
+                   bool skip_vt_swap,
+                   bool skip_crit_vt_swap);
   // For testing.
   void repairSetup(const Pin* end_pin);
   // For testing.
@@ -130,7 +132,16 @@ class RepairSetup : public sta::dbStaState
                          float& fix_rate_threshold,
                          int endpt_index,
                          int num_endpts);
-  void repairSetupLastGasp(const OptoParams& params, int& num_viols);
+  void repairSetupLastGasp(const OptoParams& params,
+                           int& num_viols,
+                           int max_iterations);
+  bool swapVTCritCells(const OptoParams& params, int& num_viols);
+  void traverseFaninCone(Vertex* endpoint,
+                         std::unordered_map<Instance*, float>& crit_insts,
+                         std::unordered_set<Vertex*>& visited,
+                         std::unordered_set<Instance*>& notSwappable,
+                         const OptoParams& params);
+  Slack getInstanceSlack(Instance* inst);
 
   Logger* logger_ = nullptr;
   dbNetwork* db_network_ = nullptr;

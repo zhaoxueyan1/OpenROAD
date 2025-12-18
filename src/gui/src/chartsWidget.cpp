@@ -29,7 +29,9 @@
 #include "sta/Clock.hh"
 #include "sta/MinMax.hh"
 #include "sta/PortDirection.hh"
+#include "sta/SdcClass.hh"
 #include "sta/Units.hh"
+#include "utl/Logger.h"
 #include "utl/histogram.h"
 
 namespace gui {
@@ -873,7 +875,7 @@ void HistogramView::emitEndPointsInBucket(const int bar_index)
     return;
   }
 
-  auto compare_slack = [=](const sta::Pin* a, const sta::Pin* b) {
+  auto compare_slack = [this](const sta::Pin* a, const sta::Pin* b) {
     return sta_->getPinSlack(a) < sta_->getPinSlack(b);
   };
   std::sort(end_points.begin(), end_points.end(), compare_slack);

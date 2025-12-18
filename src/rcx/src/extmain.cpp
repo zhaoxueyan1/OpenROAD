@@ -2,11 +2,11 @@
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "odb/db.h"
+#include "odb/dbSet.h"
+#include "rcx/array1.h"
 #include "rcx/extRCap.h"
 #include "rcx/extSpef.h"
 #include "utl/Logger.h"
-
-namespace rcx {
 
 using odb::dbBlock;
 using odb::dbCapNode;
@@ -18,6 +18,8 @@ using odb::dbSet;
 using odb::dbTech;
 using odb::dbTechLayer;
 using utl::RCX;
+
+namespace rcx {
 
 void extMain::init(odb::dbDatabase* db, Logger* logger)
 {

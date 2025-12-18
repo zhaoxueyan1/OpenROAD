@@ -3,8 +3,6 @@
 
 #include "dr/FlexDR_conn.h"
 
-#include <omp.h>
-
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -25,12 +23,14 @@
 #include "db/obj/frVia.h"
 #include "db/tech/frTechObject.h"
 #include "dr/FlexDR.h"
+#include "drt/TritonRoute.h"
 #include "frBaseTypes.h"
 #include "frProfileTask.h"
 #include "frRegionQuery.h"
 #include "io/io.h"
 #include "odb/geom.h"
-#include "triton_route/TritonRoute.h"
+#include "omp.h"
+#include "utl/Logger.h"
 #include "utl/exception.h"
 
 namespace drt {

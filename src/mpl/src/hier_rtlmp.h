@@ -42,6 +42,9 @@ class SACoreSoftMacro;
 class SACoreHardMacro;
 
 using BoundaryToRegionsMap = std::map<Boundary, std::queue<odb::Rect>>;
+using SoftMacroNameToIdMap = std::map<std::string, int>;
+using ClusterToMacroMap = std::map<int, int>;  // cluster_id -> macro_id
+using BundledNetList = std::vector<BundledNet>;
 
 // The parameters necessary to compute one coordinate of the new
 // origin for aligning the macros' pins to the track-grid
@@ -92,7 +95,6 @@ class HierRTLMP
   void setMaxNumLevel(int max_num_level);
   void setClusterSizeRatioPerLevel(float coarsening_ratio);
   void setLargeNetThreshold(int large_net_threshold);
-  void setSignatureNetThreshold(int signature_net_threshold);
   void setAreaWeight(float area_weight);
   void setOutlineWeight(float outline_weight);
   void setWirelengthWeight(float wirelength_weight);
@@ -101,11 +103,11 @@ class HierRTLMP
   void setBoundaryWeight(float boundary_weight);
   void setNotchWeight(float notch_weight);
   void setMacroBlockageWeight(float macro_blockage_weight);
-  void setPinAccessThreshold(float pin_access_th);
   void setTargetUtil(float target_util);
   void setTargetDeadSpace(float target_dead_space);
   void setMinAR(float min_ar);
   void setReportDirectory(const char* report_directory);
+  void setKeepClusteringData(bool keep_clustering_data);
   void setDebug(std::unique_ptr<MplObserver>& graphics);
   void setDebugShowBundledNets(bool show_bundled_nets);
   void setDebugShowClustersIds(bool show_clusters_ids);
@@ -135,6 +137,9 @@ class HierRTLMP
   void updateMacrosOnDb();
   void updateMacroOnDb(const HardMacro* hard_macro);
   void commitMacroPlacementToDb();
+  void commitClusteringDataToDb() const;
+  void createGroupForCluster(Cluster* cluster,
+                             odb::dbGroup* parent_group) const;
   void clear();
   void computeWireLength() const;
 
@@ -174,13 +179,14 @@ class HierRTLMP
   void adjustMacroBlockageWeight();
   void placeChildren(Cluster* parent, bool ignore_std_cell_area = false);
 
-  void findBlockagesWithinOutline(std::vector<Rect>& macro_blockages,
-                                  std::vector<Rect>& placement_blockages,
-                                  const Rect& outline) const;
+  std::vector<Rect> findBlockagesWithinOutline(const Rect& outline) const;
   void getBlockageRegionWithinOutline(
       std::vector<Rect>& blockages_within_outline,
       const Rect& blockage,
       const Rect& outline) const;
+  void eliminateOverlaps(std::vector<Rect>& blockages) const;
+  void createSoftMacrosForBlockages(const std::vector<Rect>& blockages,
+                                    std::vector<SoftMacro>& macros);
   void createFixedTerminals(Cluster* parent,
                             std::map<std::string, int>& soft_macro_id_map,
                             std::vector<SoftMacro>& soft_macros);
@@ -206,12 +212,16 @@ class HierRTLMP
                             const UniqueClusterVector& macro_clusters,
                             std::map<int, int>& cluster_to_macro,
                             std::vector<HardMacro>& sa_macros);
-  std::vector<BundledNet> computeBundledNets(
-      const UniqueClusterVector& macro_clusters,
-      const std::map<int, int>& cluster_to_macro);
-  void setArrayTilingSequencePair(Cluster* cluster,
-                                  int macros_to_place,
-                                  SequencePair& initial_seq_pair);
+  // For cluster placement.
+  BundledNetList buildBundledNets(
+      Cluster* parent,
+      const SoftMacroNameToIdMap& soft_macro_id_map) const;
+  // For macro placement.
+  BundledNetList buildBundledNets(
+      const UniqueClusterVector& clusters,
+      const ClusterToMacroMap& cluster_to_macro) const;
+  SequencePair computeArraySequencePair(Cluster* cluster,
+                                        bool& array_has_empty_space);
 
   // Orientation Improvement
   void generateTemporaryStdCellsPlacement(Cluster* cluster);
@@ -273,8 +283,6 @@ class HierRTLMP
   float min_ar_ = 0.3;  // the aspect ratio range for StdCellCluster (min_ar_, 1
                         // / min_ar_)
 
-  float pin_access_th_ = 0.1;  // each pin access is modeled as a SoftMacro
-  float pin_access_th_orig_ = 0.1;
   float notch_v_th_ = 10.0;
   float notch_h_th_ = 10.0;
 
@@ -312,6 +320,7 @@ class HierRTLMP
   const float conversion_tolerance_ = 0.01;
 
   bool skip_macro_placement_ = false;
+  bool keep_clustering_data_{false};
 
   std::unique_ptr<MplObserver> graphics_;
   bool is_debug_only_final_result_{false};

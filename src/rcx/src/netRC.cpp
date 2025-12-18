@@ -15,12 +15,15 @@
 
 #include "find_some_net.h"
 #include "odb/db.h"
+#include "odb/dbSet.h"
 #include "odb/dbShape.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
 #include "parse.h"
+#include "rcx/array1.h"
 #include "rcx/extRCap.h"
 #include "rcx/extSpef.h"
+#include "rcx/extViaModel.h"
 #include "rcx/grids.h"
 #include "utl/Logger.h"
 
@@ -29,7 +32,6 @@ namespace rcx {
 #ifdef DEBUG_NET_ID
 FILE* fp;
 #endif
-using namespace odb;
 
 using odb::dbBlock;
 using odb::dbBox;

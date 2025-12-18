@@ -210,8 +210,12 @@ void FastRouteCore::setupHeap3D(int netID,
   if (num_terminals == 2) {  // 2-pin net
     const int node1_alias = treenodes[n1].stackAlias;
     const int node2_alias = treenodes[n2].stackAlias;
-    const int node1_access_layer = nets_[netID]->getPinL()[node1_alias];
-    const int node2_access_layer = nets_[netID]->getPinL()[node2_alias];
+
+    const int pin_idx1 = sttrees_[netID].node_to_pin_idx[node1_alias];
+    const int pin_idx2 = sttrees_[netID].node_to_pin_idx[node2_alias];
+
+    const int node1_access_layer = nets_[netID]->getPinL()[pin_idx1];
+    const int node2_access_layer = nets_[netID]->getPinL()[pin_idx2];
 
     d1_3D[node1_access_layer][y1][x1] = 0;
     directions_3D[node1_access_layer][y1][x1] = Direction::Origin;
@@ -652,6 +656,35 @@ void FastRouteCore::updateRouteType23D(int netID,
   }
 }
 
+// Resistance-aware cost calculation
+float FastRouteCore::getMazeRouteCost3D(const int net_id,
+                                        const int from_layer,
+                                        const int to_layer,
+                                        const int from_x,
+                                        const int from_y,
+                                        const int to_x,
+                                        const int to_y,
+                                        const bool is_via)
+{
+  FrNet* net = nets_[net_id];
+  float base_cost = 1.0;
+
+  if (is_via) {
+    // Via transition cost
+    base_cost = via_cost_;
+    const int via_resistance = getViaResistance(from_layer, to_layer);
+
+    return base_cost + via_resistance;
+  }
+
+  // Wire segment cost
+  const float length = abs(to_x - from_x) + abs(to_y - from_y);
+  const float wire_resistance
+      = getLayerResistance(from_layer, length * tile_size_, net);
+
+  return base_cost + wire_resistance;
+}
+
 void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
                                          int ripupTHlb,
                                          int ripupTHub)
@@ -660,6 +693,11 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
     for (int j = 0; j < x_grid_; j++) {
       in_region_[i][j] = false;
     }
+  }
+
+  if (enable_resistance_aware_) {
+    updateSlacks(.8);
+    netpinOrderInc();
   }
 
   const int endIND = tree_order_pv_.size() * 0.9;
@@ -676,6 +714,11 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
     // }
     int8_t edge_cost = 0;
 
+    // Enable resistance aware routing only if the net needs it
+    if (enable_resistance_aware_) {
+      resistance_aware_ = net->isResAware();
+    }
+
     int enlarge = expand;
     const int num_terminals = sttrees_[netID].num_terminals;
     auto& treeedges = sttrees_[netID].edges;
@@ -688,6 +731,16 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
       if (treeedge->len >= ripupTHub || treeedge->len <= ripupTHlb) {
         continue;
       }
+
+      // Force resistance-aware if edge length > 100
+      if (enable_resistance_aware_) {
+        if (treeedge->len > 100) {
+          resistance_aware_ = true;
+        } else {
+          resistance_aware_ = net->isResAware();
+        }
+      }
+
       int n1 = treeedge->n1;
       int n2 = treeedge->n2;
       const int n1x = treenodes[n1].x;
@@ -772,7 +825,9 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
           // left
           if (curX > regionX1
               && directions_3D_[curL][curY][curX] != Direction::East) {
-            const float tmp = d1_3D_[curL][curY][curX] + 1;
+            const float cost = getMazeRouteCost3D(
+                netID, curL, curL, curX, curY, curX - 1, curY, false);
+            const float tmp = d1_3D_[curL][curY][curX] + cost;
             if (h_edges_3D_[curL][curY][curX - 1].usage + edge_cost
                     <= h_edges_3D_[curL][curY][curX - 1].cap
                 && net->getMinLayer() <= curL && curL <= net->getMaxLayer()) {
@@ -817,7 +872,9 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
           // right
           if (Horizontal && curX < regionX2
               && directions_3D_[curL][curY][curX] != Direction::West) {
-            const float tmp = d1_3D_[curL][curY][curX] + 1;
+            const float cost = getMazeRouteCost3D(
+                netID, curL, curL, curX, curY, curX + 1, curY, false);
+            const float tmp = d1_3D_[curL][curY][curX] + cost;
             const int tmpX = curX + 1;  // the right neighbor
 
             if (h_edges_3D_[curL][curY][curX].usage + edge_cost
@@ -863,7 +920,9 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
           // bottom
           if (!Horizontal && curY > regionY1
               && directions_3D_[curL][curY][curX] != Direction::South) {
-            const float tmp = d1_3D_[curL][curY][curX] + 1;
+            const float cost = getMazeRouteCost3D(
+                netID, curL, curL, curX, curY, curX, curY - 1, false);
+            const float tmp = d1_3D_[curL][curY][curX] + cost;
             const int tmpY = curY - 1;  // the bottom neighbor
             if (v_edges_3D_[curL][curY - 1][curX].usage + edge_cost
                     <= v_edges_3D_[curL][curY - 1][curX].cap
@@ -907,7 +966,9 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
           // top
           if (!Horizontal && curY < regionY2
               && directions_3D_[curL][curY][curX] != Direction::North) {
-            const float tmp = d1_3D_[curL][curY][curX] + 1;
+            const float cost = getMazeRouteCost3D(
+                netID, curL, curL, curX, curY, curX, curY + 1, false);
+            const float tmp = d1_3D_[curL][curY][curX] + cost;
             const int tmpY = curY + 1;  // the top neighbor
             if (v_edges_3D_[curL][curY][curX].usage + edge_cost
                     <= v_edges_3D_[curL][curY][curX].cap
@@ -951,7 +1012,10 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
 
         // down
         if (curL > 0 && directions_3D_[curL][curY][curX] != Direction::Up) {
-          const float tmp = d1_3D_[curL][curY][curX] + via_cost_;
+          // Via cost
+          const float cost = getMazeRouteCost3D(
+              netID, curL, curL - 1, curX, curY, curX, curY, true);
+          const float tmp = d1_3D_[curL][curY][curX] + cost;
           const int tmpL = curL - 1;  // the bottom neighbor
 
           if (d1_3D_[tmpL][curY][curX]
@@ -992,7 +1056,10 @@ void FastRouteCore::mazeRouteMSMDOrder3D(int expand,
         // up
         if (curL < num_layers_ - 1
             && directions_3D_[curL][curY][curX] != Direction::Down) {
-          const float tmp = d1_3D_[curL][curY][curX] + via_cost_;
+          // Via cost
+          const float cost = getMazeRouteCost3D(
+              netID, curL, curL + 1, curX, curY, curX, curY, true);
+          const float tmp = d1_3D_[curL][curY][curX] + cost;
           const int tmpL = curL + 1;  // the bottom neighbor
           if (d1_3D_[tmpL][curY][curX]
               >= BIG_INT)  // bottom neighbor not been put into src_heap_3D

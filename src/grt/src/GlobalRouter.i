@@ -105,6 +105,12 @@ set_allow_congestion(bool allowCongestion)
 }
 
 void
+set_resistance_aware(bool resistance_aware)
+{
+  getGlobalRouter()->setResistanceAware(resistance_aware);
+}
+
+void
 set_critical_nets_percentage(float criticalNetsPercentage)
 {
   getGlobalRouter()->setCriticalNetsPercentage(criticalNetsPercentage);
@@ -138,6 +144,12 @@ void
 set_use_cugr(bool use_cugr)
 {
   getGlobalRouter()->setUseCUGR(use_cugr);
+}
+
+void
+set_skip_large_fanout(int skip_large_fanout)
+{
+  getGlobalRouter()->setSkipLargeFanoutNets(skip_large_fanout);
 }
 
 void

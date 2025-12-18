@@ -37,7 +37,12 @@
 #include "frRegionQuery.h"
 #include "gc/FlexGC.h"
 #include "odb/dbTransform.h"
+#include "odb/dbTypes.h"
 #include "odb/geom.h"
+#include "utl/Logger.h"
+
+using odb::dbTechLayerDir;
+using odb::dbTechLayerType;
 
 namespace drt {
 
@@ -1901,9 +1906,6 @@ void FlexDRWorker::route_queue_main(std::queue<RouteQueueEntry>& rerouteQueue)
       }
       // init
       net->setModified(true);
-      if (net->getFrNet()) {
-        net->getFrNet()->setModified(true);
-      }
       net->setNumMarkers(0);
       if (graphics_) {
         graphics_->startNet(net);

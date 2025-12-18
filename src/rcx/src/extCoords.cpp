@@ -2,6 +2,7 @@
 // Copyright (c) 2019-2025, The OpenROAD Authors
 
 #include "parse.h"
+#include "rcx/array1.h"
 #include "rcx/extSpef.h"
 #include "rcx/grids.h"
 #include "utl/Logger.h"

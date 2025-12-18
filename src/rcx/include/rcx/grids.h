@@ -8,20 +8,15 @@
 #include <cstring>
 #include <vector>
 
-#include "odb/array1.h"
 #include "odb/db.h"
 #include "odb/geom.h"
+#include "rcx/array1.h"
 #include "rcx/box.h"
 #include "rcx/extRCap.h"
 #include "rcx/rcx.h"
+#include "rcx/util.h"
 
 namespace rcx {
-
-using odb::Ath__array1D;
-using odb::AthPool;
-using odb::dbBlock;
-using odb::dbBox;
-using odb::dbNet;
 
 enum OverlapAdjust
 {
@@ -114,7 +109,7 @@ class Wire
                        uint len,
                        uint wtype);
   void setXY(int xy1, uint len);
-  dbNet* getNet();
+  odb::dbNet* getNet();
   Wire* getUpNext() const { return _upNext; }
   Wire* getDownNext() const { return _downNext; }
   Wire* getAboveNext() const { return _aboveNext; }
@@ -343,7 +338,7 @@ class Grid
 
   uint placeWire(SearchBox* bb);
   uint placeBox(uint id, int x1, int y1, int x2, int y2);
-  uint placeBox(dbBox* box, uint wtype, uint id);
+  uint placeBox(odb::dbBox* box, uint wtype, uint id);
   uint placeBox(Box* box);
   uint placeBox(SearchBox* bb);
   uint getBucketNum(int xy);
@@ -488,7 +483,7 @@ class GridTable
                               bool startSearchTrack,
                               int startXY);
 
-  void setExtControl_v2(dbBlock* block,
+  void setExtControl_v2(odb::dbBlock* block,
                         bool useDbSdb,
                         uint adj,
                         uint npsrc,
@@ -533,8 +528,8 @@ class GridTable
   uint getColNum(int y);
   bool getRowCol(int x1, int y1, uint* row, uint* col);
   Wire* addBox(Box* bb);
-  Wire* addBox(dbBox* bb, uint wtype, uint id);
-  bool addBox(uint row, uint col, dbBox* bb);
+  Wire* addBox(odb::dbBox* bb, uint wtype, uint id);
+  bool addBox(uint row, uint col, odb::dbBox* bb);
 
   uint getBoxes(Box* bb, Ath__array1D<Box*>* table);
   uint search(SearchBox* bb,
@@ -612,7 +607,7 @@ class GridTable
   void setNoPowerTarget(uint npt) { _noPowerTarget = npt; };
   void incrCCshorts() { _CCshorts++; };
 
-  void setExtControl(dbBlock* block,
+  void setExtControl(odb::dbBlock* block,
                      bool useDbSdb,
                      uint adj,
                      uint npsrc,
@@ -640,8 +635,8 @@ class GridTable
   void incrMultiTrackWireCnt(bool isPower);
   void adjustOverlapMakerEnd();
   void dumpTrackCounts(FILE* fp);
-  dbBlock* getBlock() { return _block; };
-  void setBlock(dbBlock* block) { _block = block; };
+  odb::dbBlock* getBlock() { return _block; };
+  void setBlock(odb::dbBlock* block) { _block = block; };
 
   int couplingCaps(int hiXY,
                    uint couplingDist,
@@ -722,7 +717,7 @@ class GridTable
   int* _dgContextHiTrack;     // array
   int** _dgContextTrackBase;  // array
 
-  dbBlock* _block;
+  odb::dbBlock* _block;
 
   uint _wireCnt;
 

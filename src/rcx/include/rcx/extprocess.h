@@ -5,8 +5,8 @@
 
 #include <cstdio>
 
-#include "odb/array1.h"
 #include "odb/odb.h"
+#include "rcx/array1.h"
 
 namespace utl {
 class Logger;
@@ -14,7 +14,6 @@ class Logger;
 
 namespace rcx {
 
-using odb::Ath__array1D;
 using odb::uint;
 using utl::Logger;
 

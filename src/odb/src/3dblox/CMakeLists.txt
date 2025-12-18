@@ -5,9 +5,13 @@ find_package(yaml-cpp REQUIRED)
 
 add_library(3dblox
   baseParser.cpp
+  bmapParser.cpp
   dbvParser.cpp
   dbxParser.cpp
+  baseWriter.cpp
+  dbvWriter.cpp
   3dblox.cpp
+  checker.cpp
 )
 
 target_link_libraries(3dblox
@@ -15,6 +19,7 @@ target_link_libraries(3dblox
     db
     utl_lib
     yaml-cpp
+    OpenSTA
 )
 
 target_include_directories(3dblox

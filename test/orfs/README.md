@@ -9,6 +9,12 @@ A set of ORFS integration tests that runs in a few minutes suitable for inclusio
 1. Run `bazelisk run //test/orfs/gcd:gcd_update` to update RULES_JSON file for a design. This will build and run OpenROAD to generate a new RULES_JSON file and update the RULES_JSON source file.
 2. Create commit for RULES_JSON file
 
+## Updating all RULES_JSON files
+
+Oneliner that runs tests, which builds all prerequisites in parallel, then update all the rules:
+
+    bazelisk test test/orfs/... && bazelisk query test/orfs/... | grep _update\$ | xargs -n1 bazelisk run
+
 ## Updating ORFS and bazel-orfs
 
 `bazelisk run @bazel-orfs//:bump`, will find the latest bazel-orfs and ORFS docker image and update MODULE.bazel and MODULE.bazel.lock.
@@ -106,3 +112,19 @@ To hunt down missing `tags = ["manual"]` run a query like:
     bazelisk query 'kind(".*", //test/orfs/mock-array/...) except attr(tags, "manual", //test/orfs/mock-array/...)'
 
 Note that OpenROAD *does* want `bazelisk test ...` to run all tests, so test targets should be marked `tags = ["orfs"]` instead, so that `.bazelrc` can skip builds of those targets with the `build --build_tag_filters=-orfs` line.
+
+## eqy tests
+
+`eqy_test` is used to run equivalence checks before and after an ORFS stage, such as before and after floorplan for mock-array. To run the test and keep all the files from the test and see interactive output, run:
+
+    bazelisk test //test/orfs/mock-array:MockArray_4x4_eqy_test --test_output=streamed --sandbox_debug
+
+If this fails, then it will output the line below. `eqy` uses a very, very large number of files and copying out these files to the bazel-testlogs folder for inspection takes some time:
+
+    Copying 114462 files to bazel-testlogs/test/orfs/mock-array/MockArray_4x4_eqy_test/test.outputs for inspection.
+
+If you just want the files needed to run a locally installed `eqy`, build all the files used in the run above by:
+
+    bazelisk build //test/orfs/mock-array:MockArray_4x4_eqy_test
+
+The files used to run the test are then in `bazel-bin/test/orfs/mock-array/`.
