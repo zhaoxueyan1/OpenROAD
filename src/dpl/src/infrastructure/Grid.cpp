@@ -390,8 +390,8 @@ void Grid::visitCellBoundaryPixels(
                "Checking cell {} isHybrid {} in rows. Y start {} y end {}",
                cell.getDbInst()->getName(),
                cell.isHybrid(),
-               grid_rect.ylo,
-               grid_rect.yhi);
+               grid_rect.ylo.v,
+               grid_rect.yhi.v);
 
     visit(grid_rect.xlo, grid_rect.xhi, grid_rect.ylo, grid_rect.yhi);
   }
@@ -418,8 +418,8 @@ void Grid::erasePixel(Node* cell)
              1,
              "Checking cell {} in rows. Y start {} y end {}",
              cell->getDbInst()->getName(),
-             grid_rect.ylo,
-             grid_rect.yhi);
+             grid_rect.ylo.v,
+             grid_rect.yhi.v);
 
   // Clear cell occupancy and padding reservations for this cell
   for (GridX x = grid_rect.xlo; x < grid_rect.xhi; x++) {
@@ -712,7 +712,7 @@ void Grid::examineRows(odb::dbBlock* block)
                      51,
                      "Site widths are not equal: {}={} != {}={}",
                      first_site->getName(),
-                     site_width_,
+                     site_width_.v,
                      site->getName(),
                      site->getWidth());
     }

@@ -330,9 +330,9 @@ bool Opendp::checkInRows(const Node& cell) const
              "height {} in rows. Y start {} y end {}",
              cell.name(),
              cell.getSite()->getName(),
-             cell.getHeight(),
-             grid_rect.ylo,
-             grid_rect.yhi);
+             cell.getHeight().v,
+             grid_rect.ylo.v,
+             grid_rect.yhi.v);
 
   for (GridY y = grid_rect.ylo; y < grid_rect.yhi; y++) {
     const bool first_row = (y == grid_rect.ylo);

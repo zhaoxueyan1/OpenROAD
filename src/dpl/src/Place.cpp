@@ -563,10 +563,10 @@ bool Opendp::mapMove(Node* cell, const GridPt& grid_pt)
              1,
              "Map move {} ({}, {}) to ({}, {})",
              cell->name(),
-             cell->getLeft(),
-             cell->getBottom(),
-             grid_pt.x,
-             grid_pt.y);
+             cell->getLeft().v,
+             cell->getBottom().v,
+             grid_pt.x.v,
+             grid_pt.y.v);
   const PixelPt pixel_pt = searchNearestSite(cell, grid_pt.x, grid_pt.y);
   debugPrint(logger_,
              DPL,
@@ -574,10 +574,10 @@ bool Opendp::mapMove(Node* cell, const GridPt& grid_pt)
              1,
              "Search Nearest Site {} ({}, {}) to ({}, {})",
              cell->name(),
-             cell->getLeft(),
-             cell->getBottom(),
-             pixel_pt.x,
-             pixel_pt.y);
+             cell->getLeft().v,
+             cell->getBottom().v,
+             pixel_pt.x.v,
+             pixel_pt.y.v);
   if (pixel_pt.pixel) {
     placeCell(cell, pixel_pt.x, pixel_pt.y);
     if (debug_observer_) {
@@ -746,12 +746,12 @@ PixelPt Opendp::searchNearestSite(const Node* cell,
              1,
              "Search Nearest Site {} ({}, {}) bounds ({}-{}, {}-{})",
              cell->name(),
-             x,
-             y,
-             x_min,
-             x_max - 1,
-             y_min,
-             y_max - 1);
+             x.v,
+             y.v,
+             x_min.v,
+             (x_max - 1).v,
+             y_min.v,
+             (y_max - 1).v);
 
   struct PQ_entry
   {
@@ -821,8 +821,8 @@ bool Opendp::canBePlaced(const Node* cell, GridX bin_x, GridY bin_y) const
              3,
              " canBePlaced {} ({:4},{:4})",
              cell->name(),
-             bin_x,
-             bin_y);
+             bin_x.v,
+             bin_y.v);
 
   if (bin_y >= grid_->getRowCount()) {
     return false;
@@ -852,10 +852,10 @@ bool Opendp::checkRegionOverlap(const Node* cell,
              1,
              "Checking region overlap for cell {} at x[{} {}] and y[{} {}]",
              cell->name(),
-             x,
-             x_end,
-             y,
-             y_end);
+             x.v,
+             x_end.v,
+             y.v,
+             y_end.v);
   const DbuX site_width = grid_->getSiteWidth();
   const bgBox queryBox(
       {gridToDbu(x, site_width).v, grid_->gridYToDbu(y).v},
