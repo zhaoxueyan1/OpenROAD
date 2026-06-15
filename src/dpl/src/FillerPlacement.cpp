@@ -203,9 +203,9 @@ void Opendp::placeRowFillers(GridY row,
           DPL,
           2,
           "could not fill gap of size {} at {},{} dbu between {} and {}",
-          gap,
-          x,
-          y,
+          gap.v,
+          x.v,
+          y.v,
           gridInstName(row, j - 1),
           gridInstName(row, k + 1));
     } else {
