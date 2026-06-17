@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -28,7 +29,7 @@
 #include "dbModNet.h"
 #include "dbNet.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbBlockCallBackObj.h"
 #include "odb/dbObject.h"
@@ -106,7 +107,7 @@ bool _dbITerm::operator<(const _dbITerm& rhs) const
   return strcmp(lhs_mterm->name_, rhs_mterm->name_) < 0;
 }
 
-_dbMTerm* _dbITerm::getMTerm() const
+void _dbITerm::resolveMTerm()
 {
   _dbBlock* block = (_dbBlock*) getOwner();
   _dbInst* inst = block->inst_tbl_->getPtr(inst_);
@@ -115,7 +116,12 @@ _dbMTerm* _dbITerm::getMTerm() const
   _dbLib* lib = db->lib_tbl_->getPtr(inst_hdr->lib_);
   _dbMaster* master = lib->master_tbl_->getPtr(inst_hdr->master_);
   dbId<_dbMTerm> mterm = inst_hdr->mterms_[flags_.mterm_idx];
-  return master->mterm_tbl_->getPtr(mterm);
+  mterm_ = master->mterm_tbl_->getPtr(mterm);
+}
+
+_dbMTerm* _dbITerm::getMTerm() const
+{
+  return mterm_;
 }
 
 _dbInst* _dbITerm::getInst() const
@@ -159,14 +165,7 @@ dbNet* dbITerm::getNet() const
 dbMTerm* dbITerm::getMTerm() const
 {
   _dbITerm* iterm = (_dbITerm*) this;
-  _dbBlock* block = (_dbBlock*) iterm->getOwner();
-  _dbInst* inst = block->inst_tbl_->getPtr(iterm->inst_);
-  _dbInstHdr* inst_hdr = block->inst_hdr_tbl_->getPtr(inst->inst_hdr_);
-  _dbDatabase* db = iterm->getDatabase();
-  _dbLib* lib = db->lib_tbl_->getPtr(inst_hdr->lib_);
-  _dbMaster* master = lib->master_tbl_->getPtr(inst_hdr->master_);
-  dbId<_dbMTerm> mterm = inst_hdr->mterms_[iterm->flags_.mterm_idx];
-  return (dbMTerm*) master->mterm_tbl_->getPtr(mterm);
+  return (dbMTerm*) iterm->mterm_;
 }
 
 dbBTerm* dbITerm::getBTerm()
@@ -205,12 +204,12 @@ void dbITerm::setClocked(bool v)
 
 bool dbITerm::isClocked()
 {
-  bool masterFlag = getMTerm()->getSigType() == dbSigType::CLOCK ? true : false;
+  bool masterFlag = getMTerm()->getSigType() == dbSigType::CLOCK;
   _dbITerm* iterm = (_dbITerm*) this;
-  return iterm->flags_.clocked > 0 || masterFlag ? true : false;
+  return iterm->flags_.clocked > 0 || masterFlag;
 }
 
-void dbITerm::setMark(uint v)
+void dbITerm::setMark(uint32_t v)
 {
   _dbITerm* iterm = (_dbITerm*) this;
   iterm->flags_.mark = v;
@@ -219,7 +218,7 @@ void dbITerm::setMark(uint v)
 bool dbITerm::isSetMark()
 {
   _dbITerm* iterm = (_dbITerm*) this;
-  return iterm->flags_.mark > 0 ? true : false;
+  return iterm->flags_.mark > 0;
 }
 
 bool dbITerm::isSpecial()
@@ -240,7 +239,7 @@ void dbITerm::clearSpecial()
   iterm->flags_.special = 0;
 }
 
-void dbITerm::setSpef(uint v)
+void dbITerm::setSpef(uint32_t v)
 {
   _dbITerm* iterm = (_dbITerm*) this;
   iterm->flags_.spef = v;
@@ -249,16 +248,16 @@ void dbITerm::setSpef(uint v)
 bool dbITerm::isSpef()
 {
   _dbITerm* iterm = (_dbITerm*) this;
-  return (iterm->flags_.spef > 0) ? true : false;
+  return iterm->flags_.spef > 0;
 }
 
-void dbITerm::setExtId(uint v)
+void dbITerm::setExtId(uint32_t v)
 {
   _dbITerm* iterm = (_dbITerm*) this;
   iterm->ext_id_ = v;
 }
 
-uint dbITerm::getExtId()
+uint32_t dbITerm::getExtId()
 {
   _dbITerm* iterm = (_dbITerm*) this;
   return iterm->ext_id_;
@@ -290,8 +289,8 @@ with it. To assure that, use dbNetwork::connectPin
 
 void dbITerm::connect(dbNet* db_net, dbModNet* db_mod_net)
 {
-  connect(db_net);
   connect(db_mod_net);
+  connect(db_net);
 }
 
 void dbITerm::connect(dbNet* net_)
@@ -347,18 +346,15 @@ void dbITerm::connect(dbNet* net_)
     callback->inDbITermPreConnect(this, net_);
   }
 
+  debugPrint(getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             1,
+             "EDIT: connect {} to {}",
+             iterm->getDebugName(),
+             net->getDebugName());
+
   if (block->journal_) {
-    debugPrint(getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "ECO: connect dbITerm({}, {:p}) '{}' to dbNet({}, {:p}) '{}'",
-               getId(),
-               static_cast<void*>(this),
-               getName(),
-               net->getId(),
-               static_cast<void*>(net),
-               net_->getName());
     block->journal_->beginAction(dbJournal::kConnectObject);
     block->journal_->pushParam(dbITermObj);
     block->journal_->pushParam(getId());
@@ -426,18 +422,15 @@ void dbITerm::connect(dbModNet* mod_net)
         inst->name_);
   }
 
+  debugPrint(iterm->getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             1,
+             "EDIT: connect {} to {}",
+             iterm->getDebugName(),
+             mod_net->getDebugName());
+
   if (block->journal_) {
-    debugPrint(iterm->getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "ECO: connect dbITerm({} {:p}) '{}' to dbModNet({} {:p}) '{}'",
-               getId(),
-               static_cast<void*>(this),
-               getName(),
-               _mod_net->getId(),
-               static_cast<void*>(_mod_net),
-               ((dbModNet*) _mod_net)->getHierarchicalName());
     block->journal_->beginAction(dbJournal::kConnectObject);
     block->journal_->pushParam(dbITermObj);
     block->journal_->pushParam(getId());
@@ -493,22 +486,16 @@ void dbITerm::disconnect()
         net->name_);
   }
 
+  debugPrint(getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             1,
+             "EDIT: disconnect {} from {} and {}",
+             iterm->getDebugName(),
+             (net) ? net->getDebugName() : "dbNet(NULL)",
+             (mod_net) ? mod_net->getDebugName() : "dbModNet(NULL)");
+
   if (block->journal_) {
-    debugPrint(getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "disconnect dbITerm({}, {:p}) '{}' from dbNet({}, {:p}) '{}' "
-               "corresponding to dbModNet({}, {:p}) '{}'",
-               getId(),
-               static_cast<void*>(this),
-               getName(),
-               (net) ? net->getId() : 0,
-               static_cast<void*>(net),
-               (net) ? net->name_ : "NULL",
-               (mod_net_impl) ? mod_net_impl->getId() : 0,
-               static_cast<void*>(mod_net),
-               (mod_net) ? mod_net->getHierarchicalName() : "NULL");
     block->journal_->beginAction(dbJournal::kDisconnectObject);
     block->journal_->pushParam(dbITermObj);
     block->journal_->pushParam(getId());
@@ -521,7 +508,7 @@ void dbITerm::disconnect()
     callback->inDbITermPreDisconnect(this);
   }
 
-  uint id = iterm->getOID();
+  uint32_t id = iterm->getOID();
 
   if (net) {
     if (net->iterms_ == id) {
@@ -601,18 +588,16 @@ void dbITerm::disconnectDbNet()
   for (auto callback : block->callbacks_) {
     callback->inDbITermPreDisconnect(this);
   }
+
+  debugPrint(iterm->getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             1,
+             "EDIT: disconnect {} from {}",
+             iterm->getDebugName(),
+             net->getDebugName());
+
   if (block->journal_) {
-    debugPrint(iterm->getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "ECO: disconnect dbITerm({} {:p}) '{}' from dbNet({} {:p}) '{}'",
-               getId(),
-               static_cast<void*>(this),
-               getName(),
-               net->getId(),
-               static_cast<void*>(net),
-               ((dbNet*) net)->getName());
     block->journal_->beginAction(dbJournal::kDisconnectObject);
     block->journal_->pushParam(dbITermObj);
     block->journal_->pushParam(getId());
@@ -623,7 +608,7 @@ void dbITerm::disconnectDbNet()
     block->journal_->endAction();
   }
 
-  uint id = iterm->getOID();
+  uint32_t id = iterm->getOID();
 
   if (net->iterms_ == id) {
     net->iterms_ = iterm->next_net_iterm_;
@@ -658,16 +643,15 @@ void dbITerm::disconnectDbModNet()
   if (iterm->mnet_ != 0) {
     _dbModNet* mod_net = block->modnet_tbl_->getPtr(iterm->mnet_);
 
+    debugPrint(iterm->getImpl()->getLogger(),
+               utl::ODB,
+               "DB_EDIT",
+               1,
+               "EDIT: disconnect {} from {}",
+               iterm->getDebugName(),
+               mod_net->getDebugName());
+
     if (block->journal_) {
-      debugPrint(iterm->getImpl()->getLogger(),
-                 utl::ODB,
-                 "DB_ECO",
-                 1,
-                 "ECO: disconnect dbIterm({}) '{}' from dbModNet({}) '{}'",
-                 getId(),
-                 getName(),
-                 iterm->mnet_,
-                 mod_net->name_);
       block->journal_->beginAction(dbJournal::kDisconnectObject);
       block->journal_->pushParam(dbITermObj);
       block->journal_->pushParam(getId());
@@ -751,7 +735,7 @@ bool dbITerm::isInputSignal(bool io)
   return false;
 }
 
-dbITerm* dbITerm::getITerm(dbBlock* block_, uint dbid)
+dbITerm* dbITerm::getITerm(dbBlock* block_, uint32_t dbid)
 {
   _dbBlock* block = (_dbBlock*) block_;
   return (dbITerm*) block->iterm_tbl_->getPtr(dbid);
@@ -766,7 +750,7 @@ Rect dbITerm::getBBox()
   return bbox;
 }
 
-bool dbITerm::getAvgXY(int* x, int* y)
+bool dbITerm::getAvgXY(int* x, int* y) const
 {
   dbMTerm* mterm = getMTerm();
   int nn = 0;
@@ -818,7 +802,9 @@ void dbITerm::setAccessPoint(dbMPin* pin, dbAccessPoint* ap)
   if (ap != nullptr) {
     iterm->aps_[pin->getImpl()->getOID()] = ap->getImpl()->getOID();
     _dbAccessPoint* _ap = (_dbAccessPoint*) ap;
-    _ap->iterms_.push_back(iterm->getOID());
+    auto& iterms = _ap->iterms_;
+    auto pos = std::lower_bound(iterms.begin(), iterms.end(), iterm->getOID());
+    iterms.insert(pos, iterm->getOID());
   } else {
     iterm->aps_[pin->getImpl()->getOID()] = dbId<_dbAccessPoint>();
   }
@@ -829,12 +815,13 @@ void dbITerm::setAccessPoint(dbMPin* pin, dbAccessPoint* ap)
   }
 }
 
-std::map<dbMPin*, std::vector<dbAccessPoint*>> dbITerm::getAccessPoints() const
+odb::PtrMap<dbMPin, std::vector<dbAccessPoint*>> dbITerm::getAccessPoints()
+    const
 {
   _dbBlock* block = (_dbBlock*) getBlock();
   auto mterm = getMTerm();
-  uint pin_access_idx = getInst()->getPinAccessIdx();
-  std::map<dbMPin*, std::vector<dbAccessPoint*>> aps;
+  uint32_t pin_access_idx = getInst()->getPinAccessIdx();
+  odb::PtrMap<dbMPin, std::vector<dbAccessPoint*>> aps;
   for (auto mpin : mterm->getMPins()) {
     _dbMPin* pin = (_dbMPin*) mpin;
     if (pin->aps_.size() > pin_access_idx) {
@@ -859,12 +846,12 @@ std::vector<dbAccessPoint*> dbITerm::getPrefAccessPoints() const
   }
   // sort to maintain iterator stability, and backwards compatibility with
   // std::map which used to be used to store aps.
-  std::sort(sorted_aps.begin(),
-            sorted_aps.end(),
-            [](const std::pair<dbId<_dbMPin>, dbId<_dbAccessPoint>>& a,
-               const std::pair<dbId<_dbMPin>, dbId<_dbAccessPoint>>& b) {
-              return a.first < b.first;
-            });
+  std::ranges::sort(
+      sorted_aps,
+      [](const std::pair<dbId<_dbMPin>, dbId<_dbAccessPoint>>& a,
+         const std::pair<dbId<_dbMPin>, dbId<_dbAccessPoint>>& b) {
+        return a.first < b.first;
+      });
 
   std::vector<dbAccessPoint*> aps;
   aps.reserve(sorted_aps.size());
@@ -878,8 +865,16 @@ std::vector<dbAccessPoint*> dbITerm::getPrefAccessPoints() const
 void dbITerm::clearPrefAccessPoints()
 {
   _dbITerm* iterm = (_dbITerm*) this;
-  // Clear aps_ map instead of destroying dbAccessPoint object to prevent
-  // destroying APs of other iterms.
+  _dbBlock* block = (_dbBlock*) iterm->getOwner();
+  // Remove this iterm from each AP's back-reference list before clearing.
+  for (auto& [pin_id, ap_id] : iterm->aps_) {
+    if (ap_id.isValid()) {
+      auto* ap = block->ap_tbl_->getPtr(ap_id);
+      auto& iterms = ap->iterms_;
+      iterms.erase(std::remove(iterms.begin(), iterms.end(), iterm->getOID()),
+                   iterms.end());
+    }
+  }
   iterm->aps_.clear();
 }
 
@@ -904,7 +899,7 @@ void _dbITerm::collectMemInfo(MemInfo& info)
   info.cnt++;
   info.size += sizeof(*this);
 
-  info.children_["aps"].add(aps_);
+  info.children["aps"].add(aps_);
 }
 
 }  // namespace odb

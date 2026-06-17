@@ -4,13 +4,13 @@
 // Generator Code Begin Header
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "dbCore.h"
 #include "odb/dbId.h"
-#include "odb/odb.h"
 
 namespace odb {
 class dbIStream;
@@ -18,9 +18,7 @@ class dbOStream;
 class _dbDatabase;
 class _dbChip;
 class _dbChipInst;
-// User Code Begin Classes
 class _dbChipBumpInst;
-// User Code End Classes
 
 class _dbChipNet : public _dbObject
 {

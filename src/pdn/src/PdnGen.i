@@ -19,6 +19,9 @@ utl::Logger* getLogger();
 using std::regex;
 using utl::PDN;
 
+#if TCL_MAJOR_VERSION < 9 && !defined(Tcl_Size)
+ typedef int Tcl_Size;
+#endif
 %}
 
 %import <std_vector.i>
@@ -30,13 +33,13 @@ using utl::PDN;
 %typemap(in) pdn::ExtensionMode {
   char *str = Tcl_GetStringFromObj($input, 0);
   if (strcasecmp(str, "Core") == 0) {
-    $1 = pdn::ExtensionMode::CORE;
+    $1 = pdn::ExtensionMode::kCore;
   } else if (strcasecmp(str, "Rings") == 0) {
-    $1 = pdn::ExtensionMode::RINGS;
+    $1 = pdn::ExtensionMode::kRings;
   } else if (strcasecmp(str, "Boundary") == 0) {
-    $1 = pdn::ExtensionMode::BOUNDARY;
+    $1 = pdn::ExtensionMode::kBoundary;
   } else {
-    $1 = pdn::ExtensionMode::CORE;
+    $1 = pdn::ExtensionMode::kCore;
   }
 }
 
@@ -81,12 +84,13 @@ void make_core_grid(pdn::VoltageDomain* domain,
                     const std::vector<odb::dbTechLayer*>& generate_obstructions,
                     pdn::PowerCell* powercell,
                     odb::dbNet* powercontrol,
-                    const char* powercontrolnetwork)
+                    const char* powercontrolnetwork,
+                    const std::vector<odb::dbTechLayer*>& pad_pin_layers)
 {
   PdnGen* pdngen = ord::getPdnGen();
-  StartsWith starts_with = POWER;
+  StartsWith starts_with = kPower;
   if (!starts_with_power) {
-    starts_with = GROUND;
+    starts_with = kGround;
   }
   pdngen->makeCoreGrid(domain, 
                        name, 
@@ -95,7 +99,8 @@ void make_core_grid(pdn::VoltageDomain* domain,
                        generate_obstructions, 
                        powercell, 
                        powercontrol, 
-                       powercontrolnetwork);
+                       powercontrolnetwork,
+                       pad_pin_layers);
 }
 
 void make_instance_grid(pdn::VoltageDomain* domain,
@@ -112,9 +117,9 @@ void make_instance_grid(pdn::VoltageDomain* domain,
                         bool is_bump)
 {
   PdnGen* pdngen = ord::getPdnGen();
-  StartsWith starts_with = POWER;
+  StartsWith starts_with = kPower;
   if (!starts_with_power) {
-    starts_with = GROUND;
+    starts_with = kGround;
   }
   
   std::array<int, 4> halo{x0, y0, x1, y1};
@@ -151,12 +156,12 @@ void make_ring(const char* grid_name,
                bool allow_outside_of_die)
 {
   PdnGen* pdngen = ord::getPdnGen();
-  StartsWith starts_with = GRID;
+  StartsWith starts_with = kGrid;
   if (!use_grid_power_order) {
     if (starts_with_power) {
-      starts_with = POWER;
+      starts_with = kPower;
     } else {
-      starts_with = GROUND;
+      starts_with = kGround;
     }
   }
   for (auto* grid : pdngen->findGrid(grid_name)) {
@@ -229,15 +234,16 @@ void make_strap(const char* grid_name,
                 bool use_grid_power_order,
                 bool starts_with_power,
                 pdn::ExtensionMode extend,
-                const std::vector<odb::dbNet*>& nets)
+                const std::vector<odb::dbNet*>& nets,
+                bool allow_out_of_core)
 {
   PdnGen* pdngen = ord::getPdnGen();
-  StartsWith starts_with = GRID;
+  StartsWith starts_with = kGrid;
   if (!use_grid_power_order) {
     if (starts_with_power) {
-      starts_with = POWER;
+      starts_with = kPower;
     } else {
-      starts_with = GROUND;
+      starts_with = kGround;
     }
   }
   for (auto* grid : pdngen->findGrid(grid_name)) {
@@ -251,7 +257,8 @@ void make_strap(const char* grid_name,
                       snap,
                       starts_with,
                       extend,
-                      nets);
+                      nets,
+                      allow_out_of_core);
   }
 }
 
@@ -271,7 +278,7 @@ void make_connect(const char* grid_name,
                   const char* dont_use_vias)
 {
   PdnGen* pdngen = ord::getPdnGen();
-  std::map<odb::dbTechLayer*, std::pair<int, bool>> split_cuts;
+  odb::PtrMap<odb::dbTechLayer, std::pair<int, bool>> split_cuts;
   for (size_t i = 0; i < split_cuts_layers.size(); i++) {
     split_cuts[split_cuts_layers[i]] = {split_cut_pitches[i], split_cut_stagger};
   }
@@ -360,7 +367,7 @@ pdn::PowerCell* find_switched_power_cell(const char* name)
 void repair_pdn_vias(const std::vector<odb::dbNet*>& nets)
 {
   PdnGen* pdngen = ord::getPdnGen();
-  std::set<odb::dbNet*> net_set(nets.begin(), nets.end());
+  odb::PtrSet<odb::dbNet> net_set(nets.begin(), nets.end());
   pdngen->repairVias(net_set);
 }
 

@@ -5,10 +5,12 @@
 #include "dbGroup.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 #include "dbBlock.h"
 #include "dbBox.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbGroupInstItr.h"
 #include "dbGroupItr.h"
@@ -18,19 +20,22 @@
 #include "dbModInst.h"
 #include "dbNet.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "odb/db.h"
 // User Code Begin Includes
 #include "dbCommon.h"
 #include "dbGroupGroundNetItr.h"
 #include "dbGroupPowerNetItr.h"
 #include "dbRegion.h"
+#include "dbVector.h"
+#include "odb/dbSet.h"
+#include "odb/dbTypes.h"
 // User Code End Includes
 namespace odb {
 template class dbTable<_dbGroup>;
 
 bool _dbGroup::operator==(const _dbGroup& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (flags_.type != rhs.flags_.type) {
     return false;
   }
@@ -75,6 +80,7 @@ bool _dbGroup::operator==(const _dbGroup& rhs) const
   }
   // User Code End ==
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbGroup::operator<(const _dbGroup& rhs) const
@@ -143,11 +149,19 @@ void _dbGroup::collectMemInfo(MemInfo& info)
   info.cnt++;
   info.size += sizeof(*this);
 
+  info.children["power_nets"].add(power_nets_);
+  info.children["ground_nets"].add(ground_nets_);
+
   // User Code Begin collectMemInfo
-  info.children_["name"].add(name_);
-  info.children_["power_nets"].add(power_nets_);
-  info.children_["ground_nets"].add(ground_nets_);
+  info.children["name"].add(name_);
   // User Code End collectMemInfo
+}
+
+_dbGroup::~_dbGroup()
+{
+  if (name_) {
+    free((void*) name_);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -187,7 +201,7 @@ void dbGroup::setType(dbGroupType type)
 {
   _dbGroup* obj = (_dbGroup*) this;
 
-  obj->flags_.type = (uint) type;
+  obj->flags_.type = (uint32_t) type;
 }
 
 dbGroupType dbGroup::getType() const
@@ -217,9 +231,9 @@ void dbGroup::removeModInst(dbModInst* modinst)
     return;
   }
   _dbBlock* _block = (_dbBlock*) _group->getOwner();
-  uint id = _modinst->getOID();
+  uint32_t id = _modinst->getOID();
   _dbModInst* prev = nullptr;
-  uint cur = _group->modinsts_;
+  uint32_t cur = _group->modinsts_;
   while (cur) {
     _dbModInst* c = _block->modinst_tbl_->getPtr(cur);
     if (cur == id) {
@@ -264,9 +278,9 @@ void dbGroup::removeInst(dbInst* inst)
     return;
   }
   _dbBlock* _block = (_dbBlock*) _group->getOwner();
-  uint id = _inst->getOID();
+  uint32_t id = _inst->getOID();
   _dbInst* prev = nullptr;
-  uint cur = _group->insts_;
+  uint32_t cur = _group->insts_;
   while (cur) {
     _dbInst* c = _block->inst_tbl_->getPtr(cur);
     if (cur == id) {
@@ -311,9 +325,9 @@ void dbGroup::removeGroup(dbGroup* child)
     return;
   }
   _dbBlock* _block = (_dbBlock*) _group->getOwner();
-  uint id = _child->getOID();
+  uint32_t id = _child->getOID();
   _dbGroup* prev = nullptr;
-  uint cur = _group->groups_;
+  uint32_t cur = _group->groups_;
   while (cur) {
     _dbGroup* c = _block->group_tbl_->getPtr(cur);
     if (cur == id) {
@@ -503,7 +517,7 @@ void dbGroup::destroy(dbGroup* group)
   block->group_tbl_->destroy(_group);
 }
 
-dbGroup* dbGroup::getGroup(dbBlock* block_, uint dbid_)
+dbGroup* dbGroup::getGroup(dbBlock* block_, uint32_t dbid_)
 {
   _dbBlock* block = (_dbBlock*) block_;
   return (dbGroup*) block->group_tbl_->getPtr(dbid_);

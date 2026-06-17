@@ -4,40 +4,50 @@
 // Generator Code Begin Cpp
 #include "dbChip.h"
 
+#include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <unordered_map>
 
 #include "dbBlock.h"
 #include "dbBlockItr.h"
 #include "dbChipConn.h"
+#include "dbChipConnItr.h"
+#include "dbChipInst.h"
+#include "dbChipInstItr.h"
+#include "dbChipNet.h"
+#include "dbChipNetItr.h"
+#include "dbChipPath.h"
 #include "dbChipRegion.h"
+#include "dbCommon.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbMarkerCategory.h"
 #include "dbNameCache.h"
 #include "dbProperty.h"
 #include "dbPropertyItr.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "dbTech.h"
 #include "odb/db.h"
-#include "odb/dbSet.h"
-// User Code Begin Includes
-#include <cstdlib>
-
-#include "dbChipConnItr.h"
-#include "dbChipInst.h"
-#include "dbChipInstItr.h"
-#include "dbChipNet.h"
-#include "dbChipNetItr.h"
-#include "dbCommon.h"
+#include "odb/dbChipCallBackObj.h"
 #include "odb/dbObject.h"
+#include "odb/dbSet.h"
 #include "odb/geom.h"
+// User Code Begin Includes
+#include <list>
+
+#include "odb/dbStream.h"
+#include "utl/Logger.h"
 // User Code End Includes
 namespace odb {
 template class dbTable<_dbChip>;
+// User Code Begin Static
+template class dbHashTable<_dbChipPath>;
+// User Code End Static
 
 bool _dbChip::operator==(const _dbChip& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (name_ != rhs.name_) {
     return false;
   }
@@ -113,6 +123,12 @@ bool _dbChip::operator==(const _dbChip& rhs) const
   if (next_entry_ != rhs.next_entry_) {
     return false;
   }
+  if (*chip_path_tbl_ != *rhs.chip_path_tbl_) {
+    return false;
+  }
+  if (chip_path_hash_ != rhs.chip_path_hash_) {
+    return false;
+  }
 
   // User Code Begin ==
   if (*block_tbl_ != *rhs.block_tbl_) {
@@ -123,6 +139,7 @@ bool _dbChip::operator==(const _dbChip& rhs) const
   }
   // User Code End ==
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbChip::operator<(const _dbChip& rhs) const
@@ -158,6 +175,9 @@ _dbChip::_dbChip(_dbDatabase* db)
       db, this, (GetObjTbl_t) &_dbChip::getObjectTable, dbChipRegionObj);
   marker_categories_tbl_ = new dbTable<_dbMarkerCategory>(
       db, this, (GetObjTbl_t) &_dbChip::getObjectTable, dbMarkerCategoryObj);
+  chip_path_tbl_ = new dbTable<_dbChipPath>(
+      db, this, (GetObjTbl_t) &_dbChip::getObjectTable, dbChipPathObj);
+  chip_path_hash_.setTable(chip_path_tbl_);
   // User Code Begin Constructor
   block_tbl_ = new dbTable<_dbBlock>(
       db, this, (GetObjTbl_t) &_dbChip::getObjectTable, dbBlockObj);
@@ -172,79 +192,86 @@ _dbChip::_dbChip(_dbDatabase* db)
 
 dbIStream& operator>>(dbIStream& stream, _dbChip& obj)
 {
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.name_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.type_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.offset_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.width_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.height_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.thickness_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.shrink_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.seal_ring_east_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.seal_ring_west_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.seal_ring_north_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.seal_ring_south_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.scribe_line_east_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.scribe_line_west_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.scribe_line_north_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.scribe_line_south_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_extended)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipExtended)) {
     stream >> obj.tsv_;
   }
   stream >> obj.top_;
-  if (obj.getDatabase()->isSchema(db_schema_chip_inst)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipInst)) {
     stream >> obj.chipinsts_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_region)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipRegion)) {
     stream >> obj.conns_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_bump)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipBump)) {
     stream >> obj.nets_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_tech)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipTech)) {
     stream >> obj.tech_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_region)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipRegion)) {
     stream >> *obj.chip_region_tbl_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_chip_marker_categories)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipMarkerCategories)) {
     stream >> *obj.marker_categories_tbl_;
   }
   // User Code Begin >>
   stream >> *obj.block_tbl_;
   stream >> *obj.prop_tbl_;
   stream >> *obj.name_cache_;
-  if (obj.getDatabase()->isSchema(db_schema_chip_hash_table)) {
+  if (obj.getDatabase()->isSchema(kSchemaChipHashTable)) {
     stream >> obj.next_entry_;
+  }
+  // Read chip path table and rebuild hash from its contents
+  if (obj.getDatabase()->isSchema(kSchemaChipPath)) {
+    stream >> *obj.chip_path_tbl_;
+    for (dbChipPath* path : ((dbChip*) &obj)->getChipPaths()) {
+      obj.chip_path_hash_.insert((_dbChipPath*) path);
+    }
   }
   auto chip = (dbChip*) &obj;
   for (const auto& chip_region : chip->getChipRegions()) {
@@ -289,6 +316,7 @@ dbOStream& operator<<(dbOStream& stream, const _dbChip& obj)
   stream << NamedTable("prop_tbl", obj.prop_tbl_);
   stream << *obj.name_cache_;
   stream << obj.next_entry_;
+  stream << *obj.chip_path_tbl_;
   // User Code End <<
   return stream;
 }
@@ -302,6 +330,8 @@ dbObjectTable* _dbChip::getObjectTable(dbObjectType type)
       return chip_region_tbl_;
     case dbMarkerCategoryObj:
       return marker_categories_tbl_;
+    case dbChipPathObj:
+      return chip_path_tbl_;
       // User Code Begin getObjectTable
     case dbBlockObj:
       return block_tbl_;
@@ -316,16 +346,19 @@ void _dbChip::collectMemInfo(MemInfo& info)
   info.cnt++;
   info.size += sizeof(*this);
 
-  prop_tbl_->collectMemInfo(info.children_["prop_tbl_"]);
-
-  chip_region_tbl_->collectMemInfo(info.children_["chip_region_tbl_"]);
-
+  info.children["chipinsts_map"].add(chipinsts_map_);
+  info.children["chip_region_map"].add(chip_region_map_);
+  info.children["marker_categories_map"].add(marker_categories_map_);
+  prop_tbl_->collectMemInfo(info.children["prop_tbl_"]);
+  chip_region_tbl_->collectMemInfo(info.children["chip_region_tbl_"]);
   marker_categories_tbl_->collectMemInfo(
-      info.children_["marker_categories_tbl_"]);
+      info.children["marker_categories_tbl_"]);
+  chip_path_tbl_->collectMemInfo(info.children["chip_path_tbl_"]);
+  info.children["chip_path_hash"].add(chip_path_hash_);
 
   // User Code Begin collectMemInfo
-  block_tbl_->collectMemInfo(info.children_["block"]);
-  name_cache_->collectMemInfo(info.children_["name_cache"]);
+  block_tbl_->collectMemInfo(info.children["block"]);
+  name_cache_->collectMemInfo(info.children["name_cache"]);
   // User Code End collectMemInfo
 }
 
@@ -337,11 +370,17 @@ _dbChip::~_dbChip()
   delete prop_tbl_;
   delete chip_region_tbl_;
   delete marker_categories_tbl_;
+  delete chip_path_tbl_;
   // User Code Begin Destructor
   delete block_tbl_;
   delete name_cache_;
   delete block_itr_;
   delete prop_itr_;
+
+  while (!callbacks_.empty()) {
+    auto _cbitr = callbacks_.begin();
+    (*_cbitr)->removeOwner();
+  }
   // User Code End Destructor
 }
 
@@ -357,7 +396,7 @@ const char* dbChip::getName() const
   return obj->name_;
 }
 
-void dbChip::setOffset(Point offset)
+void dbChip::setOffset(const Point& offset)
 {
   _dbChip* obj = (_dbChip*) this;
 
@@ -551,6 +590,18 @@ dbSet<dbMarkerCategory> dbChip::getMarkerCategories() const
   return dbSet<dbMarkerCategory>(obj, obj->marker_categories_tbl_);
 }
 
+dbSet<dbChipPath> dbChip::getChipPaths() const
+{
+  _dbChip* obj = (_dbChip*) this;
+  return dbSet<dbChipPath>(obj, obj->chip_path_tbl_);
+}
+
+dbChipPath* dbChip::findChipPath(const char* name) const
+{
+  _dbChip* obj = (_dbChip*) this;
+  return (dbChipPath*) obj->chip_path_hash_.find(name);
+}
+
 // User Code Begin dbChipPublicMethods
 
 dbChip::ChipType dbChip::getChipType() const
@@ -625,14 +676,13 @@ dbTech* dbChip::getTech() const
 Rect dbChip::getBBox() const
 {
   _dbChip* _chip = (_dbChip*) this;
-  const int llx = 0 - _chip->scribe_line_east_ - _chip->seal_ring_west_;
-  const int lly = 0 - _chip->scribe_line_south_ - _chip->seal_ring_south_;
-  const int urx
-      = _chip->width_ + _chip->scribe_line_east_ + _chip->seal_ring_east_;
-  const int ury
-      = _chip->height_ + _chip->scribe_line_north_ + _chip->seal_ring_north_;
-  Rect box(llx, lly, urx, ury);
-  box.moveTo(_chip->offset_.x(), _chip->offset_.y());
+  const int dx = _chip->width_ + _chip->scribe_line_east_
+                 + _chip->seal_ring_east_ + _chip->scribe_line_west_
+                 + _chip->seal_ring_west_;
+  const int dy = _chip->height_ + _chip->scribe_line_north_
+                 + _chip->seal_ring_north_ + _chip->scribe_line_south_
+                 + _chip->seal_ring_south_;
+  Rect box(0, 0, dx, dy);
   return box;
 }
 
@@ -665,7 +715,7 @@ dbChip* dbChip::create(dbDatabase* db_,
   }
   _dbChip* chip = db->chip_tbl_->create();
   chip->name_ = safe_strdup(name.c_str());
-  chip->type_ = (uint) type;
+  chip->type_ = (uint32_t) type;
   if (db->chip_ == 0) {
     db->chip_ = chip->getOID();
   }
@@ -679,7 +729,7 @@ dbChip* dbChip::create(dbDatabase* db_,
   return (dbChip*) chip;
 }
 
-dbChip* dbChip::getChip(dbDatabase* db_, uint dbid_)
+dbChip* dbChip::getChip(dbDatabase* db_, uint32_t dbid_)
 {
   _dbDatabase* db = (_dbDatabase*) db_;
   return (dbChip*) db->chip_tbl_->getPtr(dbid_);

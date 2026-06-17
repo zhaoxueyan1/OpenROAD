@@ -12,11 +12,13 @@
 
 #include "db/obj/frAccess.h"
 #include "db/obj/frInst.h"
+#include "db/obj/frMPin.h"
+#include "db/obj/frTrackPattern.h"
 #include "db/tech/frLayer.h"
 #include "distributed/frArchive.h"
+#include "drt-global.h"
 #include "frBaseTypes.h"
 #include "frDesign.h"
-#include "global.h"
 #include "odb/db.h"
 #include "odb/dbTypes.h"
 
@@ -150,9 +152,9 @@ bool UniqueInsts::hasTrackPattern(frTrackPattern* tp,
   const frCoord low = tp->getStartCoord();
   const frCoord high = low + tp->getTrackSpacing() * (tp->getNumTracks() - 1);
   if (is_vertical_track) {
-    return !(low > box.xMax() || high < box.xMin());
+    return low <= box.xMax() && high >= box.xMin();
   }
-  return !(low > box.yMax() || high < box.yMin());
+  return low <= box.yMax() && high >= box.yMin();
 }
 
 bool UniqueInsts::isNDRInst(frInst* inst) const
@@ -197,7 +199,14 @@ UniqueClassKey UniqueInsts::computeUniqueClassKey(frInst* inst) const
   if (!router_cfg_->AUTO_TAPER_NDR_NETS && isNDRInst(inst)) {
     ndr_inst = inst;
   }
-  return UniqueClassKey(inst->getMaster(), orient, offset, ndr_inst);
+  std::set<frTerm*> stubborn_terms;
+  for (auto& term : inst->getInstTerms()) {
+    if (term->isStubborn()) {
+      stubborn_terms.insert(term->getTerm());
+    }
+  }
+  return UniqueClassKey(
+      inst->getMaster(), orient, offset, ndr_inst, stubborn_terms);
 }
 
 UniqueClass* UniqueInsts::computeUniqueClass(frInst* inst)
@@ -352,10 +361,9 @@ void UniqueInsts::deleteInst(frInst* inst)
 void UniqueInsts::deleteUniqueClass(UniqueClass* unique_class)
 {
   unique_class_by_key_.erase(unique_class->key());
-  unique_classes_.erase(std::find_if(
-      unique_classes_.begin(),
-      unique_classes_.end(),
-      [unique_class](const auto& u) { return u.get() == unique_class; }));
+  std::erase_if(unique_classes_, [unique_class](const auto& u) {
+    return u.get() == unique_class;
+  });
 }
 
 const std::vector<std::unique_ptr<UniqueClass>>& UniqueInsts::getUniqueClasses()

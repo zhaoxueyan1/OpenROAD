@@ -13,6 +13,7 @@
 #include <QWidget>
 #include <map>
 
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 
 namespace gui {
@@ -28,6 +29,7 @@ class GlobalConnectDialog : public QDialog
 
  private slots:
   void runRules();
+  void runRulesWithForce();
   void clearRules();
   void deleteRule(odb::dbGlobalConnect* gconnect);
   void makeRule();
@@ -42,6 +44,7 @@ class GlobalConnectDialog : public QDialog
   QPushButton* add_;
   QPushButton* clear_;
   QPushButton* run_;
+  QPushButton* run_force_;
 
   struct GlobalConnectWidgets
   {
@@ -53,7 +56,7 @@ class GlobalConnectDialog : public QDialog
     QPushButton* run;
     QPushButton* remove;
   };
-  std::map<odb::dbGlobalConnect*, GlobalConnectWidgets> rules_;
+  odb::PtrMap<odb::dbGlobalConnect, GlobalConnectWidgets> rules_;
 
   QLineEdit* inst_pattern_;
   QLineEdit* pin_pattern_;
@@ -63,7 +66,7 @@ class GlobalConnectDialog : public QDialog
   QLabel* connections_;
 
   void addRule(odb::dbGlobalConnect* gc);
-  void runRule(odb::dbGlobalConnect* gc);
+  void runRule(odb::dbGlobalConnect* gc, bool force);
 };
 
 }  // namespace gui

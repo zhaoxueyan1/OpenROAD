@@ -1,6 +1,5 @@
-# Test if the guidance region is moving the macro
-# to the left side (without a guide, the macro ends
-# up on the right side)
+# Test if the macro gets placed in the guidance region
+# on the right side of the die.
 source "helpers.tcl"
 
 read_lef "./Nangate45/Nangate45.lef"
@@ -8,15 +7,13 @@ read_lef "./Nangate45/Nangate45.lef"
 read_lef "./testcases/macro_only.lef"
 read_liberty "./testcases/macro_only.lib"
 
-read_verilog "./testcases/guides1.v"
-link_design "guides1"
-read_def "./testcases/guides1.def" -floorplan_initialize
+read_def "./testcases/guides1.def"
 
 set_io_pin_constraint -direction INPUT -region left:*
 
 set_macro_guidance_region -macro_name MACRO_1 -region {49 0 149 100}
 set_thread_count 0
-rtl_macro_placer -report_directory [make_result_dir] -halo_width 4.0
+rtl_macro_placer -report_directory [make_result_dir]
 
 set def_file [make_result_file guides1.def]
 write_def $def_file

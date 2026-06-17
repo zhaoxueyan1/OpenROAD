@@ -46,8 +46,7 @@ sta::LibertyPort* FindEquivalentPortInScanCell(
         && scan_cell_port->function() == nullptr) {
       // input ports do not have a function
       port_equiv
-          = port_equiv
-            && strcmp(non_scan_cell_port->name(), scan_cell_port->name()) == 0;
+          = port_equiv && non_scan_cell_port->name() == scan_cell_port->name();
     } else {
       port_equiv = port_equiv
                    && sta::FuncExpr::equiv(non_scan_cell_port->function(),
@@ -177,17 +176,16 @@ std::unique_ptr<ScanCandidate> SelectBestScanCell(
     const sta::LibertyCell* non_scan_cell,
     std::vector<std::unique_ptr<ScanCandidate>>& scan_candidates)
 {
-  std::sort(scan_candidates.begin(),
-            scan_candidates.end(),
-            [&non_scan_cell](const auto& lhs, const auto& rhs) {
-              // We want to keep the difference as close as possible to the
-              // non_scan_cell
-              const double difference_lhs = DifferencePerformanceCells(
-                  non_scan_cell, lhs->getScanCell());
-              const double difference_rhs = DifferencePerformanceCells(
-                  non_scan_cell, rhs->getScanCell());
-              return difference_lhs < difference_rhs;
-            });
+  std::ranges::sort(
+      scan_candidates, [&non_scan_cell](const auto& lhs, const auto& rhs) {
+        // We want to keep the difference as close as possible to
+        // the non_scan_cell
+        const double difference_lhs
+            = DifferencePerformanceCells(non_scan_cell, lhs->getScanCell());
+        const double difference_rhs
+            = DifferencePerformanceCells(non_scan_cell, rhs->getScanCell());
+        return difference_lhs < difference_rhs;
+      });
 
   return std::move(scan_candidates.at(0));
 }
@@ -294,7 +292,7 @@ void ScanReplace::collectScanCellAvailable()
         continue;
       }
 
-      if (utils::IsScanCell(liberty_cell)) {
+      if (utils::IsScanCell(db_network, liberty_cell)) {
         available_scan_lib_cells_.insert(liberty_cell);
       } else {
         non_scan_cells.push_back(liberty_cell);
@@ -342,7 +340,7 @@ void ScanReplace::scanReplace()
 {
   odb::dbChip* chip = db_->getChip();
   scanReplace(chip->getBlock());
-  sta_->networkChanged();
+  sta_->networkChangedNonSdc();
 }
 
 // Recursive function that iterates over a block (and the blocks inside this
@@ -453,7 +451,7 @@ void ScanReplace::rollbackScanReplace()
 {
   odb::dbChip* chip = db_->getChip();
   rollbackScanReplace(chip->getBlock());
-  sta_->networkChanged();
+  sta_->networkChangedNonSdc();
 }
 
 void ScanReplace::rollbackScanReplace(odb::dbBlock* block)

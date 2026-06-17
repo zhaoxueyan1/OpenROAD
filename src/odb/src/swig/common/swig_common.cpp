@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "boost/polygon/polygon.hpp"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbTypes.h"
 #include "odb/defin.h"
@@ -23,8 +24,6 @@
 #include "odb/lefin.h"
 #include "odb/lefout.h"
 #include "utl/Logger.h"
-
-using namespace boost::polygon::operators;
 
 odb::dbLib* read_lef(odb::dbDatabase* db, const char* path)
 {
@@ -37,7 +36,7 @@ odb::dbLib* read_lef(odb::dbDatabase* db, const char* path)
   return lefParser.createLib(db->getTech(), libname, path);
 }
 
-odb::dbChip* read_def(odb::dbTech* tech, std::string path)
+odb::dbChip* read_def(odb::dbTech* tech, const std::string& path)
 {
   utl::Logger logger(nullptr);
   std::vector<odb::dbLib*> libs;
@@ -161,6 +160,7 @@ Polygon90Set* newSetFromRect(int xLo, int yLo, int xHi, int yHi)
 
 Polygon90Set* bloatSet(const Polygon90Set* set, int bloating)
 {
+  using boost::polygon::operators::operator+;
   return new Polygon90Set(*set + bloating);
 }
 
@@ -173,6 +173,7 @@ Polygon90Set* bloatSet(const Polygon90Set* set, int bloatX, int bloatY)
 
 Polygon90Set* shrinkSet(const Polygon90Set* set, int shrinking)
 {
+  using boost::polygon::operators::operator-;
   return new Polygon90Set(*set - shrinking);
 }
 
@@ -185,16 +186,19 @@ Polygon90Set* shrinkSet(const Polygon90Set* set, int shrinkX, int shrinkY)
 
 Polygon90Set* andSet(const Polygon90Set* set1, const Polygon90Set* set2)
 {
+  using boost::polygon::operators::operator&;
   return new Polygon90Set(*set1 & *set2);
 }
 
 Polygon90Set* orSet(const Polygon90Set* set1, const Polygon90Set* set2)
 {
+  using boost::polygon::operators::operator|;
   return new Polygon90Set(*set1 | *set2);
 }
 
 Polygon90Set* orSets(const std::vector<Polygon90Set>& sets)
 {
+  using boost::polygon::operators::operator|=;
   Polygon90Set* result = new Polygon90Set;
   for (const Polygon90Set& poly_set : sets) {
     *result |= poly_set;
@@ -204,6 +208,7 @@ Polygon90Set* orSets(const std::vector<Polygon90Set>& sets)
 
 Polygon90Set* subtractSet(const Polygon90Set* set1, const Polygon90Set* set2)
 {
+  using boost::polygon::operators::operator-;
   return new Polygon90Set(*set1 - *set2);
 }
 
@@ -242,14 +247,14 @@ std::vector<odb::Point> getPoints(const Polygon90* polygon)
 {
   std::vector<odb::Point> pts;
   for (auto& pt : *polygon) {
-    pts.emplace_back(odb::Point(pt.x(), pt.y()));
+    pts.emplace_back(pt.x(), pt.y());
   }
   return pts;
 }
 
 void createSBoxes(odb::dbSWire* swire,
                   odb::dbTechLayer* layer,
-                  std::vector<odb::Rect> rects,
+                  const std::vector<odb::Rect>& rects,
                   odb::dbWireShapeType type)
 {
   for (odb::Rect rect : rects) {
@@ -260,7 +265,7 @@ void createSBoxes(odb::dbSWire* swire,
 
 void createSBoxes(odb::dbSWire* swire,
                   odb::dbVia* via,
-                  std::vector<odb::Point> points,
+                  const std::vector<odb::Point>& points,
                   odb::dbWireShapeType type)
 {
   for (odb::Point point : points) {
@@ -268,7 +273,7 @@ void createSBoxes(odb::dbSWire* swire,
   }
 }
 
-void dumpAPs(odb::dbBlock* block, const std::string file_name)
+void dumpAPs(odb::dbBlock* block, const std::string& file_name)
 {
   std::ofstream os(file_name);
   for (auto inst : block->getInsts()) {
@@ -279,15 +284,15 @@ void dumpAPs(odb::dbBlock* block, const std::string file_name)
       }
 
       auto mterm = iterm->getMTerm();
-      auto aps = iterm->getAccessPoints();
+      auto aps_map = iterm->getAccessPoints();
       os << "  iterm: " << mterm->getName() << "\n";
 
       for (auto mpin : mterm->getMPins()) {
         auto bbox = mpin->getBBox();
         os << "    pin (" << bbox.xMin() << ", " << bbox.yMin() << "):\n";
 
-        auto pin_aps_it = aps.find(mpin);
-        if (pin_aps_it == aps.end()) {
+        auto pin_aps_it = aps_map.find(mpin);
+        if (pin_aps_it == aps_map.end()) {
           continue;
         }
         for (auto ap : pin_aps_it->second) {

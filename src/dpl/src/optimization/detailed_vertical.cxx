@@ -16,8 +16,10 @@
 #include "detailed_manager.h"
 #include "detailed_orient.h"
 #include "dpl/Opendp.h"
+#include "infrastructure/Objects.h"
 #include "infrastructure/detailed_segment.h"
 #include "objective/detailed_hpwl.h"
+#include "optimization/detailed_generator.h"
 #include "util/utility.h"
 #include "utl/Logger.h"
 
@@ -133,7 +135,7 @@ void DetailedVerticalSwap::verticalSwap()
 
   traversal_ = 0;
   edgeMask_.resize(network_->getNumEdges());
-  std::fill(edgeMask_.begin(), edgeMask_.end(), 0);
+  std::ranges::fill(edgeMask_, 0);
 
   mgr_->resortSegments();
 
@@ -148,7 +150,7 @@ void DetailedVerticalSwap::verticalSwap()
   double currHpwl = hpwlObj.curr();
   // Consider each candidate cell once.
   for (Node* ndi : candidates) {
-    if (generate(ndi) == false) {
+    if (!generate(ndi)) {
       continue;
     }
 
@@ -231,8 +233,8 @@ bool DetailedVerticalSwap::getRange(Node* nd, odb::Rect& nodeBbox)
   // Get the median values.
   const unsigned mid = t / 2;
 
-  std::sort(xpts_.begin(), xpts_.end());
-  std::sort(ypts_.begin(), ypts_.end());
+  std::ranges::sort(xpts_);
+  std::ranges::sort(ypts_);
 
   nodeBbox.set_xlo(xpts_[mid - 1]);
   nodeBbox.set_xhi(xpts_[mid]);
@@ -362,7 +364,7 @@ void DetailedVerticalSwap::init(DetailedMgr* mgr)
 
   traversal_ = 0;
   edgeMask_.resize(network_->getNumEdges());
-  std::fill(edgeMask_.begin(), edgeMask_.end(), 0);
+  std::ranges::fill(edgeMask_, 0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -11,8 +11,13 @@
 #include <string>
 #include <vector>
 
+#include "db/drObj/drPin.h"
+#include "db/tech/frLayer.h"
 #include "dr/FlexDR.h"
 #include "dr/FlexGridGraph.h"
+#include "dr/FlexMazeTypes.h"
+#include "dr/FlexWavefront.h"
+#include "drt-global.h"
 #include "frBaseTypes.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
@@ -31,6 +36,7 @@ void FlexGridGraph::printExpansion(const FlexWavefrontGrid& currGrid,
   auto gridZ = currGrid.z();
   dir = (frDirEnum) (OPPOSITEDIR - (int) dir);
   bool gridCost = hasGridCost(gridX, gridY, gridZ, dir);
+  bool apCost = hasApCost(gridX, gridY, gridZ, dir);
   bool drcCost = hasRouteShapeCostAdj(gridX, gridY, gridZ, dir, false);
   bool markerCost = hasMarkerCostAdj(gridX, gridY, gridZ, dir);
   bool shapeCost = hasFixedShapeCostAdj(gridX, gridY, gridZ, dir, false);
@@ -52,9 +58,11 @@ void FlexGridGraph::printExpansion(const FlexWavefrontGrid& currGrid,
       gridX,
       gridY);
   dump_file_ << fmt::format(
-      "gridCost {} drcCost {} markerCost {} shapeCost {} blockCost {} "
+      "gridCost {} apCost {} drcCost {} markerCost {} shapeCost {} blockCost "
+      "{} "
       "guideCost {} edgeLength {} ",
       gridCost,
+      apCost,
       drcCost,
       markerCost,
       shapeCost,
@@ -228,19 +236,13 @@ frCost FlexGridGraph::getEstCost(const FlexMazeIdx& src,
   getPoint(srcPoint, gridX, gridY);
   getPoint(dstPoint1, dstMazeIdx1.x(), dstMazeIdx1.y());
   getPoint(dstPoint2, dstMazeIdx2.x(), dstMazeIdx2.y());
-  frCoord minCostX = std::max(std::max(dstPoint1.x() - srcPoint.x(),
-                                       srcPoint.x() - dstPoint2.x()),
-                              0)
-                     * 1;
-  frCoord minCostY = std::max(std::max(dstPoint1.y() - srcPoint.y(),
-                                       srcPoint.y() - dstPoint2.y()),
-                              0)
-                     * 1;
-  frCoord minCostZ
-      = std::max(std::max(getZHeight(dstMazeIdx1.z()) - getZHeight(gridZ),
-                          getZHeight(gridZ) - getZHeight(dstMazeIdx2.z())),
-                 0)
-        * 1;
+  frCoord minCostX = std::max(
+      {dstPoint1.x() - srcPoint.x(), srcPoint.x() - dstPoint2.x(), 0});
+  frCoord minCostY = std::max(
+      {dstPoint1.y() - srcPoint.y(), srcPoint.y() - dstPoint2.y(), 0});
+  frCoord minCostZ = std::max({getZHeight(dstMazeIdx1.z()) - getZHeight(gridZ),
+                               getZHeight(gridZ) - getZHeight(dstMazeIdx2.z()),
+                               0});
 
   bendCnt += (minCostX && dir != frDirEnum::UNKNOWN && dir != frDirEnum::E
               && dir != frDirEnum::W)
@@ -269,7 +271,7 @@ frCost FlexGridGraph::getEstCost(const FlexMazeIdx& src,
     auto layerNum = (gridZ + 1) * 2;
     auto layer = getTech()->getLayer(layerNum);
     if (!router_cfg_->USENONPREFTRACKS || layer->isUnidirectional()) {
-      bool isH = (layer->getDir() == dbTechLayerDir::HORIZONTAL);
+      bool isH = layer->isHorizontal();
       if (isH && dstMazeIdx1.y() == dstMazeIdx2.y()) {
         auto gap = abs(nextPoint.y() - dstPoint1.y());
         if (gap
@@ -543,6 +545,7 @@ frCost FlexGridGraph::getCosts(frMIdx gridX,
                                bool route_with_jumpers) const
 {
   bool gridCost = hasGridCost(gridX, gridY, gridZ, dir);
+  bool apCost = hasApCost(gridX, gridY, gridZ, dir);
   bool drcCost = hasRouteShapeCostAdj(gridX, gridY, gridZ, dir, considerNDR);
   bool markerCost = hasMarkerCostAdj(gridX, gridY, gridZ, dir);
   bool shapeCost = hasFixedShapeCostAdj(gridX, gridY, gridZ, dir, considerNDR);
@@ -555,7 +558,7 @@ frCost FlexGridGraph::getCosts(frMIdx gridX,
 
   // temporarily disable guideCost
   return getEdgeLength(gridX, gridY, gridZ, dir)
-         + (gridCost ? router_cfg_->GRIDCOST * edgeLength : 0)
+         + (gridCost || apCost ? router_cfg_->GRIDCOST * edgeLength : 0)
          + (drcCost ? ggDRCCost_ * edgeLength : 0)
          + (markerCost ? ggMarkerCost_ * edgeLength : 0)
          + (shapeCost ? ggFixedShapeCost_ * edgeLength : 0)
@@ -582,13 +585,13 @@ bool FlexGridGraph::useNDRCosts(const FlexWavefrontGrid& p) const
 frMIdx FlexGridGraph::getLowerBoundIndex(const frVector<frCoord>& tracks,
                                          frCoord v) const
 {
-  return std::lower_bound(tracks.begin(), tracks.end(), v) - tracks.begin();
+  return std::ranges::lower_bound(tracks, v) - tracks.begin();
 }
 
 frMIdx FlexGridGraph::getUpperBoundIndex(const frVector<frCoord>& tracks,
                                          frCoord v) const
 {
-  auto it = std::upper_bound(tracks.begin(), tracks.end(), v);
+  auto it = std::ranges::upper_bound(tracks, v);
   if (it == tracks.end()) {
     it = std::prev(it);
   }
@@ -684,7 +687,7 @@ void FlexGridGraph::traceBackPath(const FlexWavefrontGrid& currGrid,
     prevDir = currDir;
   }
   // trace back according to grid prev dir
-  while (isSrc(currX, currY, currZ) == false) {
+  while (!isSrc(currX, currY, currZ)) {
     // get last direction
     currDir = getPrevAstarNodeDir({currX, currY, currZ});
     root.emplace_back(currX, currY, currZ);

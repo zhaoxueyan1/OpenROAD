@@ -9,13 +9,16 @@
 #include <QString>
 #include <QThread>
 #include <QWaitCondition>
+#include <cstdint>
 #include <map>
-#include <mutex>
+#include <set>
 #include <utility>
 #include <vector>
 
+#include "absl/synchronization/mutex.h"
 #include "gui/gui.h"
 #include "label.h"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/geom.h"
 #include "ruler.h"
@@ -81,6 +84,7 @@ class RenderThread : public QThread
   void drawRegions(QPainter* painter, odb::dbBlock* block);
   void drawTracks(odb::dbTechLayer* layer,
                   QPainter* painter,
+                  odb::dbBlock* block,
                   const odb::Rect& bounds);
 
   void drawInstanceOutlines(QPainter* painter,
@@ -103,7 +107,8 @@ class RenderThread : public QThread
 
   void drawBlockages(QPainter* painter,
                      odb::dbBlock* block,
-                     const odb::Rect& bounds);
+                     const odb::Rect& bounds,
+                     const std::vector<odb::dbInst*>& insts);
   void drawObstructions(odb::dbBlock* block,
                         odb::dbTechLayer* layer,
                         QPainter* painter,
@@ -117,8 +122,12 @@ class RenderThread : public QThread
                      odb::dbTechLayer* draw_layer,
                      const odb::Rect& bounds,
                      int shape_limit);
-  void drawManufacturingGrid(QPainter* painter, const odb::Rect& bounds);
-  void drawGCellGrid(QPainter* painter, const odb::Rect& bounds);
+  void drawManufacturingGrid(QPainter* painter,
+                             odb::dbBlock* block,
+                             const odb::Rect& bounds);
+  void drawGCellGrid(QPainter* painter,
+                     odb::dbBlock* block,
+                     const odb::Rect& bounds);
   void drawSelected(Painter& painter, const SelectionSet& selected);
   void drawHighlighted(Painter& painter, const HighlightSet& highlighted);
   void drawIOPins(Painter& painter,
@@ -126,8 +135,16 @@ class RenderThread : public QThread
                   const odb::Rect& bounds,
                   odb::dbTechLayer* layer);
   void drawAccessPoints(Painter& painter,
+                        odb::dbBlock* block,
+                        const odb::Rect& bounds,
                         const std::vector<odb::dbInst*>& insts);
   void drawRouteGuides(Painter& painter, odb::dbTechLayer* layer);
+  void drawNetsRouteGuides(Painter& painter,
+                           const odb::PtrSet<odb::dbNet>& nets,
+                           odb::dbTechLayer* layer);
+  void drawNetRouteGuides(Painter& painter,
+                          odb::dbNet* net,
+                          odb::dbTechLayer* layer);
   void drawNetTracks(Painter& painter, odb::dbTechLayer* layer);
   void drawModuleView(QPainter* painter,
                       const std::vector<odb::dbInst*>& insts);
@@ -144,7 +161,7 @@ class RenderThread : public QThread
 
   utl::Logger* logger_ = nullptr;
   LayoutViewer* viewer_;
-  std::mutex drawing_mutex_;
+  absl::Mutex drawing_mutex_;
 
   // These variables are cached copies of what's passed to render().
   // The draw method will the make a local copy of them to avoid any
@@ -166,9 +183,8 @@ class RenderThread : public QThread
   QFont pin_font_;
   bool pin_draw_names_ = false;
   double pin_max_size_ = 0.0;
-  std::map<odb::dbTechLayer*,
-           std::vector<std::pair<odb::dbBTerm*, odb::dbBox*>>>
-      pins_;
+
+  static constexpr int64_t kMaxBPinsPerLayer = 100000;
 };
 
 }  // namespace gui

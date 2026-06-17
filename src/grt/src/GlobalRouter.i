@@ -111,6 +111,24 @@ set_resistance_aware(bool resistance_aware)
 }
 
 void
+set_snapshot_batched_width(int snapshot_batched_width)
+{
+  getGlobalRouter()->setSnapshotBatchedWidth(snapshot_batched_width);
+}
+
+int
+get_snapshot_batched_width()
+{
+  return getGlobalRouter()->getSnapshotBatchedWidth();
+}
+
+int
+get_snapshot_batch_count()
+{
+  return getGlobalRouter()->getSnapshotBatchCount();
+}
+
+void
 set_critical_nets_percentage(float criticalNetsPercentage)
 {
   getGlobalRouter()->setCriticalNetsPercentage(criticalNetsPercentage);
@@ -153,9 +171,42 @@ set_skip_large_fanout(int skip_large_fanout)
 }
 
 void
-global_route(bool start_incremental, bool end_incremental)
+set_infinite_cap(bool infinite_capacity)
 {
-  getGlobalRouter()->globalRoute(true, start_incremental, end_incremental);
+  getGlobalRouter()->setInfiniteCapacity(infinite_capacity);
+}
+
+void
+add_dirty_net(odb::dbNet* net)
+{
+  if (net != nullptr) {
+    getGlobalRouter()->addDirtyNet(net);
+  }
+}
+
+void
+update_cugr_net(odb::dbNet* net)
+{
+  getGlobalRouter()->updateCUGRNet(net);
+}
+
+void start_incremental()
+{
+  getGlobalRouter()->startIncremental();
+}
+
+void end_incremental()
+{
+  // Save guides by default when ending incremental routing from Tcl interface.
+  getGlobalRouter()->endIncremental(true);
+}
+
+void
+global_route()
+{
+  const int num_threads = ord::OpenRoad::openRoad()->getThreadCount();
+  getGlobalRouter()->setNumThreads(num_threads);
+  getGlobalRouter()->globalRoute(true);
 }
 
 std::vector<int>
@@ -165,10 +216,10 @@ route_layer_lengths(odb::dbNet* db_net)
 }
 
 int
-repair_antennas(odb::dbMTerm* diode_mterm, int iterations, float ratio_margin)
+repair_antennas(odb::dbMTerm* diode_mterm, int iterations, float ratio_margin, bool jumper_only, bool diode_only)
 {
   const int num_threads = ord::OpenRoad::openRoad()->getThreadCount();
-  return getGlobalRouter()->repairAntennas(diode_mterm, iterations, ratio_margin, num_threads);
+  return getGlobalRouter()->repairAntennas(diode_mterm, iterations, ratio_margin, jumper_only, diode_only, num_threads);
 }
 
 void
@@ -178,7 +229,7 @@ add_net_to_route(odb::dbNet* net)
 }
 
 void
-highlight_net_route(odb::dbNet *net, bool show_segments, bool show_pin_locations)
+highlight_net_route(odb::dbNet *net, bool show_pin_locations)
 {
   if (!gui::Gui::enabled()) {
     return;
@@ -189,7 +240,7 @@ highlight_net_route(odb::dbNet *net, bool show_segments, bool show_pin_locations
     router->setRenderer(std::make_unique<GrouteRenderer>(router, router->db()->getTech()));
   }
 
-  router->getRenderer()->highlightRoute(net, show_segments, show_pin_locations);
+  router->getRenderer()->highlightRoute(net, show_pin_locations);
 }
 
 void
@@ -202,7 +253,8 @@ void set_global_route_debug_cmd(const odb::dbNet *net,
                                 bool steinerTree,
                                 bool rectilinearSTree,
                                 bool tree2D,
-                                bool tree3D)
+                                bool tree3D,
+                                bool edges3D)
 {
   if (!gui::Gui::enabled()) {
     return;
@@ -218,6 +270,7 @@ void set_global_route_debug_cmd(const odb::dbNet *net,
   getGlobalRouter()->setDebugRectilinearSTree(rectilinearSTree);
   getGlobalRouter()->setDebugTree2D(tree2D);
   getGlobalRouter()->setDebugTree3D(tree3D);
+  getGlobalRouter()->setDebugEdges3D(edges3D);
 }
 
 void set_global_route_debug_stt_input_filename(const char* file_name)
@@ -267,6 +320,33 @@ void read_segments(const char* file_name)
 void write_pin_locations(const char* file_name)
 {
   getGlobalRouter()->writePinLocations(file_name);
+}
+
+odb::dbObject* iterm_to_object(odb::dbITerm* iterm)
+{
+  return (odb::dbObject*) iterm;
+}
+
+odb::dbObject* bterm_to_object(odb::dbBTerm* bterm)
+{
+  return (odb::dbObject*) bterm;
+}
+
+float estimate_path_resistance(odb::dbObject* pin1,
+                                 odb::dbObject* pin2,
+                                 bool verbose = false)
+{
+  return getGlobalRouter()->estimatePathResistance(pin1, pin2, verbose);
+}
+
+float estimate_path_resistance(odb::dbObject* pin1,
+				 odb::dbObject* pin2,
+				 odb::dbTechLayer* layer1,
+				 odb::dbTechLayer* layer2,
+				 bool verbose = false)
+{
+  return getGlobalRouter()->estimatePathResistance(
+    pin1, pin2, layer1, layer2, verbose);
 }
 
 } // namespace

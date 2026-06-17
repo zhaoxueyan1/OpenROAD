@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "Util.h"
 #include "sta/ParseBus.hh"
 #include "utl/Logger.h"
 
@@ -28,7 +29,7 @@ Clock::Clock(const std::string& netName,
   // Hierarchy delimiters in the net name must be escape.  We use
   // the name to construct buffer names later and the delimiters
   // will confuse downstream tools like read_spef.
-  netName_ = sta::escapeChars(netName.c_str(), '/', '\0', '\\');
+  netName_ = sta::escapeChars(netName, '/', '\0', '\0', '\\');
 }
 
 void Clock::report(utl::Logger* logger) const
@@ -59,8 +60,8 @@ Box<int> Clock::computeSinkRegion()
     allPositionsY.push_back(sink.getY());
   });
 
-  std::sort(allPositionsX.begin(), allPositionsX.end());
-  std::sort(allPositionsY.begin(), allPositionsY.end());
+  std::ranges::sort(allPositionsX);
+  std::ranges::sort(allPositionsY);
 
   const unsigned numSinks = allPositionsX.size();
   const unsigned numOutliers = percentile * numSinks;

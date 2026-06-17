@@ -10,9 +10,13 @@
 
 #include "boost/geometry/geometry.hpp"
 #include "boost/polygon/polygon.hpp"
+#include "db/gcObj/gcPin.h"
+#include "db/gcObj/gcShape.h"
 #include "db/obj/frMarker.h"
+#include "db/tech/frConstraint.h"
 #include "frBaseTypes.h"
 #include "frProfileTask.h"
+#include "gc/FlexGC.h"
 #include "gc/FlexGC_impl.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
@@ -127,12 +131,30 @@ void FlexGCWorker::Impl::checkOrthRectsMetSpcTblInf(
 }
 bool compareVertical(gcRect* r1, gcRect* r2)
 {
-  return (gtl::yl(*r1) < gtl::yl(*r2));
+  if (gtl::yl(*r1) != gtl::yl(*r2)) {
+    return gtl::yl(*r1) < gtl::yl(*r2);
+  }
+  if (gtl::xl(*r1) != gtl::xl(*r2)) {
+    return gtl::xl(*r1) < gtl::xl(*r2);
+  }
+  if (gtl::yh(*r1) != gtl::yh(*r2)) {
+    return gtl::yh(*r1) < gtl::yh(*r2);
+  }
+  return gtl::xh(*r1) < gtl::xh(*r2);
 }
 
 bool compareHorizontal(gcRect* r1, gcRect* r2)
 {
-  return (gtl::xl(*r1) < gtl::xl(*r2));
+  if (gtl::xl(*r1) != gtl::xl(*r2)) {
+    return gtl::xl(*r1) < gtl::xl(*r2);
+  }
+  if (gtl::yl(*r1) != gtl::yl(*r2)) {
+    return gtl::yl(*r1) < gtl::yl(*r2);
+  }
+  if (gtl::xh(*r1) != gtl::xh(*r2)) {
+    return gtl::xh(*r1) < gtl::xh(*r2);
+  }
+  return gtl::yh(*r1) < gtl::yh(*r2);
 }
 
 void FlexGCWorker::Impl::checkRectMetSpcTblInf(
@@ -187,9 +209,9 @@ void FlexGCWorker::Impl::checkRectMetSpcTblInf(
       continue;  // At least two orthogonal rectangle are required for checking
     }
     if (dir == gtl::HORIZONTAL) {
-      std::sort(rects.begin(), rects.end(), compareHorizontal);
+      std::ranges::sort(rects, compareHorizontal);
     } else {
-      std::sort(rects.begin(), rects.end(), compareVertical);
+      std::ranges::sort(rects, compareVertical);
     }
     // <rects> should be a sorted vector of all the wires found in the region
     // It should be sorted in the orientation we are checking
@@ -207,10 +229,8 @@ void FlexGCWorker::Impl::checkPinMetSpcTblInf(gcPin* pin)
 void FlexGCWorker::Impl::checkMetalSpacingTableInfluence()
 {
   if (targetNet_) {
-    for (int i = std::max((frLayerNum) (getTech()->getBottomLayerNum()),
-                          minLayerNum_);
-         i
-         <= std::min((frLayerNum) (getTech()->getTopLayerNum()), maxLayerNum_);
+    for (int i = std::max(getTech()->getBottomLayerNum(), minLayerNum_);
+         i <= std::min(getTech()->getTopLayerNum(), maxLayerNum_);
          i++) {
       auto currLayer = getTech()->getLayer(i);
       if (currLayer->getType() != dbTechLayerType::ROUTING) {
@@ -225,10 +245,8 @@ void FlexGCWorker::Impl::checkMetalSpacingTableInfluence()
     }
   } else {
     // layer --> net --> polygon
-    for (int i = std::max((frLayerNum) (getTech()->getBottomLayerNum()),
-                          minLayerNum_);
-         i
-         <= std::min((frLayerNum) (getTech()->getTopLayerNum()), maxLayerNum_);
+    for (int i = std::max(getTech()->getBottomLayerNum(), minLayerNum_);
+         i <= std::min(getTech()->getTopLayerNum(), maxLayerNum_);
          i++) {
       auto currLayer = getTech()->getLayer(i);
       if (currLayer->getType() != dbTechLayerType::ROUTING) {

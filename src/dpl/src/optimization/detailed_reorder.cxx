@@ -18,6 +18,7 @@
 #include "detailed_manager.h"
 #include "dpl/Opendp.h"
 #include "infrastructure/Coordinates.h"
+#include "infrastructure/Objects.h"
 #include "infrastructure/architecture.h"
 #include "infrastructure/detailed_segment.h"
 #include "util/utility.h"
@@ -117,7 +118,7 @@ void DetailedReorderer::reorder()
 {
   traversal_ = 0;
   edgeMask_.resize(network_->getNumEdges());
-  std::fill(edgeMask_.begin(), edgeMask_.end(), traversal_);
+  std::ranges::fill(edgeMask_, traversal_);
 
   // Loop over each segment; find single height cells and reorder.
   for (int s = 0; s < mgrPtr_->getNumSegments(); s++) {
@@ -285,7 +286,7 @@ void DetailedReorderer::reorder(const std::vector<Node*>& nodes,
         found = true;
       }
     }
-  } while (std::next_permutation(order.begin(), order.end()));
+  } while (std::ranges::next_permutation(order).found);
 
   if (!found) {
     // No improvement.  Restore positions and return.

@@ -3,11 +3,13 @@
 
 #include "dst/Distributed.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <exception>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "LoadBalancer.h"
@@ -20,11 +22,11 @@
 #include "dst/JobCallBack.h"
 #include "dst/JobMessage.h"
 #include "utl/Logger.h"
-namespace dst {
-const int kMaxTries = 5;
-}
 
-using namespace dst;
+namespace dst {
+
+constexpr int kMaxTries = 5;
+constexpr auto kRetryDelay = std::chrono::milliseconds(50);
 
 Distributed::Distributed(utl::Logger* logger) : logger_(logger)
 {
@@ -92,6 +94,9 @@ bool sendMsg(dst::Socket& sock, const std::string& msg, std::string& error_msg)
       return true;
     }
     error_msg = error.message();
+    if (tries < kMaxTries) {
+      std::this_thread::sleep_for(kRetryDelay);
+    }
   }
   return false;
 }
@@ -141,14 +146,23 @@ bool Distributed::sendJob(JobMessage& msg,
                     "Trial {}, socket connection failed with message \"{}\"",
                     tries,
                     ex.what());
+      if (tries < kMaxTries) {
+        std::this_thread::sleep_for(kRetryDelay);
+      }
       continue;
     }
     bool ok = sendMsg(sock, msg_str, result_str);
     if (!ok) {
+      if (tries < kMaxTries) {
+        std::this_thread::sleep_for(kRetryDelay);
+      }
       continue;
     }
     ok = readMsg(sock, result_str);
     if (!ok) {
+      if (tries < kMaxTries) {
+        std::this_thread::sleep_for(kRetryDelay);
+      }
       continue;
     }
     if (!JobMessage::serializeMsg(JobMessage::kRead, result, result_str)) {
@@ -201,16 +215,26 @@ bool Distributed::sendJobMultiResult(JobMessage& msg,
                     13,
                     "Socket connection failed with message \"{}\"",
                     ex.what());
+      if (tries < kMaxTries) {
+        std::this_thread::sleep_for(kRetryDelay);
+        continue;
+      }
       return false;
     }
     boost::asio::ip::tcp::no_delay option(true);
     sock.set_option(option);
     bool ok = sendMsg(sock, msg_str, result_str);
     if (!ok) {
+      if (tries < kMaxTries) {
+        std::this_thread::sleep_for(kRetryDelay);
+      }
       continue;
     }
     ok = readMsg(sock, result_str);
     if (!ok) {
+      if (tries < kMaxTries) {
+        std::this_thread::sleep_for(kRetryDelay);
+      }
       continue;
     }
     std::string split;
@@ -259,3 +283,5 @@ void Distributed::addCallBack(JobCallBack* cb)
 {
   callbacks_.push_back(cb);
 }
+
+}  // namespace dst

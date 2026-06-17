@@ -7,9 +7,10 @@
 #include <cstdint>
 #include <cstring>
 
+#include "dbCore.h"
 #include "dbDatabase.h"
+#include "dbProperty.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "dbTechLayer.h"
 #include "odb/db.h"
 namespace odb {
@@ -18,6 +19,7 @@ template class dbTable<_dbTechLayerMinStepRule>;
 bool _dbTechLayerMinStepRule::operator==(
     const _dbTechLayerMinStepRule& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (flags_.max_edges_valid != rhs.flags_.max_edges_valid) {
     return false;
   }
@@ -68,6 +70,7 @@ bool _dbTechLayerMinStepRule::operator==(
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbTechLayerMinStepRule::operator<(
@@ -142,14 +145,14 @@ int dbTechLayerMinStepRule::getMinStepLength() const
   return obj->min_step_length_;
 }
 
-void dbTechLayerMinStepRule::setMaxEdges(uint max_edges)
+void dbTechLayerMinStepRule::setMaxEdges(uint32_t max_edges)
 {
   _dbTechLayerMinStepRule* obj = (_dbTechLayerMinStepRule*) this;
 
   obj->max_edges_ = max_edges;
 }
 
-uint dbTechLayerMinStepRule::getMaxEdges() const
+uint32_t dbTechLayerMinStepRule::getMaxEdges() const
 {
   _dbTechLayerMinStepRule* obj = (_dbTechLayerMinStepRule*) this;
   return obj->max_edges_;
@@ -348,26 +351,24 @@ bool dbTechLayerMinStepRule::isNoAdjacentEol() const
   return obj->flags_.no_adjacent_eol;
 }
 
-// User Code Begin dbTechLayerMinStepRulePublicMethods
-dbTechLayerMinStepRule* dbTechLayerMinStepRule::create(dbTechLayer* _layer)
+dbTechLayerMinStepRule* dbTechLayerMinStepRule::create(dbTechLayer* parent)
 {
-  _dbTechLayer* layer = (_dbTechLayer*) _layer;
-  _dbTechLayerMinStepRule* newrule = layer->minstep_rules_tbl_->create();
-  return ((dbTechLayerMinStepRule*) newrule);
+  _dbTechLayer* _parent = (_dbTechLayer*) parent;
+  return (dbTechLayerMinStepRule*) _parent->minstep_rules_tbl_->create();
 }
-
+void dbTechLayerMinStepRule::destroy(dbTechLayerMinStepRule* obj)
+{
+  _dbTechLayer* _parent = (_dbTechLayer*) obj->getImpl()->getOwner();
+  dbProperty::destroyProperties(obj);
+  _parent->minstep_rules_tbl_->destroy((_dbTechLayerMinStepRule*) obj);
+}
+// User Code Begin dbTechLayerMinStepRulePublicMethods
 dbTechLayerMinStepRule* dbTechLayerMinStepRule::getTechLayerMinStepRule(
     dbTechLayer* inly,
-    uint dbid)
+    uint32_t dbid)
 {
   _dbTechLayer* layer = (_dbTechLayer*) inly;
   return (dbTechLayerMinStepRule*) layer->minstep_rules_tbl_->getPtr(dbid);
-}
-void dbTechLayerMinStepRule::destroy(dbTechLayerMinStepRule* rule)
-{
-  _dbTechLayer* layer = (_dbTechLayer*) rule->getImpl()->getOwner();
-  dbProperty::destroyProperties(rule);
-  layer->minstep_rules_tbl_->destroy((_dbTechLayerMinStepRule*) rule);
 }
 // User Code End dbTechLayerMinStepRulePublicMethods
 }  // namespace odb

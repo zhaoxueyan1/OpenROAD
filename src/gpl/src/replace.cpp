@@ -22,7 +22,10 @@
 #include "placerBase.h"
 #include "routeBase.h"
 #include "rsz/Resizer.hh"
+#include "sta/Graph.hh"
+#include "sta/Path.hh"
 #include "sta/StaMain.hh"
+#include "sta/StaState.hh"
 #include "timingBase.h"
 #include "utl/Logger.h"
 #include "utl/validation.h"
@@ -39,6 +42,40 @@ Replace::Replace(odb::dbDatabase* odb,
     : db_(odb), sta_(sta), rs_(resizer), fr_(router), log_(logger)
 {
   graphics_ = std::make_unique<GraphicsNone>();
+
+  // Register "orig_name" report_path field: original pin name before
+  // multi-bit clustering. Reads "orig_name" property off the path
+  // vertex's iterm. Registered at tool init so paths can be reported
+  // even when the design is loaded from an already-clustered .odb
+  // without re-running cluster_flops.
+  if (sta_->findReportPathField(kOrigNameProp) == nullptr) {
+    sta::dbNetwork* network = sta_->getDbNetwork();
+    sta_->makeReportPathField(
+        kOrigNameProp,
+        kOrigNameProp,
+        "Orig Name",
+        36,
+        true,
+        nullptr,
+        [network](const sta::Path* path,
+                  const sta::StaState* sta) -> std::string {
+          if (path == nullptr) {
+            return {};
+          }
+          const sta::Pin* pin = path->vertex(sta)->pin();
+          // staToDb requires all three out-params; only iterm is used.
+          odb::dbITerm* iterm = nullptr;
+          odb::dbBTerm* bterm = nullptr;
+          odb::dbModITerm* moditerm = nullptr;
+          network->staToDb(pin, iterm, bterm, moditerm);
+          if (iterm == nullptr) {
+            return {};
+          }
+          odb::dbStringProperty* prop
+              = odb::dbStringProperty::find(iterm, kOrigNameProp);
+          return prop ? prop->getValue() : std::string{};
+        });
+  }
 }
 
 Replace::~Replace() = default;
@@ -83,35 +120,42 @@ void Replace::checkHasCoreRows()
 void Replace::doIncrementalPlace(const int threads, const PlaceOptions& options)
 {
   checkHasCoreRows();
-  log_->info(GPL, 6, "Execute incremental mode global placement.");
-  if (pbc_ == nullptr) {
-    pbc_ = std::make_shared<PlacerBaseCommon>(db_, options, log_);
+  log_->info(GPL, 83, "Execute incremental mode global placement.");
+  int placed_cnt = 0;
+  int unplaced_cnt = 0;
+  bool is_pbc_new = (pbc_ == nullptr);
 
-    pbVec_.push_back(std::make_shared<PlacerBase>(db_, pbc_, log_));
+  if (is_pbc_new) {
+    pbc_ = std::make_shared<PlacerBaseCommon>(db_, options, log_);
+  }
+
+  // Count placed vs unplaced, and conditionally lock them down
+  auto block = db_->getChip()->getBlock();
+  for (auto inst : block->getInsts()) {
+    auto status = inst->getPlacementStatus();
+    if (status == odb::dbPlacementStatus::PLACED) {
+      if (is_pbc_new) {
+        pbc_->dbToPb(inst)->lock();
+      }
+      ++placed_cnt;
+    } else if (!status.isPlaced()) {
+      ++unplaced_cnt;
+    }
+  }
+
+  if (is_pbc_new) {
+    pbVec_.push_back(std::make_shared<PlacerBase>(db_, pbc_, log_, true));
 
     for (auto pd : db_->getChip()->getBlock()->getRegions()) {
       for (auto group : pd->getGroups()) {
-        pbVec_.push_back(std::make_shared<PlacerBase>(db_, pbc_, log_, group));
+        pbVec_.push_back(
+            std::make_shared<PlacerBase>(db_, pbc_, log_, true, group));
       }
     }
 
     total_placeable_insts_ = 0;
     for (const auto& pb : pbVec_) {
       total_placeable_insts_ += pb->placeInsts().size();
-    }
-  }
-
-  // Lock down already placed objects
-  int placed_cnt = 0;
-  int unplaced_cnt = 0;
-  auto block = db_->getChip()->getBlock();
-  for (auto inst : block->getInsts()) {
-    auto status = inst->getPlacementStatus();
-    if (status == odb::dbPlacementStatus::PLACED) {
-      pbc_->dbToPb(inst)->lock();
-      ++placed_cnt;
-    } else if (!status.isPlaced()) {
-      ++unplaced_cnt;
     }
   }
 
@@ -123,34 +167,37 @@ void Replace::doIncrementalPlace(const int threads, const PlaceOptions& options)
     // which just skips initial placement and runs nesterov.
     log_->info(GPL,
                156,
-               "Identified all instances as placed. Unlocking all instances "
-               "and running nesterov from scratch.");
-    for (auto& pb : pbVec_) {
-      pb->unlockAll();
-    }
-
-    doNesterovPlace(threads, options);
+               "Identified all instances as placed. Skipping incremental mode");
     return;
   }
 
   // Roughly place the unplaced objects (allow more overflow).
   // Limit iterations to prevent objects drifting too far or
   // non-convergence.
-  PlaceOptions rough_options = options;
-  rough_options.overflow = std::max(options.overflow, 0.2f);
-  rough_options.nesterovPlaceMaxIter = 300;
+  PlaceOptions locked_options = options;
+  locked_options.overflow = std::max(options.overflow, 0.2f);
+  locked_options.nesterovPlaceMaxIter = 300;
 
-  doInitialPlace(threads, rough_options);
-  const int iter = doNesterovPlace(threads, rough_options);
+  // Use uniform density for incremental runs to fill gaps effectively
+  if (!options.uniformTargetDensityMode) {
+    locked_options.uniformTargetDensityMode = true;
+  }
 
-  // Finish the overflow resolution from the rough placement
+  doInitialPlace(threads, locked_options);
+  const int iter = doNesterovPlace(threads, locked_options);
+
+  // Finish the overflow resolution from the locked placement
   log_->info(GPL, 133, "Unlocking all instances");
   for (auto& pb : pbVec_) {
     pb->unlockAll();
   }
 
-  if (options.overflow < rough_options.overflow) {
-    doNesterovPlace(threads, options, iter + 1);
+  if (options.overflow < locked_options.overflow) {
+    PlaceOptions final_options = options;
+    final_options.uniformTargetDensityMode = true;
+    final_options.initDensityPenaltyFactor = 1;
+
+    doNesterovPlace(threads, final_options, iter + 1);
   }
 }
 
@@ -163,15 +210,15 @@ void Replace::doPlace(const int threads, const PlaceOptions& options)
 void Replace::doInitialPlace(const int threads, const PlaceOptions& options)
 {
   checkHasCoreRows();
-  log_->info(GPL, 5, "Execute conjugate gradient initial placement.");
   if (pbc_ == nullptr) {
     pbc_ = std::make_shared<PlacerBaseCommon>(db_, options, log_);
 
-    pbVec_.push_back(std::make_shared<PlacerBase>(db_, pbc_, log_));
+    pbVec_.push_back(std::make_shared<PlacerBase>(db_, pbc_, log_, true));
 
     for (auto pd : db_->getChip()->getBlock()->getRegions()) {
       for (auto group : pd->getGroups()) {
-        pbVec_.push_back(std::make_shared<PlacerBase>(db_, pbc_, log_, group));
+        pbVec_.push_back(
+            std::make_shared<PlacerBase>(db_, pbc_, log_, true, group));
       }
     }
 
@@ -215,16 +262,20 @@ void Replace::runMBFF(const int max_sz,
   pntset.Run(max_sz, alpha, beta);
 }
 
-bool Replace::initNesterovPlace(const PlaceOptions& options, const int threads)
+bool Replace::initNesterovPlace(const PlaceOptions& options,
+                                const int threads,
+                                bool check_density)
 {
   if (!pbc_) {
     pbc_ = std::make_shared<PlacerBaseCommon>(db_, options, log_);
 
-    pbVec_.push_back(std::make_shared<PlacerBase>(db_, pbc_, log_));
+    pbVec_.push_back(
+        std::make_shared<PlacerBase>(db_, pbc_, log_, check_density));
 
     for (auto pd : db_->getChip()->getBlock()->getRegions()) {
       for (auto group : pd->getGroups()) {
-        pbVec_.push_back(std::make_shared<PlacerBase>(db_, pbc_, log_, group));
+        pbVec_.push_back(std::make_shared<PlacerBase>(
+            db_, pbc_, log_, check_density, group));
       }
     }
 
@@ -256,9 +307,12 @@ bool Replace::initNesterovPlace(const PlaceOptions& options, const int threads)
   }
 
   if (!tb_) {
-    tb_ = std::make_shared<TimingBase>(nbc_, rs_, log_);
+    tb_ = std::make_shared<TimingBase>(nbc_, fr_, rs_, log_);
     tb_->setTimingNetWeightOverflows(options.timingNetWeightOverflows);
     tb_->setTimingNetWeightMax(options.timingNetWeightMax);
+    tb_->setTimingNetsPercentage(options.timingDrivenNetsPercentage);
+    tb_->setRepairTiming(options.timingDrivenRepairTiming);
+    tb_->setRepairTnsEndPercent(options.timingDrivenRepairTnsEndPercent);
   }
 
   if (!np_) {
@@ -270,6 +324,8 @@ bool Replace::initNesterovPlace(const PlaceOptions& options, const int threads)
     npVars.debug_draw_bins = gui_debug_draw_bins_;
     npVars.debug_inst = gui_debug_inst_;
     npVars.debug_start_iter = gui_debug_start_iter_;
+    npVars.debug_rudy_start = gui_debug_rudy_start_;
+    npVars.debug_rudy_stride = gui_debug_rudy_stride_;
     npVars.debug_generate_images = gui_debug_generate_images_;
     npVars.debug_images_path = gui_debug_images_path_;
 
@@ -298,11 +354,11 @@ int Replace::doNesterovPlace(const int threads,
                              const int start_iter)
 {
   checkHasCoreRows();
-  if (!initNesterovPlace(options, threads)) {
+  if (!initNesterovPlace(options, threads, true)) {
     return 0;
   }
 
-  log_->info(GPL, 7, "Execute nesterov global placement.");
+  log_->info(GPL, 84, "---- Execute Nesterov Global Placement.");
   if (options.timingDrivenMode) {
     rs_->resizeSlackPreamble();
   }
@@ -339,11 +395,11 @@ float Replace::getUniformTargetDensity(const PlaceOptions& options,
   options_no_io.skipIo();  // in case bterms are not placed
 
   float density = 1.0f;
-  if (initNesterovPlace(options_no_io, threads)) {
+  if (initNesterovPlace(options_no_io, threads, false)) {
     density = nbVec_[0]->getUniformTargetDensity();
   }
 
-  std::string _ = log_->redirectStringEnd();
+  log_->redirectStringEnd();  // discard output
   return density;
 }
 
@@ -353,6 +409,8 @@ void Replace::setDebug(const int pause_iterations,
                        const bool initial,
                        odb::dbInst* inst,
                        const int start_iter,
+                       const int start_rudy,
+                       const int rudy_stride,
                        const bool generate_images,
                        const std::string& images_path)
 {
@@ -363,6 +421,8 @@ void Replace::setDebug(const int pause_iterations,
   gui_debug_initial_ = initial;
   gui_debug_inst_ = inst;
   gui_debug_start_iter_ = start_iter;
+  gui_debug_rudy_start_ = start_rudy;
+  gui_debug_rudy_stride_ = rudy_stride;
   gui_debug_generate_images_ = generate_images;
   gui_debug_images_path_ = images_path;
 }
@@ -370,10 +430,57 @@ void Replace::setDebug(const int pause_iterations,
 void PlaceOptions::validate(utl::Logger* logger)
 {
   utl::Validator val(logger, GPL);
-  val.check_non_negative("initialPlaceMaxIter", initialPlaceMaxIter, 326);
-  val.check_positive("initialPlaceMaxFanout", initialPlaceMaxFanout, 327);
-  val.check_positive("initialPlaceMaxFanout", initialPlaceMaxFanout, 327);
-  val.check_range("Target density", density, 0.0f, 1.0f, 328);
+
+  val.check_positive("bin_grid_count", binGridCntX, 400);
+  val.check_range("density", density, 0.0f, 1.0f, 401);
+  val.check_positive("init_density_penalty", initDensityPenaltyFactor, 402);
+  val.check_positive("init_wirelength_coef", initWireLengthCoef, 403);
+  val.check_positive("min_phi_coef", minPhiCoef, 404);
+  val.check_positive("max_phi_coef", maxPhiCoef, 405);
+  val.check_range("overflow", overflow, 0.0f, 1.0f, 406);
+  val.check_non_negative("pad_left", padLeft, 407);
+  val.check_non_negative("pad_right", padRight, 408);
+  val.check_positive("reference_hpwl", referenceHpwl, 409);
+
+  val.check_non_negative("initial_place_max_iter", initialPlaceMaxIter, 410);
+  val.check_positive("initial_place_max_fanout", initialPlaceMaxFanout, 411);
+
+  val.check_positive(
+      "routability_target_rc_metric", routabilityTargetRcMetric, 412);
+  val.check_range("routability_snapshot_overflow",
+                  routabilitySnapshotOverflow,
+                  0.0f,
+                  1.0f,
+                  413);
+  val.check_range(
+      "routability_check_overflow", routabilityCheckOverflow, 0.0f, 1.0f, 414);
+  val.check_range(
+      "routability_max_density", routabilityMaxDensity, 0.0f, 1.0f, 415);
+  val.check_positive(
+      "routability_inflation_ratio_coef", routabilityInflationRatioCoef, 416);
+  val.check_positive(
+      "routability_max_inflation_ratio", routabilityMaxInflationRatio, 417);
+  val.check_non_negative(
+      "routability_rc_coefficients k1", routabilityRcK1, 418);
+  val.check_non_negative(
+      "routability_rc_coefficients k2", routabilityRcK2, 419);
+  val.check_non_negative(
+      "routability_rc_coefficients k3", routabilityRcK3, 420);
+  val.check_non_negative(
+      "routability_rc_coefficients k4", routabilityRcK4, 421);
+
+  for (const auto& timingNetOverflow : timingNetWeightOverflows) {
+    val.check_positive(
+        "timing_driven_net_reweight_overflow", timingNetOverflow, 422);
+  }
+  val.check_positive("timing_driven_net_weight_max", timingNetWeightMax, 423);
+  val.check_range("timing_driven_nets_percentage",
+                  timingDrivenNetsPercentage,
+                  0.0f,
+                  100.0f,
+                  424);
+  val.check_range(
+      "keep_resize_below_overflow", keepResizeBelowOverflow, 0.0f, 1.0f, 425);
 }
 
 void PlaceOptions::skipIo()

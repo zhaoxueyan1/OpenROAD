@@ -13,23 +13,23 @@
   "fields": [
     {
       "name": "bits_",
-      "type": "uint",
+      "type": "uint32_t",
       "default": "0",
       "flags": ["private"]
     },
     {
       "name": "access_pins_",
-      "type": "std::pair<dbId<dbScanPin>, dbId<dbScanPin>>",
+      "type": "std::pair<dbId<_dbScanPin>, dbId<_dbScanPin>>",
       "flags": ["private", "no-template"]
     },
     {
       "name": "scan_enable_",
-      "type": "dbId<dbScanPin>",
+      "type": "dbId<_dbScanPin>",
       "flags": ["private"]
     },
     {
       "name": "inst_",
-      "type": "dbId<dbInst>",
+      "type": "dbId<_dbInst>",
       "flags": ["private"]
     },
     {
@@ -39,7 +39,7 @@
     },
     {
       "name": "clock_edge_",
-      "type": "uint",
+      "type": "uint32_t",
       "default": "0",
       "flags": ["private"]
     },
@@ -47,13 +47,13 @@
       "name": "next_list_scan_inst_",
       "type": "dbId<_dbScanInst>",
       "flags": ["private"],
-      "schema":"db_schema_block_owns_scan_insts"
+      "schema":"kSchemaBlockOwnsScanInsts"
     },
     {
       "name": "prev_list_scan_inst_",
       "type": "dbId<_dbScanInst>",
       "flags": ["private"],
-      "schema":"db_schema_block_owns_scan_insts"
+      "schema":"kSchemaBlockOwnsScanInsts"
     }
   ],
   "enums": [

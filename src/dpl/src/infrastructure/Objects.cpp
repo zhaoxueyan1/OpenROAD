@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2024-2025, The OpenROAD Authors
 
-#include "Objects.h"
+#include "infrastructure/Objects.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -549,7 +549,7 @@ void Edge::addPin(Pin* pin)
 }
 void Edge::removePin(Pin* pin)
 {
-  pins_.erase(std::remove(pins_.begin(), pins_.end(), pin), pins_.end());
+  std::erase(pins_, pin);
 }
 uint64_t Edge::hpwl() const
 {

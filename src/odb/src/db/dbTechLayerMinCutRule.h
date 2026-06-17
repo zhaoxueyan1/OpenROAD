@@ -4,11 +4,11 @@
 // Generator Code Begin Header
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <string>
 
 #include "dbCore.h"
-#include "odb/odb.h"
 
 namespace odb {
 class dbIStream;
@@ -26,7 +26,7 @@ struct dbTechLayerMinCutRuleFlags
   bool area_within_dist_valid : 1;
   bool same_metal_overlap : 1;
   bool fully_enclosed : 1;
-  uint spare_bits : 23;
+  uint32_t spare_bits : 23;
 };
 
 class _dbTechLayerMinCutRule : public _dbObject
@@ -49,7 +49,7 @@ class _dbTechLayerMinCutRule : public _dbObject
   int within_cut_dist;
   int length_;
   int length_within_dist_;
-  int area_;
+  int64_t area_;
   int area_within_dist_;
 };
 dbIStream& operator>>(dbIStream& stream, _dbTechLayerMinCutRule& obj);

@@ -20,6 +20,7 @@
 #include "boost/polygon/polygon.hpp"
 #include "connection.h"
 #include "node.h"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbShape.h"
 #include "odb/dbTransform.h"
@@ -76,6 +77,16 @@ odb::dbTech* IRNetwork::getTech() const
   return getBlock()->getTech();
 }
 
+bool IRNetwork::hasNodes() const
+{
+  for (const auto& [layer, nodes] : nodes_) {
+    if (!nodes.empty()) {
+      return true;
+    }
+  }
+  return !iterm_nodes_.empty() || !bpin_nodes_.empty();
+}
+
 void IRNetwork::reset()
 {
   shapes_.clear();
@@ -97,6 +108,12 @@ void IRNetwork::construct()
 
   generateRoutingLayerShapesAndNodes();
   generateCutLayerNodes();
+
+  if (!hasNodes()) {
+    logger_->warn(utl::PSM, 86, "Net {} is empty.", net_->getName());
+    return;
+  }
+
   generateTopLayerFillerNodes();
   sortNodes();
   if (logger_->debugCheck(utl::PSM, "dump", 2)) {
@@ -232,7 +249,8 @@ IRNetwork::generatePolygonsFromITerms(std::vector<TerminalNode*>& terminals)
   const utl::DebugScopedTimer timer(
       logger_, utl::PSM, "timer", 1, "Generate shapes from ITerms: {}");
 
-  auto* base_layer = getTech()->findRoutingLayer(1);
+  odb::dbTechLayer* front_base = getTech()->firstFrontsideRoutingLayer();
+  odb::dbTechLayer* back_base = getTech()->firstBacksideRoutingLayer();
 
   LayerMap<Polygon90Set> shapes_by_layer;
   bool floorplan_asseted = false;
@@ -251,10 +269,57 @@ IRNetwork::generatePolygonsFromITerms(std::vector<TerminalNode*>& terminals)
       continue;
     }
 
+    // First pass: figure out which side(s) this iterm has pin geometry on
+    // so we can pick the iterm base node's layer accordingly. Only the
+    // layer matters here, so skip the polygon/transform work.
+    bool has_front_pin = false;
+    bool has_back_pin = false;
+    for (auto* mpin : iterm->getMTerm()->getMPins()) {
+      for (auto* geom : mpin->getGeometry()) {
+        odb::dbTechLayer* layer = geom->getTechLayer();
+        if (layer == nullptr) {
+          continue;
+        }
+        if (layer->isBackside()) {
+          has_back_pin = true;
+        } else {
+          has_front_pin = true;
+        }
+      }
+    }
+
+    // Place the iterm base node on the cell's "primary" side. A
+    // backside-only cell's base belongs on the backside grid so its
+    // pin connects to real shapes; otherwise default to the front side.
+    odb::dbTechLayer* base_layer = front_base;
+    if (!has_front_pin && has_back_pin && back_base != nullptr) {
+      base_layer = back_base;
+    }
+    const bool primary_is_back = base_layer == back_base;
+    const bool is_bridge = inst->getMaster()->isBacksideBridge();
+
     int x, y;
     iterm->getAvgXY(&x, &y);
     auto base_node
         = std::make_unique<ITermNode>(iterm, odb::Point(x, y), base_layer);
+
+    auto link_terminal = [&](Node* term, odb::dbTechLayer* term_layer) {
+      const bool term_is_back = term_layer->isBackside();
+      if (term_is_back == primary_is_back) {
+        // Same-side terminal: ordinary virtual edge into the base node.
+        connections_.push_back(
+            std::make_unique<TermConnection>(base_node.get(), term));
+      } else if (is_bridge) {
+        // Bridge cell: explicit virtual edge across the front/back boundary.
+        connections_.push_back(
+            std::make_unique<BridgeConnection>(base_node.get(), term));
+      }
+      // Non-bridge cross-side terminals are intentionally left
+      // unlinked from the iterm base node. They still join the
+      // local layer graph through cleanupOverlappingNodes(); if
+      // they end up unreachable, that surfaces as an open net,
+      // which is the correct outcome for a malformed PG.
+    };
 
     bool has_routing_term = false;
     for (auto* mpin : iterm->getMTerm()->getMPins()) {
@@ -279,8 +344,7 @@ IRNetwork::generatePolygonsFromITerms(std::vector<TerminalNode*>& terminals)
               auto center = std::make_unique<TerminalNode>(pin_shape, layer);
               terminals.push_back(center.get());
 
-              connections_.push_back(std::make_unique<TermConnection>(
-                  base_node.get(), center.get()));
+              link_terminal(center.get(), layer);
 
               nodes_[layer].push_back(std::move(center));
             }
@@ -297,8 +361,7 @@ IRNetwork::generatePolygonsFromITerms(std::vector<TerminalNode*>& terminals)
           auto center = std::make_unique<TerminalNode>(pin_shape, layer);
           terminals.push_back(center.get());
 
-          connections_.push_back(
-              std::make_unique<TermConnection>(base_node.get(), center.get()));
+          link_terminal(center.get(), layer);
 
           nodes_[layer].push_back(std::move(center));
         }
@@ -554,18 +617,14 @@ void IRNetwork::generateCutNodesForSBox(
     odb::dbSBox* box,
     bool single_via,
     std::vector<std::unique_ptr<Node>>& new_nodes,
-    std::vector<std::unique_ptr<Connection>>& new_connections)
+    Connections& new_connections)
 {
   // handle as via
   std::vector<odb::dbShape> via_shapes;
   box->getViaBoxes(via_shapes);
-  via_shapes.erase(
-      std::remove_if(via_shapes.begin(),
-                     via_shapes.end(),
-                     [](const auto& shape) {
-                       return shape.getTechLayer()->getRoutingLevel() != 0;
-                     }),
-      via_shapes.end());
+  std::erase_if(via_shapes, [](const auto& shape) {
+    return shape.getTechLayer()->getRoutingLevel() != 0;
+  });
 
   odb::dbTechLayer* bottom = nullptr;
   odb::dbTechLayer* top = nullptr;
@@ -581,7 +640,8 @@ void IRNetwork::generateCutNodesForSBox(
   }
 
   const int min_pitch = std::min(min_node_pitch_[bottom], min_node_pitch_[top]);
-  const bool use_single_via = box->getBox().maxDXDY() < min_pitch;
+  const bool use_single_via
+      = floorplanning_ || box->getBox().maxDXDY() < min_pitch;
 
   if (single_via || use_single_via) {
     const odb::Point via_center = box->getViaXY();
@@ -654,7 +714,7 @@ void IRNetwork::generateCutLayerNodes()
   }
 
   std::vector<std::unique_ptr<Node>> loop_via_nodes;
-  std::vector<std::unique_ptr<Connection>> loop_via_connections;
+  Connections loop_via_connections;
   for (odb::dbSBox* box : boxes) {
     generateCutNodesForSBox(
         box, use_single_via, loop_via_nodes, loop_via_connections);
@@ -682,6 +742,11 @@ void IRNetwork::generateCutLayerNodes()
 
 void IRNetwork::generateTopLayerFillerNodes()
 {
+  if (floorplanning_) {
+    // these are only needed if running for IR drop.
+    return;
+  }
+
   const utl::DebugScopedTimer timer(
       logger_, utl::PSM, "timer", 1, "Generate top layer filler nodes: {}");
   // needed in case of vsrc
@@ -707,9 +772,9 @@ std::set<Node*> IRNetwork::getSharedShapeNodes() const
     const auto layer_shapes = getShapeTree(layer);
 
     for (const auto& node : nodes) {
-      const Point pt(node->getPoint().x(), node->getPoint().y());
       const auto shapes = std::distance(
-          layer_shapes.qbegin(boost::geometry::index::intersects(pt)),
+          layer_shapes.qbegin(
+              boost::geometry::index::intersects(node->getPoint())),
           layer_shapes.qend());
       if (shapes > 1) {
         shared_nodes.insert(node.get());
@@ -740,7 +805,9 @@ void IRNetwork::mergeNodes(NodePtrMap<Connection>& connection_map)
 
     const auto node_trees = getNodeTree(layer);
     for (const auto& shape : shapes) {
-      const int min_distance = min_node_pitch_[shape->getLayer()];
+      const int min_distance = floorplanning_
+                                   ? (2 * shape->getShape().maxDXDY())
+                                   : min_node_pitch_[shape->getLayer()];
       const auto shape_remove = shape->cleanupNodes(
           min_distance,
           node_trees,
@@ -787,10 +854,9 @@ void IRNetwork::sortShapes()
   for (auto& [layer, shapes] : shapes_) {
     shapes.shrink_to_fit();
 
-    std::stable_sort(
-        shapes.begin(), shapes.end(), [](const auto& lhs, const auto& rhs) {
-          return lhs->getShape() < rhs->getShape();
-        });
+    std::ranges::stable_sort(shapes, [](const auto& lhs, const auto& rhs) {
+      return lhs->getShape() < rhs->getShape();
+    });
   }
 }
 
@@ -800,10 +866,9 @@ void IRNetwork::sortNodes()
       logger_, utl::PSM, "timer", 1, "Sorting nodes: {}");
 
   for (auto& [layer, nodes] : nodes_) {
-    std::stable_sort(
-        nodes.begin(), nodes.end(), [](const auto& lhs, const auto& rhs) {
-          return lhs->compare(rhs);
-        });
+    std::ranges::stable_sort(nodes, [](const auto& lhs, const auto& rhs) {
+      return lhs->compare(rhs) < 0;
+    });
   }
 }
 
@@ -811,10 +876,9 @@ void IRNetwork::sortConnections()
 {
   const utl::DebugScopedTimer timer(
       logger_, utl::PSM, "timer", 1, "Sorting connections: {}");
-  std::stable_sort(
-      connections_.begin(),
-      connections_.end(),
-      [](const auto& lhs, const auto& rhs) { return lhs->compare(rhs); });
+  std::ranges::stable_sort(connections_, [](const auto& lhs, const auto& rhs) {
+    return lhs->compare(rhs);
+  });
 }
 
 int IRNetwork::getEffectiveNumberOfCuts(const odb::dbShape& shape) const
@@ -904,13 +968,6 @@ void IRNetwork::cleanupNodes()
 
   auto node_connection_map = getConnectionMap();
 
-  std::map<Node*, bool> marked_deleted;
-  for (const auto& [layer, nodes] : nodes_) {
-    for (const auto& node : nodes) {
-      marked_deleted[node.get()] = false;
-    }
-  }
-
   cleanupOverlappingNodes(node_connection_map);
 
   mergeNodes(node_connection_map);
@@ -955,13 +1012,9 @@ void IRNetwork::removeNodes(std::set<Node*>& removes,
   }
   nodes.clear();
 
-  cleanup.erase(std::remove_if(cleanup.begin(),
-                               cleanup.end(),
-                               [&](const auto& other) {
-                                 return removes.find(other.get())
-                                        != removes.end();
-                               }),
-                cleanup.end());
+  std::erase_if(cleanup, [&](const auto& other) {
+    return removes.find(other.get()) != removes.end();
+  });
 
   for (auto& node : cleanup) {
     nodes.emplace_back(std::move(node));
@@ -1000,13 +1053,9 @@ void IRNetwork::removeConnections(std::set<Connection*>& removes)
   }
   connections_.clear();
 
-  cleanup.erase(std::remove_if(cleanup.begin(),
-                               cleanup.end(),
-                               [&](const auto& other) {
-                                 return removes.find(other.get())
-                                        != removes.end();
-                               }),
-                cleanup.end());
+  std::erase_if(cleanup, [&](const auto& other) {
+    return removes.find(other.get()) != removes.end();
+  });
 
   for (auto& conn : cleanup) {
     conn->ensureNodeOrder();
@@ -1125,9 +1174,9 @@ odb::dbTechLayer* IRNetwork::getTopLayer() const
   return nodes_.rbegin()->first;
 }
 
-std::set<odb::dbTechLayer*> IRNetwork::getLayers() const
+odb::PtrSet<odb::dbTechLayer> IRNetwork::getLayers() const
 {
-  std::set<odb::dbTechLayer*> layers;
+  odb::PtrSet<odb::dbTechLayer> layers;
   for (const auto& [layer, nodes] : nodes_) {
     layers.insert(layer);
   }
@@ -1149,12 +1198,13 @@ IRNetwork::NodeTree IRNetwork::getTopLayerNodeTree() const
   return getNodeTree(getTopLayer());
 }
 
-std::map<odb::dbInst*, Node::NodeSet> IRNetwork::getInstanceNodeMapping() const
+odb::PtrMap<odb::dbInst, Node::NodeSet> IRNetwork::getInstanceNodeMapping()
+    const
 {
   const utl::DebugScopedTimer timer(
       logger_, utl::PSM, "timer", 1, "Generate instance node map: {}");
 
-  std::map<odb::dbInst*, Node::NodeSet> inst_nodes;
+  odb::PtrMap<odb::dbInst, Node::NodeSet> inst_nodes;
   for (const auto& node : iterm_nodes_) {
     odb::dbITerm* iterm = node->getITerm();
     odb::dbInst* inst = iterm->getInst();
@@ -1235,24 +1285,23 @@ void IRNetwork::dumpNodes(const std::string& name) const
 bool IRNetwork::belongsTo(Node* node) const
 {
   for (const auto& [layer, nodes] : nodes_) {
-    if (std::find_if(nodes.begin(),
-                     nodes.end(),
-                     [node](const auto& other) { return other.get() == node; })
+    if (std::ranges::find_if(
+            nodes, [node](const auto& other) { return other.get() == node; })
         != nodes.end()) {
       return true;
     }
   }
 
-  if (std::find_if(iterm_nodes_.begin(),
-                   iterm_nodes_.end(),
-                   [node](const auto& other) { return other.get() == node; })
+  if (std::ranges::find_if(
+          iterm_nodes_,
+          [node](const auto& other) { return other.get() == node; })
       != iterm_nodes_.end()) {
     return true;
   }
 
-  if (std::find_if(bpin_nodes_.begin(),
-                   bpin_nodes_.end(),
-                   [node](const auto& other) { return other.get() == node; })
+  if (std::ranges::find_if(
+          bpin_nodes_,
+          [node](const auto& other) { return other.get() == node; })
       != bpin_nodes_.end()) {
     return true;
   }
@@ -1262,11 +1311,10 @@ bool IRNetwork::belongsTo(Node* node) const
 
 bool IRNetwork::belongsTo(Connection* connection) const
 {
-  return std::find_if(connections_.begin(),
-                      connections_.end(),
-                      [connection](const auto& other) {
-                        return other.get() == connection;
-                      })
+  return std::ranges::find_if(connections_,
+                              [connection](const auto& other) {
+                                return other.get() == connection;
+                              })
          != connections_.end();
 }
 
@@ -1290,7 +1338,7 @@ Node::NodeSet IRNetwork::getBPinShapeNodes() const
     return {};
   }
 
-  std::map<odb::dbTechLayer*, std::set<odb::Rect>> nodes;
+  odb::PtrMap<odb::dbTechLayer, std::set<odb::Rect>> nodes;
   for (const auto& bpin : bpin_nodes_) {
     if (bpin->shouldConnect()) {
       nodes[bpin->getLayer()].insert(bpin->getShape());
@@ -1312,6 +1360,21 @@ Node::NodeSet IRNetwork::getBPinShapeNodes() const
   }
 
   return pin_nodes;
+}
+
+void IRNetwork::clearVisitedNodes()
+{
+  for (const auto& [layer, nodes] : nodes_) {
+    for (const auto& node : nodes) {
+      node->setVisited(false);
+    }
+  }
+  for (const auto& node : iterm_nodes_) {
+    node->setVisited(false);
+  }
+  for (const auto& node : bpin_nodes_) {
+    node->setVisited(false);
+  }
 }
 
 }  // namespace psm

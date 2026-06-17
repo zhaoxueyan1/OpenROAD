@@ -5,6 +5,7 @@
 %{
 #include "pdn/PdnGen.hh"
 #include "odb/db.h"
+#include "odb/PtrSetMap.h"
 #include <array>
 #include <string>
 #include <memory>
@@ -12,6 +13,8 @@
 
 using namespace pdn;
 %}
+
+%include "odb/PtrSetMap.h"
 
 %include <std_vector.i>
 %include <std_array.i>
@@ -29,17 +32,23 @@ using namespace pdn;
 // before these definitions
 namespace std {
   %template() std::pair<int, bool>;
+#ifndef SWIG_VECTOR_INT
+#define SWIG_VECTOR_INT
   %template(split_cuts_stuff) std::vector<int>;
+#endif
   %template(stuff)        std::array<int, 4>;
-  %template(split_map)    std::map<odb::dbTechLayer *, std::pair<int, bool>>;
+  %template(split_map)    std::map<odb::dbTechLayer *, std::pair<int, bool>, odb::ODBPtrLess>;
   %template(grid_list)    std::vector<pdn::Grid *>;
   %template(domain_list)  std::vector<pdn::VoltageDomain *>;
   %template(net_list)     std::vector<odb::dbNet *>;
   %template(viagen_list)  std::vector<odb::dbTechViaGenerateRule *>;
   %template(techvia_list) std::vector<odb::dbTechVia *>;
   %template(layer_list)   std::vector<odb::dbTechLayer *>;
-  %template(net_set)      std::set<odb::dbNet*>;
+  %template(net_set)      std::set<odb::dbNet*, odb::ODBPtrLess>;
 }
+
+%apply const std::map<odb::dbTechLayer*, std::pair<int, bool>, odb::ODBPtrLess>& { const odb::PtrMap<odb::dbTechLayer, std::pair<int, bool>>& };
+%apply const std::set<odb::dbNet*, odb::ODBPtrLess>& { const odb::PtrSet<odb::dbNet>& };
 
 %include "../../Exception-py.i"
 %include "pdn/PdnGen.hh"

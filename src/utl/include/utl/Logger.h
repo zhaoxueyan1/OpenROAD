@@ -25,12 +25,18 @@
 #include <utility>
 #include <vector>
 
+#include "spdlog/common.h"
 #include "spdlog/details/os.h"
 #include "spdlog/fmt/fmt.h"
 #include "spdlog/fmt/ostr.h"
+#include "spdlog/logger.h"
 #include "utl/Metrics.h"
 #if FMT_VERSION >= 110000
+#ifdef SPDLOG_FMT_EXTERNAL
+#include "fmt/ranges.h"
+#else
 #include "spdlog/fmt/ranges.h"
+#endif
 #endif
 
 #include "spdlog/spdlog.h"
@@ -46,6 +52,7 @@ class Progress;
 #define FOREACH_TOOL(X) \
   X(ANT)                \
   X(CGT)                \
+  X(CHK)                \
   X(CTS)                \
   X(CUT)                \
   X(DFT)                \
@@ -74,11 +81,13 @@ class Progress;
   X(RSZ)                \
   X(STA)                \
   X(STT)                \
+  X(SYN)                \
   X(TAP)                \
   X(TST)                \
   X(UKN)                \
   X(UPF)                \
-  X(UTL)
+  X(UTL)                \
+  X(WEB)
 
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,
@@ -167,10 +176,8 @@ class Logger
   {
     error_count_++;
     log(tool, spdlog::level::err, id, message, args...);
-    char tool_id[32];
-    sprintf(tool_id, "%s-%04d", tool_names_[tool], id);
     // Exception should be caught by swig error handler.
-    throw std::runtime_error(tool_id);
+    throw std::runtime_error(fmt::format("{}-{:04}", tool_names_[tool], id));
   }
 
   template <typename... Args>
@@ -222,16 +229,19 @@ class Logger
     return (it != groups.end() && level <= it->second);
   }
 
+  int getWarningCount() const { return warning_count_; }
+
   void startPrometheusEndpoint(uint16_t port);
   std::shared_ptr<PrometheusRegistry> getRegistry();
   bool isPrometheusServerReadyToServe();
+  bool hasPrometheusServerStartupFailed();
   uint16_t getPrometheusPort();
 
   void suppressMessage(ToolId tool, int id);
   void unsuppressMessage(ToolId tool, int id);
 
   void addSink(spdlog::sink_ptr sink);
-  void removeSink(spdlog::sink_ptr sink);
+  void removeSink(const spdlog::sink_ptr& sink);
   void addMetricsSink(const char* metrics_filename);
   void removeMetricsSink(const char* metrics_filename);
 
@@ -263,6 +273,8 @@ class Logger
   // Progress interface
   Progress* progress() const { return progress_.get(); }
   std::unique_ptr<Progress> swapProgress(Progress* progress);
+
+  void finalizeMetrics();
 
  private:
   std::vector<std::string> metrics_sinks_;
@@ -319,7 +331,6 @@ class Logger
   }
 
   void flushMetrics();
-  void finalizeMetrics();
   // Add new metrics for non-zero warnings. It also counts the number of
   // unique warning types.
   void addWarningMetrics();
@@ -368,6 +379,7 @@ class Logger
   std::array<MessageLevel, ToolId::SIZE> message_levels_;
   std::array<DebugGroups, ToolId::SIZE> debug_group_level_;
   bool debug_on_{false};
+  bool metrics_finalized_{false};
   std::atomic_int warning_count_{0};
   std::atomic_int error_count_{0};
   static constexpr const char* level_names[]

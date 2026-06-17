@@ -10,7 +10,6 @@
 #include "odb/dbId.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
-#include "odb/odb.h"
 
 namespace odb {
 
@@ -21,6 +20,8 @@ class _dbBlock;
 class _dbBPin;
 class _dbITerm;
 class _dbDatabase;
+class _dbChipRegion;
+class _dbChipBump;
 class dbIStream;
 class dbOStream;
 
@@ -28,12 +29,12 @@ struct _dbBTermFlags
 {
   dbIoType::Value io_type : 4;
   dbSigType::Value sig_type : 4;
-  uint orient : 4;  // This field is not used anymore. Replaced by bpin...
-  uint status : 4;  // This field is not used anymore. Replaced by bpin...
-  uint spef : 1;
-  uint special : 1;
-  uint mark : 1;
-  uint spare_bits : 13;
+  uint32_t orient : 4;  // This field is not used anymore. Replaced by bpin...
+  uint32_t status : 4;  // This field is not used anymore. Replaced by bpin...
+  uint32_t spef : 1;
+  uint32_t special : 1;
+  uint32_t mark : 1;
+  uint32_t spare_bits : 13;
 };
 
 //
@@ -64,7 +65,7 @@ class _dbBTerm : public _dbObject
 
   // PERSISTANT-MEMBERS
   _dbBTermFlags flags_;
-  uint ext_id_;
+  uint32_t ext_id_;
   char* name_;
   dbId<_dbBTerm> next_entry_;
   dbId<_dbNet> net_;
@@ -82,6 +83,8 @@ class _dbBTerm : public _dbObject
   Rect constraint_region_;
   dbId<_dbBTerm> mirrored_bterm_;
   bool is_mirrored_;
+  dbId<_dbChipRegion> chip_region_;
+  dbId<_dbChipBump> chip_bump_;
 };
 
 dbOStream& operator<<(dbOStream& stream, const _dbBTerm& bterm);

@@ -8,6 +8,7 @@
 
 #include "grid_component.h"
 #include "odb/geom.h"
+#include "shape.h"
 
 namespace odb {
 class dbTechLayer;
@@ -26,7 +27,7 @@ class Rings : public GridComponent
     int spacing = 0;
   };
 
-  Rings(Grid* grid, const std::array<Layer, 2>& layers);
+  Rings(Grid* grid, const Layer& layer0, const Layer& layer1);
 
   void setOffset(const std::array<int, 4>& offset);
   const std::array<int, 4>& getOffset() const { return offset_; }
@@ -45,18 +46,19 @@ class Rings : public GridComponent
   void getTotalWidth(int& hor, int& ver) const;
 
   void report() const override;
-  Type type() const override { return GridComponent::Ring; }
+  Type type() const override { return GridComponent::kRing; }
 
   void checkLayerSpecifications() const override;
 
  protected:
   bool areIntersectionsAllowed() const override
   {
-    return layers_[0].layer == layers_[1].layer;
+    return layer0_.layer == layer1_.layer;
   }
 
  private:
-  std::array<Layer, 2> layers_;
+  Layer layer0_;
+  Layer layer1_;
   std::array<int, 4> offset_ = {0, 0, 0, 0};
   bool extend_to_boundary_ = false;
   bool allow_outside_die_ = false;

@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <string.h>
+#include <string.h>  // NOLINT(modernize-deprecated-headers): for strdup()
 
 #include <array>
 #include <cstdint>
@@ -21,7 +21,6 @@
 
 #include "boost/container/flat_map.hpp"
 #include "odb/dbObject.h"
-#include "odb/odb.h"
 
 namespace odb {
 
@@ -40,7 +39,7 @@ class dbOStream
 
   dbOStream& operator<<(bool c)
   {
-    unsigned char b = (c == true ? 1 : 0);
+    unsigned char b = (c ? 1 : 0);
     return *this << b;
   }
 
@@ -69,6 +68,12 @@ class dbOStream
   }
 
   dbOStream& operator<<(int c)
+  {
+    writeValueAsBytes(c);
+    return *this;
+  }
+
+  dbOStream& operator<<(int64_t c)
   {
     writeValueAsBytes(c);
     return *this;
@@ -148,7 +153,7 @@ class dbOStream
   template <class T1, class T2>
   dbOStream& operator<<(const std::map<T1, T2>& m)
   {
-    uint sz = m.size();
+    uint32_t sz = m.size();
     *this << sz;
     for (auto const& [key, val] : m) {
       *this << key;
@@ -160,7 +165,7 @@ class dbOStream
   template <class T1, class T2>
   dbOStream& operator<<(const boost::container::flat_map<T1, T2>& m)
   {
-    uint sz = m.size();
+    uint32_t sz = m.size();
     *this << sz;
     for (auto const& [key, val] : m) {
       *this << key;
@@ -172,7 +177,7 @@ class dbOStream
   template <class T1, class T2>
   dbOStream& operator<<(const std::unordered_map<T1, T2>& m)
   {
-    uint sz = m.size();
+    uint32_t sz = m.size();
     *this << sz;
     for (auto const& [key, val] : m) {
       *this << key;
@@ -184,7 +189,7 @@ class dbOStream
   template <class T1>
   dbOStream& operator<<(const std::vector<T1>& m)
   {
-    uint sz = m.size();
+    uint32_t sz = m.size();
     *this << sz;
     for (auto val : m) {
       *this << val;
@@ -283,7 +288,7 @@ class dbIStream
   {
     unsigned char b;
     *this >> b;
-    c = (b == 1 ? true : false);
+    c = (b == 1);
     return *this;
   }
 
@@ -312,6 +317,12 @@ class dbIStream
   }
 
   dbIStream& operator>>(int& c)
+  {
+    f_.read(reinterpret_cast<char*>(&c), sizeof(c));
+    return *this;
+  }
+
+  dbIStream& operator>>(int64_t& c)
   {
     f_.read(reinterpret_cast<char*>(&c), sizeof(c));
     return *this;
@@ -378,10 +389,10 @@ class dbIStream
   template <class T1, class T2>
   dbIStream& operator>>(std::map<T1, T2>& m)
   {
-    uint sz;
+    uint32_t sz;
     *this >> sz;
     m.clear();
-    for (uint i = 0; i < sz; i++) {
+    for (uint32_t i = 0; i < sz; i++) {
       T1 key;
       T2 val;
       *this >> key;
@@ -393,10 +404,10 @@ class dbIStream
   template <class T1, class T2>
   dbIStream& operator>>(boost::container::flat_map<T1, T2>& m)
   {
-    uint sz;
+    uint32_t sz;
     *this >> sz;
     m.clear();
-    for (uint i = 0; i < sz; i++) {
+    for (uint32_t i = 0; i < sz; i++) {
       T1 key;
       T2 val;
       *this >> key;
@@ -408,10 +419,10 @@ class dbIStream
   template <class T1, class T2>
   dbIStream& operator>>(std::unordered_map<T1, T2>& m)
   {
-    uint sz;
+    uint32_t sz;
     *this >> sz;
     m.clear();
-    for (uint i = 0; i < sz; i++) {
+    for (uint32_t i = 0; i < sz; i++) {
       T1 key;
       T2 val;
       *this >> key;
@@ -424,11 +435,11 @@ class dbIStream
   template <class T1>
   dbIStream& operator>>(std::vector<T1>& m)
   {
-    uint sz;
+    uint32_t sz;
     *this >> sz;
     m.clear();
     m.reserve(sz);
-    for (uint i = 0; i < sz; i++) {
+    for (uint32_t i = 0; i < sz; i++) {
       T1 val;
       *this >> val;
       m.push_back(std::move(val));

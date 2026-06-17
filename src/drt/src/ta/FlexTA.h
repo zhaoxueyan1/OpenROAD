@@ -11,13 +11,15 @@
 
 #include "db/obj/frBlockObject.h"
 #include "db/obj/frVia.h"
+#include "db/taObj/taFig.h"
 #include "db/taObj/taPin.h"
+#include "db/tech/frConstraint.h"
 #include "db/tech/frTechObject.h"
 #include "db/tech/frViaDef.h"
+#include "drt-global.h"
 #include "frBaseTypes.h"
 #include "frDesign.h"
 #include "frRegionQuery.h"
-#include "global.h"
 #include "utl/Logger.h"
 
 namespace drt {
@@ -116,12 +118,7 @@ class FlexTAWorker
         router_cfg_(router_cfg),
         save_updates_(save_updates),
         dir_(odb::dbTechLayerDir::NONE),
-        taIter_(0),
-        rq_(this),
-        numAssigned_(0),
-        totCost_(0),
-        maxRetry_(1),
-        hardIroutesMode_(false)
+        rq_(this)
   {
   }
   // setters
@@ -188,6 +185,8 @@ class FlexTAWorker
   int getNumAssigned() const { return numAssigned_; }
   // others
   int main_mt();
+  // end
+  void end();
 
  private:
   frDesign* design_;
@@ -197,7 +196,7 @@ class FlexTAWorker
   odb::Rect routeBox_;
   odb::Rect extBox_;
   odb::dbTechLayerDir dir_;
-  int taIter_;
+  int taIter_{0};
   FlexTAWorkerRegionQuery rq_;
 
   std::vector<std::unique_ptr<taPin>> iroutes_;  // unsorted iroutes
@@ -205,10 +204,10 @@ class FlexTAWorker
   std::vector<std::vector<frCoord>> trackLocs_;
   std::set<taPin*, taPinComp>
       reassignIroutes_;  // iroutes to be assigned in sorted order
-  int numAssigned_;
-  int totCost_;
-  int maxRetry_;
-  bool hardIroutesMode_;
+  int numAssigned_{0};
+  int totCost_{0};
+  int maxRetry_{1};
+  bool hardIroutesMode_{false};
 
   //// others
   void init();
@@ -318,8 +317,6 @@ class FlexTAWorker
                                  frOrderedIdSet<taPin*>* pinS);
   void assignIroute_updateOthers(frOrderedIdSet<taPin*>& pinS);
 
-  // end
-  void end();
   void saveToGuides();
 
   friend class FlexTA;

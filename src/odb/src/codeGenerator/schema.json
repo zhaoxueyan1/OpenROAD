@@ -1,5 +1,6 @@
 {
     "classes_dir": "schema",
+    "extern_enums": ["dbGDSSTrans", "dbGDSTextPres", "dbOrientType3D"],
     "iterators":[
     {
         "name": "dbModulePortItr",
@@ -47,6 +48,7 @@
 	"orderReversed": "true",
         "flags":["private"],	
         "sequential": 0,
+        "customEnd": "true",
 	"includes": ["dbModule.h", "dbBusPort.h"]
     },
     {
@@ -207,6 +209,24 @@
       "orderReversed": "true",
       "sequential": 0,
       "includes": ["dbChipNet.h", "dbChip.h"]
+    },
+    {
+      "name": "dbUnfoldedChipRegionInstItr",
+      "parentObject": "dbUnfoldedChipRegionInst",
+      "tableName": "unfolded_chip_region_inst_tbl",
+      "reversible": "true",
+      "orderReversed": "true",
+      "sequential": 0,
+      "includes": ["dbUnfoldedChipRegionInst.h", "dbUnfoldedChipInst.h"]
+    },
+    {
+      "name": "dbUnfoldedChipBumpInstItr",
+      "parentObject": "dbUnfoldedChipBumpInst",
+      "tableName": "unfolded_chip_bump_inst_tbl",
+      "reversible": "true",
+      "orderReversed": "true",
+      "sequential": 0,
+      "includes": ["dbUnfoldedChipBumpInst.h", "dbUnfoldedChipRegionInst.h"]
     }
   ],
   "relations":[
@@ -221,74 +241,98 @@
       "parent":"dbTechLayer",
       "child":"dbTechLayerSpacingEolRule",
       "type":"1_n",
-      "tbl_name":"spacing_eol_rules_tbl_"
+      "tbl_name":"spacing_eol_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerCutSpacingRule",
       "type":"1_n",
-      "tbl_name":"cut_spacing_rules_tbl_"
+      "tbl_name":"cut_spacing_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerMinStepRule",
       "type":"1_n",
-      "tbl_name":"minstep_rules_tbl_"
+      "tbl_name":"minstep_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerCornerSpacingRule",
       "type":"1_n",
-      "tbl_name":"corner_spacing_rules_tbl_"
+      "tbl_name":"corner_spacing_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerSpacingTablePrlRule",
       "type":"1_n",
-      "tbl_name":"spacing_table_prl_rules_tbl_"
+      "tbl_name":"spacing_table_prl_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerCutSpacingTableOrthRule",
       "type":"1_n",
-      "tbl_name":"cut_spacing_table_orth_tbl_"
+      "tbl_name":"cut_spacing_table_orth_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerCutSpacingTableDefRule",
       "type":"1_n",
-      "tbl_name":"cut_spacing_table_def_tbl_"
+      "tbl_name":"cut_spacing_table_def_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerCutEnclosureRule",
       "type":"1_n",
-      "tbl_name":"cut_enc_rules_tbl_"
+      "tbl_name":"cut_enc_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerEolExtensionRule",
       "type":"1_n",
-      "tbl_name":"eol_ext_rules_tbl_"
+      "tbl_name":"eol_ext_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerArraySpacingRule",
       "type":"1_n",
-      "tbl_name":"array_spacing_rules_tbl_"
+      "tbl_name":"array_spacing_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerEolKeepOutRule",
       "type":"1_n",
-      "tbl_name":"eol_keep_out_rules_tbl_"
+      "tbl_name":"eol_keep_out_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerMaxSpacingRule",
       "type":"1_n",
       "tbl_name":"max_spacing_rules_tbl_",
-      "schema":"db_schema_max_spacing"
+      "schema":"kSchemaMaxSpacing",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
@@ -300,41 +344,58 @@
       "parent":"dbTechLayer",
       "child":"dbTechLayerMinCutRule",
       "type":"1_n",
-      "tbl_name":"min_cuts_rules_tbl_"
+      "tbl_name":"min_cuts_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerAreaRule",
       "type":"1_n",
-      "tbl_name":"area_rules_tbl_"
+      "tbl_name":"area_rules_tbl_",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerForbiddenSpacingRule",
       "type":"1_n",
       "tbl_name":"forbidden_spacing_rules_tbl_",
-      "schema":"db_schema_lef58_forbidden_spacing"
+      "schema":"kSchemaLef58ForbiddenSpacing"
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerKeepOutZoneRule",
       "type":"1_n",
       "tbl_name":"keepout_zone_rules_tbl_",
-      "schema":"db_schema_keepout_zone"
+      "schema":"kSchemaKeepoutZone",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerWrongDirSpacingRule",
       "type":"1_n",
       "tbl_name":"wrongdir_spacing_rules_tbl_",
-      "schema":"db_schema_wrongdir_spacing"
+      "schema":"kSchemaWrongdirSpacing",
+      "create":true,
+      "destroy":true
     },
     {
       "parent":"dbTechLayer",
       "child":"dbTechLayerTwoWiresForbiddenSpcRule",
       "type":"1_n",
       "tbl_name":"two_wires_forbidden_spc_rules_tbl_",
-      "schema":"db_schema_lef58_two_wires_forbidden_spacing"
+      "schema":"kSchemaLef58TwoWiresForbiddenSpacing"
+    },
+    {
+      "parent":"dbTechLayer",
+      "child":"dbTechLayerVoltageSpacing",
+      "type":"1_n",
+      "tbl_name":"voltage_spacing_rules_tbl_",
+      "schema":"kSchemaVoltageSpacingTables",
+      "create":true,
+      "destroy":true
     },
     {
       "parent": "dbDft",
@@ -421,24 +482,29 @@
       "parent":"dbChip",
       "child":"dbChipRegion",
       "type":"1_n", 
-      "flags": [],
-      "schema":"db_schema_chip_region",
+      "schema":"kSchemaChipRegion",
       "tbl_name":"chip_region_tbl_"
     },
     {
       "parent":"dbChip",
       "child":"dbMarkerCategory",
       "type":"1_n",
-      "flags": [],
       "tbl_name":"marker_categories_tbl_",
-      "schema":"db_schema_chip_marker_categories"
+      "schema":"kSchemaChipMarkerCategories"
+    },
+    {
+      "parent":"dbDatabase",
+      "child":"dbAlignmentMarkerRule",
+      "type":"1_n",
+      "flags": ["no-serial"],
+      "tbl_name":"alignment_marker_rule_tbl_",
+      "schema":"kSchemaChipAlignmentMarkerRule"
     },
     {
       "parent":"dbChipRegion",
       "child":"dbChipBump",
       "type":"1_n", 
-      "flags": [],
-      "schema":"db_schema_chip_bump",
+      "schema":"kSchemaChipBump",
       "tbl_name":"chip_bump_tbl_"
     },
     {
@@ -454,7 +520,7 @@
       "parent":"dbDatabase",
       "child":"dbProperty",
       "type":"1_n",
-      "tbl_name":"_prop_tbl",
+      "tbl_name":"prop_tbl_",
       "flags": ["no-serial"]
     },
     {
@@ -462,7 +528,7 @@
       "child":"dbChipInst",
       "type":"1_n",
       "tbl_name":"chip_inst_tbl_",
-      "schema":"db_schema_chip_inst",
+      "schema":"kSchemaChipInst",
       "flags": ["no-serial"]
     },
     {
@@ -470,7 +536,7 @@
       "child":"dbChipRegionInst",
       "type":"1_n",
       "tbl_name":"chip_region_inst_tbl_",
-      "schema":"db_schema_chip_region",
+      "schema":"kSchemaChipRegion",
       "flags": ["no-serial"]
     },
     {
@@ -478,7 +544,7 @@
       "child":"dbChipConn",
       "type":"1_n",
       "tbl_name":"chip_conn_tbl_",
-      "schema":"db_schema_chip_region",
+      "schema":"kSchemaChipRegion",
       "flags": ["no-serial"]
     },
     {
@@ -486,7 +552,7 @@
       "child":"dbChipBumpInst",
       "type":"1_n",
       "tbl_name":"chip_bump_inst_tbl_",
-      "schema":"db_schema_chip_bump",
+      "schema":"kSchemaChipBump",
       "flags": ["no-serial"]
     },
     {
@@ -494,7 +560,51 @@
       "child":"dbChipNet",
       "type":"1_n",
       "tbl_name":"chip_net_tbl_",
-      "schema":"db_schema_chip_region",
+      "schema":"kSchemaChipRegion",
+      "flags": ["no-serial"]
+    },
+    {
+      "parent":"dbDatabase",
+      "child":"dbUnfoldedChipInst",
+      "type":"1_n",
+      "tbl_name":"unfolded_chip_inst_tbl_",
+      "flags": ["no-serial"]
+    },
+    {
+      "parent":"dbDatabase",
+      "child":"dbUnfoldedChipRegionInst",
+      "type":"1_n",
+      "tbl_name":"unfolded_chip_region_inst_tbl_",
+      "flags": ["no-serial"]
+    },
+    {
+      "parent":"dbDatabase",
+      "child":"dbUnfoldedChipBumpInst",
+      "type":"1_n",
+      "tbl_name":"unfolded_chip_bump_inst_tbl_",
+      "flags": ["no-serial"]
+    },
+    {
+      "parent":"dbDatabase",
+      "child":"dbUnfoldedChipConn",
+      "type":"1_n",
+      "tbl_name":"unfolded_chip_conn_tbl_",
+      "flags": ["no-serial"]
+    },
+    {
+      "parent":"dbDatabase",
+      "child":"dbUnfoldedChipNet",
+      "type":"1_n",
+      "tbl_name":"unfolded_chip_net_tbl_",
+      "flags": ["no-serial"]
+    },
+    {
+      "parent":"dbChip",
+      "child":"dbChipPath",
+      "type":"1_n",
+      "tbl_name":"chip_path_tbl_",
+      "schema":"kSchemaChipPath",
+      "hash": true,
       "flags": ["no-serial"]
     }
   ]

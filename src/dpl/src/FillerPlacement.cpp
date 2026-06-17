@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "dpl/Opendp.h"
+#include "infrastructure/Coordinates.h"
 #include "infrastructure/Grid.h"
 #include "infrastructure/Objects.h"
 #include "infrastructure/network.h"
@@ -21,6 +22,8 @@ using utl::DPL;
 
 using odb::dbMaster;
 using odb::dbPlacementStatus;
+
+using utl::format_as;  // NOLINT(misc-unused-using-decls)
 
 static odb::dbTechLayer* getImplant(dbMaster* master)
 {
@@ -66,13 +69,9 @@ dbMasterSeq Opendp::filterFillerMasters(const dbMasterSeq& filler_masters) const
   }
 
   // Remove fillers with PAD or BLOCK classes
-  filtered_masters.erase(std::remove_if(filtered_masters.begin(),
-                                        filtered_masters.end(),
-                                        [](dbMaster* master) -> bool {
-                                          return master->isPad()
-                                                 || master->isBlock();
-                                        }),
-                         filtered_masters.end());
+  std::erase_if(filtered_masters, [](dbMaster* master) -> bool {
+    return master->isPad() || master->isBlock();
+  });
 
   if (logger_->debugCheck(DPL, "filler", 2)) {
     debugPrint(logger_,
@@ -103,11 +102,9 @@ void Opendp::fillerPlacement(const dbMasterSeq& filler_masters,
   auto filler_masters_by_implant = splitByImplant(filtered_masters);
 
   for (auto& [layer, masters] : filler_masters_by_implant) {
-    std::sort(masters.begin(),
-              masters.end(),
-              [](dbMaster* master1, dbMaster* master2) {
-                return master1->getWidth() > master2->getWidth();
-              });
+    std::ranges::sort(masters, [](dbMaster* master1, dbMaster* master2) {
+      return master1->getWidth() > master2->getWidth();
+    });
   }
 
   gap_fillers_.clear();
@@ -190,24 +187,30 @@ void Opendp::placeRowFillers(GridY row,
       if (pixel->cell && pixel->cell->getDbInst()) {
         implant = getImplant(pixel->cell->getDbInst()->getMaster());
       }
-    } else {  // totally empty row - use anything
+    }
+
+    if (!implant) {  // empty row or cell has no implant - use anything
       implant = filler_masters_by_implant.begin()->first;
     }
 
     GridX gap = k - j;
-    dbMasterSeq& fillers = gapFillers(implant, gap, filler_masters_by_implant);
+    const DbuY row_height{site->getHeight()};
+    dbMasterSeq& fillers
+        = gapFillers(implant, gap, row_height, filler_masters_by_implant);
     if (fillers.empty()) {
       DbuX x{core_.xMin() + gridToDbu(j, site_width)};
       DbuY y{core_.yMin() + grid_->gridYToDbu(row)};
-      logger_->error(
-          DPL,
-          2,
-          "could not fill gap of size {} at {},{} dbu between {} and {}",
-          gap.v,
-          x.v,
-          y.v,
-          gridInstName(row, j - 1),
-          gridInstName(row, k + 1));
+      logger_->error(DPL,
+                     2,
+                     "Could not fill gap of {} sites ({:.2f}x{:.2f} um) "
+                     "at ({:.2f}, {:.2f}) um between {} and {}",
+                     gap,
+                     block_->dbuToMicrons(gridToDbu(gap, site_width).v),
+                     block_->dbuToMicrons(row_height.v),
+                     block_->dbuToMicrons(x.v),
+                     block_->dbuToMicrons(y.v),
+                     gridInstName(row, j - 1),
+                     gridInstName(row, k + 1));
     } else {
       k = j;
       debugPrint(
@@ -215,10 +218,11 @@ void Opendp::placeRowFillers(GridY row,
       for (dbMaster* master : fillers) {
         std::string inst_name
             = prefix + to_string(row.v) + "_" + to_string(k.v);
-        odb::dbInst* inst = odb::dbInst::create(block_,
-                                                master,
-                                                inst_name.c_str(),
-                                                /* physical_only */ true);
+        odb::dbInst* inst
+            = odb::dbInst::makeUniqueDbInst(block_,
+                                            master,
+                                            inst_name.c_str(),
+                                            /* physical_only */ true);
         DbuX x{core_.xMin() + gridToDbu(k, site_width)};
         DbuY y{core_.yMin() + grid_->gridYToDbu(row)};
         inst->setOrient(orient);
@@ -253,6 +257,7 @@ const char* Opendp::gridInstName(GridY row, GridX col)
 dbMasterSeq& Opendp::gapFillers(
     odb::dbTechLayer* implant,
     GridX gap,
+    DbuY row_height,
     const MasterByImplant& filler_masters_by_implant)
 {
   auto iter = filler_masters_by_implant.find(implant);
@@ -261,7 +266,7 @@ dbMasterSeq& Opendp::gapFillers(
   }
   const dbMasterSeq& filler_masters = iter->second;
 
-  GapFillers& gap_fillers = gap_fillers_[implant];
+  GapFillers& gap_fillers = gap_fillers_[implant][row_height];
   if (gap_fillers.size() < gap + 1) {
     gap_fillers.resize(gap.v + 1);
   }
@@ -272,6 +277,9 @@ dbMasterSeq& Opendp::gapFillers(
     const DbuX site_width = grid_->getSiteWidth();
     bool have_filler1 = smallest_filler->getWidth() == site_width;
     for (dbMaster* filler_master : filler_masters) {
+      if (DbuY{static_cast<int>(filler_master->getHeight())} != row_height) {
+        continue;
+      }
       int filler_width = filler_master->getWidth() / site_width.v;
       while ((width + filler_width) <= gap
              && (have_filler1 || (width + filler_width) != gap - 1)) {

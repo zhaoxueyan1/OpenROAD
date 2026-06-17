@@ -47,24 +47,20 @@ From bottom you again find "error executing Action" and the relevant action:
 
 Debugging using the Bazel `--sandbox_debug` is possible, but not terribly convenient. bazel-orfs has a debug feature specifically to debug stages and create standalone issues.
 
-First set up a /tmp/place folder with the necessary dependencies:
+First set up a folder with the necessary dependencies:
 
-    bazelisk run //test/orfs/mock-array:Element_place_deps /tmp/place
+    bazelisk run //:deps -- //test/orfs/mock-array:Element_place
 
-This sets up a `/tmp/place/make` script that is a small shell script that calls `make` on the ORFS setup in /tmp/place, but since the place stage failed, we have to build all place sub-stages up to the failing stage:
+This sets up a `tmp/test/orfs/mock-array/Element_place_deps/make` script that calls `make` on the ORFS setup. Since the place stage failed, build all place sub-stages up to the failing stage:
 
-    /tmp/place/make do-place
+    tmp/test/orfs/mock-array/Element_place_deps/make do-place
 
 Now create a standalone issue:
 
-    /tmp/place/make global_place_skip_io_issue
+    tmp/test/orfs/mock-array/Element_place_deps/make global_place_skip_io_issue
 
-The `WORK_HOME` is in `/tmp/place/_main`:
+The `WORK_HOME` is in `tmp/test/orfs/mock-array/Element_place_deps/_main`:
 
-    $ ls /tmp/place/_main/
-    ++ dirname /tmp/place/make
-    + cd /tmp/place/_main
-    [deleted]
     Archiving issue to global_place_skip_io_Element_asap7_base_2025-07-16_08-44.tar.gz
     Using pigz to compress tar file
 
@@ -72,25 +68,25 @@ The `WORK_HOME` is in `/tmp/place/_main`:
 
 bazel-orfs can set up ORFS design files locally for debugging purposes, leaving bazel-orfs entirely out of the equation when chasing down issues. Such a setup is most often a lot more convenient than using `--sandbox_debug`.
 
-NOTE! keep in mind that these local ORFS design files have the depndencies `_deps` to run a particular stage only. Hence, use the `do-` prefix for doing `do-place`, `do-2_1_floorplan`, etc. so that `make` dependency checking is not used. If you use `make floorplan`, this will try to run synthesis first and not find the prequisite files, nor variables in config.mk, for synthesis and it will fail with bogus and confusing error messages.
+NOTE! keep in mind that the `//:deps` wrapper deploys dependencies for a particular stage only. Hence, use the `do-` prefix for doing `do-place`, `do-2_1_floorplan`, etc. so that `make` dependency checking is not used. If you use `make floorplan`, this will try to run synthesis first and not find the prerequisite files, nor variables in config.mk, for synthesis and it will fail with bogus and confusing error messages.
 
 If you're interested in some other stage, replace `place` with `synth`, `floorplan`, `cts`, `grt`, `route` or `final` below.
 
-The `/tmp/place/make` script, if `FLOW_HOME` is set, will use a local ORFS and OpenROAD built by CMake:
+The `make` script, if `FLOW_HOME` is set, will use a local ORFS and OpenROAD built by CMake:
 
     $ . ~/OpenROAD-flow-scripts/env.sh
-    $ /tmp/place/make print-FLOW_HOME print-OPENROAD_EXE
+    $ tmp/test/orfs/mock-array/Element_place_deps/make print-FLOW_HOME print-OPENROAD_EXE
     [deleted]
     FLOW_HOME = /home/<username>/OpenROAD-flow-scripts/flow
     OPENROAD_EXE = /home/<username>/OpenROAD-flow-scripts/tools/install/OpenROAD/bin/openroad
 
-More explictly ORFS only:
+More explicitly ORFS only:
 
-    make --file=~/OpenROAD-flow-scripts/flow/Makefile -C /tmp/place/_main WORK_HOME=test/orfs/mock-array DESIGN_CONFIG=config.mk do-place
+    make --file=~/OpenROAD-flow-scripts/flow/Makefile -C tmp/test/orfs/mock-array/Element_place_deps/_main WORK_HOME=test/orfs/mock-array DESIGN_CONFIG=config.mk do-place
 
-This is a bit more verbose, but eliminates any concerns about what the `/tmp/place/make` might be doing differently than ORFS only.
+This is more verbose, but eliminates any concerns about what the `make` script might be doing differently than ORFS only.
 
-## Running a `make issue` with `cfg=exec` configuraiton
+## Running a `make issue` with `cfg=exec` configuration
 
 [TL;DR](../../docs/user/Bazel-targets.md), `bazelisk test ...` builds and uses the `cfg=exec` configuration when setting up paths:
 
@@ -113,18 +109,12 @@ To hunt down missing `tags = ["manual"]` run a query like:
 
 Note that OpenROAD *does* want `bazelisk test ...` to run all tests, so test targets should be marked `tags = ["orfs"]` instead, so that `.bazelrc` can skip builds of those targets with the `build --build_tag_filters=-orfs` line.
 
-## eqy tests
+## Using whittle.py to minimize .odb files
 
-`eqy_test` is used to run equivalence checks before and after an ORFS stage, such as before and after floorplan for mock-array. To run the test and keep all the files from the test and see interactive output, run:
+While sv-bugpoint minimizes Verilog source files, `whittle.py` minimizes
+`.odb` database files by iteratively removing instances and nets.  This is
+useful when the bug is in placement, routing, or other physical stages
+where Verilog reduction would not help.
 
-    bazelisk test //test/orfs/mock-array:MockArray_4x4_eqy_test --test_output=streamed --sandbox_debug
-
-If this fails, then it will output the line below. `eqy` uses a very, very large number of files and copying out these files to the bazel-testlogs folder for inspection takes some time:
-
-    Copying 114462 files to bazel-testlogs/test/orfs/mock-array/MockArray_4x4_eqy_test/test.outputs for inspection.
-
-If you just want the files needed to run a locally installed `eqy`, build all the files used in the run above by:
-
-    bazelisk build //test/orfs/mock-array:MockArray_4x4_eqy_test
-
-The files used to run the test are then in `bazel-bin/test/orfs/mock-array/`.
+See [Bazel.md](../../docs/user/Bazel.md#whittling-down-odb-files) for
+detailed instructions and recommended flags.

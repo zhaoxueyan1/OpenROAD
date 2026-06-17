@@ -257,12 +257,8 @@ class frBlock : public frBlockObject
     auto& ygp = gp[1];
     frCoord idxX = (pt.x() - xgp.getStartCoord()) / (frCoord) xgp.getSpacing();
     frCoord idxY = (pt.y() - ygp.getStartCoord()) / (frCoord) ygp.getSpacing();
-    if (idxX < 0) {
-      idxX = 0;
-    }
-    if (idxY < 0) {
-      idxY = 0;
-    }
+    idxX = std::max(idxX, 0);
+    idxY = std::max(idxY, 0);
     if (idxX >= (int) xgp.getCount()) {
       idxX = (int) xgp.getCount() - 1;
     }
@@ -368,18 +364,12 @@ class frBlock : public frBlockObject
 
   void removeDeletedObjects()
   {
-    insts_.erase(std::remove_if(insts_.begin(),
-                                insts_.end(),
-                                [](const std::unique_ptr<frInst>& inst) {
-                                  return inst->isToBeDeleted();
-                                }),
-                 insts_.end());
-    nets_.erase(std::remove_if(nets_.begin(),
-                               nets_.end(),
-                               [](const std::unique_ptr<frNet>& net) {
-                                 return net->toBeDeleted();
-                               }),
-                nets_.end());
+    std::erase_if(insts_, [](const std::unique_ptr<frInst>& inst) {
+      return inst->isToBeDeleted();
+    });
+    std::erase_if(nets_, [](const std::unique_ptr<frNet>& net) {
+      return net->toBeDeleted();
+    });
     int id = 0;
     for (const auto& inst : insts_) {
       inst->setId(id++);
@@ -437,6 +427,14 @@ class frBlock : public frBlockObject
   void setGCellPatterns(const std::vector<frGCellPattern>& gpIn)
   {
     gCellPatterns_ = gpIn;
+  }
+  void addTrackPattern(std::unique_ptr<frTrackPattern> in)
+  {
+    const frLayerNum lNum = in->getLayerNum();
+    if ((frLayerNum) trackPatterns_.size() <= lNum) {
+      trackPatterns_.resize(lNum + 1);
+    }
+    trackPatterns_.at(lNum).push_back(std::move(in));
   }
   void addMarker(std::unique_ptr<frMarker> in)
   {

@@ -15,6 +15,7 @@
 
 #include "db_sta/dbSta.hh"
 #include "gui/gui.h"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbTransform.h"
 #include "odb/dbWireGraph.h"
@@ -136,10 +137,10 @@ class DbMasterDescriptor : public BaseDbDescriptor<odb::dbMaster>
 
   static void getMasterEquivalent(sta::dbSta* sta,
                                   odb::dbMaster* master,
-                                  std::set<odb::dbMaster*>& masters);
+                                  odb::PtrSet<odb::dbMaster>& masters);
 
   static void getInstances(odb::dbMaster* master,
-                           std::set<odb::dbInst*>& insts);
+                           odb::PtrSet<odb::dbInst>& insts);
 
  protected:
   Properties getDBProperties(odb::dbMaster* master) const override;
@@ -159,9 +160,9 @@ class DbNetDescriptor : public BaseDbDescriptor<odb::dbNet>
 
   DbNetDescriptor(odb::dbDatabase* db,
                   sta::dbSta* sta,
-                  const std::set<odb::dbNet*>& focus_nets,
-                  const std::set<odb::dbNet*>& guide_nets,
-                  const std::set<odb::dbNet*>& tracks_nets);
+                  const odb::PtrSet<odb::dbNet>& focus_nets,
+                  const odb::PtrSet<odb::dbNet>& guide_nets,
+                  const odb::PtrSet<odb::dbNet>& tracks_nets);
 
   std::string getName(const std::any& object) const override;
   std::string getTypeName() const override;
@@ -227,14 +228,53 @@ class DbNetDescriptor : public BaseDbDescriptor<odb::dbNet>
 
   void buildNodeMap(odb::dbWireGraph* graph, NodeMap& node_map) const;
 
-  const std::set<odb::dbNet*>& focus_nets_;
-  const std::set<odb::dbNet*>& guide_nets_;
-  const std::set<odb::dbNet*>& tracks_nets_;
+  const odb::PtrSet<odb::dbNet>& focus_nets_;
+  const odb::PtrSet<odb::dbNet>& guide_nets_;
+  const odb::PtrSet<odb::dbNet>& tracks_nets_;
 
   odb::dbObject* getSink(const std::any& object) const;
 
   static const int kMaxIterms = 10000;
   static constexpr double kMinGuidePixelWidth = 10.0;
+};
+
+class DbWireDescriptor : public BaseDbDescriptor<odb::dbWire>
+{
+ public:
+  DbWireDescriptor(odb::dbDatabase* db);
+
+  std::string getName(const std::any& object) const override;
+  std::string getTypeName() const override;
+  bool getBBox(const std::any& object, odb::Rect& bbox) const override;
+
+  void highlight(const std::any& object, Painter& painter) const override;
+
+  void visitAllObjects(
+      const std::function<void(const Selected&)>& func) const override;
+
+ protected:
+  Properties getDBProperties(odb::dbWire* wire) const override;
+};
+
+class DbSWireDescriptor : public BaseDbDescriptor<odb::dbSWire>
+{
+ public:
+  DbSWireDescriptor(odb::dbDatabase* db);
+
+  std::string getName(const std::any& object) const override;
+  std::string getTypeName() const override;
+  bool getBBox(const std::any& object, odb::Rect& bbox) const override;
+
+  void highlight(const std::any& object, Painter& painter) const override;
+
+  void visitAllObjects(
+      const std::function<void(const Selected&)>& func) const override;
+
+ protected:
+  Properties getDBProperties(odb::dbSWire* wire) const override;
+
+ private:
+  static constexpr int kMaxBoxes = 10000;
 };
 
 class DbITermDescriptor : public BaseDbDescriptor<odb::dbITerm>
@@ -496,6 +536,98 @@ class DbModuleDescriptor : public BaseDbDescriptor<odb::dbModule>
 
  private:
   void getModules(odb::dbModule* module,
+                  const std::function<void(const Selected&)>& func) const;
+};
+
+class DbModBTermDescriptor : public BaseDbDescriptor<odb::dbModBTerm>
+{
+ public:
+  DbModBTermDescriptor(odb::dbDatabase* db);
+
+  std::string getName(const std::any& object) const override;
+  std::string getShortName(const std::any& object) const override;
+  std::string getTypeName() const override;
+  bool getBBox(const std::any& object, odb::Rect& bbox) const override;
+
+  void highlight(const std::any& object, Painter& painter) const override;
+
+  void visitAllObjects(
+      const std::function<void(const Selected&)>& func) const override;
+
+ protected:
+  Properties getDBProperties(odb::dbModBTerm* modbterm) const override;
+
+ private:
+  void getModBTerms(odb::dbModule* module,
+                    const std::function<void(const Selected&)>& func) const;
+};
+
+class DbModITermDescriptor : public BaseDbDescriptor<odb::dbModITerm>
+{
+ public:
+  DbModITermDescriptor(odb::dbDatabase* db);
+
+  std::string getName(const std::any& object) const override;
+  std::string getShortName(const std::any& object) const override;
+  std::string getTypeName() const override;
+  bool getBBox(const std::any& object, odb::Rect& bbox) const override;
+
+  void highlight(const std::any& object, Painter& painter) const override;
+
+  void visitAllObjects(
+      const std::function<void(const Selected&)>& func) const override;
+
+ protected:
+  Properties getDBProperties(odb::dbModITerm* moditerm) const override;
+
+ private:
+  void getModITerms(odb::dbModule* module,
+                    const std::function<void(const Selected&)>& func) const;
+};
+
+class DbModInstDescriptor : public BaseDbDescriptor<odb::dbModInst>
+{
+ public:
+  DbModInstDescriptor(odb::dbDatabase* db);
+
+  std::string getName(const std::any& object) const override;
+  std::string getShortName(const std::any& object) const override;
+  std::string getTypeName() const override;
+  bool getBBox(const std::any& object, odb::Rect& bbox) const override;
+
+  void highlight(const std::any& object, Painter& painter) const override;
+
+  void visitAllObjects(
+      const std::function<void(const Selected&)>& func) const override;
+
+ protected:
+  Properties getDBProperties(odb::dbModInst* modinst) const override;
+
+ private:
+  void getModInsts(odb::dbModule* module,
+                   const std::function<void(const Selected&)>& func) const;
+};
+
+class DbModNetDescriptor : public BaseDbDescriptor<odb::dbModNet>
+{
+ public:
+  DbModNetDescriptor(odb::dbDatabase* db);
+
+  std::string getName(const std::any& object) const override;
+  std::string getShortName(const std::any& object) const override;
+  std::string getTypeName() const override;
+  bool getBBox(const std::any& object, odb::Rect& bbox) const override;
+
+  void highlight(const std::any& object, Painter& painter) const override;
+
+  void visitAllObjects(
+      const std::function<void(const Selected&)>& func) const override;
+
+ protected:
+  Properties getDBProperties(odb::dbModNet* modnet) const override;
+
+ private:
+  void getModNets(odb::dbModule* module,
                   const std::function<void(const Selected&)>& func) const;
 };
 
@@ -862,12 +994,33 @@ class DbBoxDescriptor : public BaseDbDescriptor<odb::dbBox>
 
   bool lessThan(const std::any& l, const std::any& r) const override;
 
+  static void populateProperties(odb::dbBox* box, Properties& props);
+
  protected:
   Properties getDBProperties(odb::dbBox* box) const override;
 
  private:
   odb::dbBox* getObject(const std::any& object) const override;
   odb::dbTransform getTransform(const std::any& object) const;
+};
+
+class DbSBoxDescriptor : public BaseDbDescriptor<odb::dbSBox>
+{
+ public:
+  DbSBoxDescriptor(odb::dbDatabase* db);
+
+  std::string getName(const std::any& object) const override;
+  std::string getTypeName() const override;
+
+  bool getBBox(const std::any& object, odb::Rect& bbox) const override;
+
+  void highlight(const std::any& object, Painter& painter) const override;
+
+  void visitAllObjects(
+      const std::function<void(const Selected&)>& func) const override;
+
+ protected:
+  Properties getDBProperties(odb::dbSBox* box) const override;
 };
 
 class DbMasterEdgeTypeDescriptor

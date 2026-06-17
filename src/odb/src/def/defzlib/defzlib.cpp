@@ -31,7 +31,6 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <zlib.h>
 
 #include <climits>
 #include <cstdio>
@@ -41,6 +40,7 @@
 #include "defiDefs.hpp"
 #include "defiKRDefs.hpp"
 #include "defrReader.hpp"
+#include "zlib.h"
 
 BEGIN_DEF_PARSER_NAMESPACE
 
@@ -67,7 +67,7 @@ defGZFile defGZipOpen(const char* gzipPath, const char* mode)
     /* successfully open the gzip file */
     /* set the read function to read from a compressed file */
     defrSetReadFunction(defGZip_read);
-    return (defGZFile) fptr;
+    return fptr;
   }
   return nullptr;
 }

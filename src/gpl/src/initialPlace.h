@@ -3,10 +3,11 @@
 
 #pragma once
 
-#include <Eigen/SparseCore>
 #include <memory>
 #include <vector>
 
+#include "Eigen/SparseCore"
+#include "gpl/Replace.h"
 #include "nesterovPlace.h"
 #include "odb/db.h"
 
@@ -30,6 +31,7 @@ struct InitialPlaceVars
   const int maxFanout;
   const float netWeightScale;
   const bool debug;
+  const bool forceCenter;
 };
 
 using SMatrix = Eigen::SparseMatrix<float, Eigen::RowMajor>;
@@ -50,6 +52,7 @@ class InitialPlace
   std::vector<std::shared_ptr<PlacerBase>> pbVec_;
   std::unique_ptr<AbstractGraphics> graphics_;
   utl::Logger* log_ = nullptr;
+  int gif_key_ = 0;
 
   // Solve two SparseMatrix equations here;
   //
@@ -81,7 +84,7 @@ class InitialPlace
   Eigen::VectorXf instLocVecY_, fixedInstForceVecY_;
   SMatrix placeInstForceMatrixX_, placeInstForceMatrixY_;
 
-  void placeInstsCenter();
+  void placeInstsInitialPositions();
   void setPlaceInstExtId();
   void updatePinInfo();
   void createSparseMatrix();

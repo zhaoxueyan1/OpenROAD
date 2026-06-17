@@ -4,7 +4,10 @@
 // Generator Code Begin Cpp
 #include "dbModITerm.h"
 
+#include <cstdlib>
+
 #include "dbBlock.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbHashTable.hpp"
 #include "dbJournal.h"
@@ -12,16 +15,16 @@
 #include "dbModInst.h"
 #include "dbModNet.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "odb/db.h"
 // User Code Begin Includes
 #include <cassert>
-#include <cstdlib>
-#include <cstring>
+#include <cstdint>
 #include <string>
 
 #include "dbCommon.h"
 #include "odb/dbBlockCallBackObj.h"
+#include "odb/dbObject.h"
+#include "odb/dbSet.h"
 #include "utl/Logger.h"
 // User Code End Includes
 namespace odb {
@@ -29,6 +32,7 @@ template class dbTable<_dbModITerm>;
 
 bool _dbModITerm::operator==(const _dbModITerm& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (name_ != rhs.name_) {
     return false;
   }
@@ -55,6 +59,7 @@ bool _dbModITerm::operator==(const _dbModITerm& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbModITerm::operator<(const _dbModITerm& rhs) const
@@ -71,32 +76,32 @@ _dbModITerm::_dbModITerm(_dbDatabase* db)
 
 dbIStream& operator>>(dbIStream& stream, _dbModITerm& obj)
 {
-  if (obj.getDatabase()->isSchema(db_schema_update_hierarchy)) {
+  if (obj.getDatabase()->isSchema(kSchemaUpdateHierarchy)) {
     stream >> obj.name_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_update_hierarchy)) {
+  if (obj.getDatabase()->isSchema(kSchemaUpdateHierarchy)) {
     stream >> obj.parent_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_update_hierarchy)) {
+  if (obj.getDatabase()->isSchema(kSchemaUpdateHierarchy)) {
     stream >> obj.child_modbterm_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_update_hierarchy)) {
+  if (obj.getDatabase()->isSchema(kSchemaUpdateHierarchy)) {
     stream >> obj.mod_net_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_update_hierarchy)) {
+  if (obj.getDatabase()->isSchema(kSchemaUpdateHierarchy)) {
     stream >> obj.next_net_moditerm_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_update_hierarchy)) {
+  if (obj.getDatabase()->isSchema(kSchemaUpdateHierarchy)) {
     stream >> obj.prev_net_moditerm_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_update_hierarchy)) {
+  if (obj.getDatabase()->isSchema(kSchemaUpdateHierarchy)) {
     stream >> obj.next_entry_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_hier_port_removal)) {
+  if (obj.getDatabase()->isSchema(kSchemaHierPortRemoval)) {
     stream >> obj.prev_entry_;
   }
   // User Code Begin >>
-  if (obj.getDatabase()->isSchema(db_schema_db_remove_hash)) {
+  if (obj.getDatabase()->isSchema(kSchemaDbRemoveHash)) {
     dbDatabase* db = reinterpret_cast<dbDatabase*>(obj.getDatabase());
     _dbBlock* block = reinterpret_cast<_dbBlock*>(db->getChip()->getBlock());
     _dbModInst* mod_inst = block->modinst_tbl_->getPtr(obj.parent_);
@@ -127,7 +132,7 @@ void _dbModITerm::collectMemInfo(MemInfo& info)
   info.size += sizeof(*this);
 
   // User Code Begin collectMemInfo
-  info.children_["name"].add(name_);
+  info.children["name"].add(name_);
   // User Code End collectMemInfo
 }
 
@@ -226,7 +231,6 @@ dbModITerm* dbModITerm::create(dbModInst* parentInstance,
 
   _dbModInst* parent = reinterpret_cast<_dbModInst*>(parentInstance);
   _dbBlock* block = static_cast<_dbBlock*>(parent->getOwner());
-  assert(strchr(name, block->hier_delimiter_) == nullptr);
   _dbModITerm* moditerm = block->moditerm_tbl_->create();
 
   // defaults
@@ -245,14 +249,14 @@ dbModITerm* dbModITerm::create(dbModInst* parentInstance,
   parent->moditerms_ = moditerm->getOID();
   parent->moditerm_hash_[name] = dbId<_dbModITerm>(moditerm->getOID());
 
+  debugPrint(block->getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             1,
+             "EDIT: create {}",
+             moditerm->getDebugName());
+
   if (block->journal_) {
-    debugPrint(block->getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "ECO: create dbModITerm {} at id {}",
-               name,
-               moditerm->getId());
     block->journal_->beginAction(dbJournal::kCreateObject);
     block->journal_->pushParam(dbModITermObj);
     block->journal_->pushParam(name);
@@ -311,16 +315,15 @@ void dbModITerm::connect(dbModNet* net)
   _moditerm->prev_net_moditerm_ = 0;
   _modnet->moditerms_ = getId();
 
+  debugPrint(_block->getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             1,
+             "EDIT: connect {} to {}",
+             _moditerm->getDebugName(),
+             _modnet->getDebugName());
+
   if (_block->journal_) {
-    debugPrint(_block->getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "ECO: connect dbModITerm {} at id {} to dbModNet {} at id {}",
-               getName(),
-               getId(),
-               _modnet->name_,
-               _modnet->getId());
     _block->journal_->beginAction(dbJournal::kConnectObject);
     _block->journal_->pushParam(dbModITermObj);
     _block->journal_->pushParam(getId());
@@ -344,17 +347,15 @@ void dbModITerm::disconnect()
   }
   _dbModNet* _modnet = _block->modnet_tbl_->getPtr(_moditerm->mod_net_);
 
+  debugPrint(_block->getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             1,
+             "EDIT: disconnect {} from {}",
+             _moditerm->getDebugName(),
+             _modnet->getDebugName());
+
   if (_block->journal_) {
-    debugPrint(
-        _block->getImpl()->getLogger(),
-        utl::ODB,
-        "DB_ECO",
-        1,
-        "ECO: disconnect dbModITerm {} at id {} from dbModNet {} at id {}",
-        getName(),
-        getId(),
-        _modnet->name_,
-        _modnet->getId());
     _block->journal_->beginAction(dbJournal::kDisconnectObject);
     _block->journal_->pushParam(dbModITermObj);
     _block->journal_->pushParam(_moditerm->getId());
@@ -389,7 +390,7 @@ void dbModITerm::disconnect()
   }
 }
 
-dbModITerm* dbModITerm::getModITerm(dbBlock* block, uint dbid)
+dbModITerm* dbModITerm::getModITerm(dbBlock* block, uint32_t dbid)
 {
   _dbBlock* owner = reinterpret_cast<_dbBlock*>(block);
   return reinterpret_cast<dbModITerm*>(owner->moditerm_tbl_->getPtr(dbid));
@@ -401,14 +402,14 @@ void dbModITerm::destroy(dbModITerm* val)
   _dbBlock* block = static_cast<_dbBlock*>(_moditerm->getOwner());
   _dbModInst* mod_inst = block->modinst_tbl_->getPtr(_moditerm->parent_);
 
+  debugPrint(block->getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             1,
+             "EDIT: delete {}",
+             _moditerm->getDebugName());
+
   if (block->journal_) {
-    debugPrint(block->getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "ECO: delete dbModITerm {} at id {}",
-               val->getName(),
-               val->getId());
     block->journal_->beginAction(dbJournal::kDeleteObject);
     block->journal_->pushParam(dbModITermObj);
     block->journal_->pushParam(val->getName());
@@ -431,8 +432,8 @@ void dbModITerm::destroy(dbModITerm* val)
   }
 
   // snip out the mod iterm, from doubly linked list
-  uint prev = _moditerm->prev_entry_;
-  uint next = _moditerm->next_entry_;
+  uint32_t prev = _moditerm->prev_entry_;
+  uint32_t next = _moditerm->next_entry_;
   if (prev == 0) {
     // head of list
     mod_inst->moditerms_ = next;

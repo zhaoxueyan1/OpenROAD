@@ -27,6 +27,11 @@
 
 namespace gpl {
 
+gui::Chart* GraphicsImpl::main_chart_ = nullptr;
+gui::Chart* GraphicsImpl::density_chart_ = nullptr;
+gui::Chart* GraphicsImpl::stepLength_chart_ = nullptr;
+gui::Chart* GraphicsImpl::routing_chart_ = nullptr;
+
 GraphicsImpl::GraphicsImpl(utl::Logger* logger)
     : HeatMapDataSource(logger, "gpl", "gpl"), logger_(logger), mode_(Mbff)
 {
@@ -61,65 +66,34 @@ void GraphicsImpl::debugForNesterovPlace(
     NesterovPlace* np,
     std::shared_ptr<PlacerBaseCommon> pbc,
     std::shared_ptr<NesterovBaseCommon> nbc,
+    std::shared_ptr<RouteBase> rb,
     std::vector<std::shared_ptr<PlacerBase>>& pbVec,
     std::vector<std::shared_ptr<NesterovBase>>& nbVec,
     bool draw_bins,
-    odb::dbInst* inst)
+    odb::dbInst* debug_inst)
 {
-  setDebugOn(true);
-
   pbc_ = std::move(pbc);
   nbc_ = std::move(nbc);
+  rb_ = std::move(rb);
   pbVec_ = pbVec;
   nbVec_ = nbVec;
   np_ = np;
   draw_bins_ = draw_bins;
   mode_ = Nesterov;
 
-  if (enabled()) {
-    // Setup the chart
-    gui::Gui* gui = gui::Gui::get();
-    main_chart_ = gui->addChart("GPL", "Iteration", {"HPWL (μm)", "Overflow"});
-    main_chart_->setXAxisFormat("%d");
-    main_chart_->setYAxisFormats({"%.2e", "%.2f"});
-    main_chart_->setYAxisMin({std::nullopt, 0});
+  if (!gui::Gui::enabled()) {
+    return;
+  }
 
-    // Useful for debugging : Density penalty and PhiCoef
-    if (logger_->debugCheck(utl::GPL, "debugPlot", 1)) {
-      if (!nbVec_.empty()) {
-        std::vector<std::string> region_names;
-        region_names.reserve(nbVec_.size());
-        for (size_t i = 0; i < nbVec_.size(); ++i) {
-          std::string name;
-          if (nbVec_[i] && nbVec_[i]->getPb()
-              && nbVec_[i]->getPb()->getGroup()) {
-            name = fmt::format(
-                "nb[{}] {}", i, nbVec_[i]->getPb()->getGroup()->getName());
-          } else {
-            name = fmt::format("nb[{}]", i);
-          }
-          region_names.push_back(name);
-        }
-        density_chart_ = gui->addChart(
-            "GPL Density Penalty", "Iteration", {"DensityPenalty", "phiCoef"});
-        density_chart_->setXAxisFormat("%d");
-        density_chart_->setYAxisFormats({"%.2e", "%.2f"});
-        density_chart_->setYAxisMin({0.0, nbc_->getNbVars().minPhiCoef});
+  if (debug_on_) {
+    initCharts();
+    addDisplayControl(kDrawInstances, true);
+    gui::Gui::get()->registerRenderer(this);
 
-        stepLength_chart_ = gui->addChart(
-            "GPL StepLength",
-            "Iteration",
-            {"StepLength", "CoordiDistance", "GradDistance", "Std area"});
-        stepLength_chart_->setXAxisFormat("%d");
-        stepLength_chart_->setYAxisFormats({"%.2e", "%.2f", "%.2f"});
-        stepLength_chart_->setYAxisMin({0.0, 0.0, 0.0});
-      }
-    }
-    initHeatmap();
-    if (inst) {
+    if (debug_inst) {
       for (size_t idx = 0; idx < nbc_->getGCells().size(); ++idx) {
         auto cell = nbc_->getGCellByIndex(idx);
-        if (cell->contains(inst)) {
+        if (cell->contains(debug_inst)) {
           selected_ = idx;
           break;
         }
@@ -129,16 +103,17 @@ void GraphicsImpl::debugForNesterovPlace(
     for (const auto& nb : nbVec_) {
       for (size_t idx = 0; idx < nb->getGCells().size(); ++idx) {
         GCellHandle cell_handle = nb->getGCells()[idx];
-        if (cell_handle->contains(inst)) {
-          nb_selected_index_ = idx;
+        if (cell_handle->contains(debug_inst)) {
+          nb_selected_index_ = &nb - nbVec_.data();
           break;
         }
       }
     }
+    initDebugHeatmap();
   }
 }
 
-void GraphicsImpl::initHeatmap()
+void GraphicsImpl::initDebugHeatmap()
 {
   addMultipleChoiceSetting(
       "Type",
@@ -170,8 +145,53 @@ void GraphicsImpl::initHeatmap()
         }
       });
 
-  setBlock(pbc_->db()->getChip()->getBlock());
+  setChip(pbc_->db()->getChip());
   registerHeatMap();
+}
+
+void GraphicsImpl::initCharts()
+{
+  if (!gui::Gui::enabled()) {
+    return;
+  }
+  gui::Gui* gui = gui::Gui::get();
+
+  if (main_chart_ == nullptr) {
+    main_chart_ = gui->addChart("GPL", "Iteration", {"HPWL (μm)", "Overflow"});
+    main_chart_->setXAxisFormat("%d");
+    main_chart_->setYAxisFormats({"%.2e", "%.2f"});
+    main_chart_->setYAxisMin({std::nullopt, 0});
+  }
+
+  if (density_chart_ == nullptr) {
+    density_chart_ = gui->addChart(
+        "GPL Density Penalty", "Iteration", {"DensityPenalty", "phiCoef"});
+    density_chart_->setXAxisFormat("%d");
+    density_chart_->setYAxisFormats({"%.2e", "%.2f"});
+    if (nbc_) {
+      density_chart_->setYAxisMin({0.0, nbc_->getNbVars().minPhiCoef});
+    }
+  }
+
+  if (stepLength_chart_ == nullptr) {
+    stepLength_chart_ = gui->addChart(
+        "GPL StepLength",
+        "Iteration",
+        {"StepLength", "CoordiDistance", "GradDistance", "Std area"});
+    stepLength_chart_->setXAxisFormat("%d");
+    stepLength_chart_->setYAxisFormats({"%.2e", "%.2f", "%.2f", "%.2f"});
+    stepLength_chart_->setYAxisMin({0.0, 0.0, 0.0, 0.0});
+  }
+
+  if (routing_chart_ == nullptr && np_->getNpVars().routability_driven_mode) {
+    routing_chart_ = gui->addChart(
+        "GPL Routing",
+        "Iteration",
+        {"avg RUDY", "Std area", "% Overflow Tiles", "Total RUDY Overflow"});
+    routing_chart_->setXAxisFormat("%d");
+    routing_chart_->setYAxisFormats({"%.2f", "%.2f", "%.2f", "%.2f"});
+    routing_chart_->setYAxisMin({0.0, 0.0, 0.0, 0.0});
+  }
 }
 
 void GraphicsImpl::drawBounds(gui::Painter& painter)
@@ -203,7 +223,7 @@ void GraphicsImpl::drawInitial(gui::Painter& painter)
   }
 }
 
-void GraphicsImpl::drawForce(gui::Painter& painter)
+void GraphicsImpl::drawField(gui::Painter& painter)
 {
   for (size_t nb_idx = 0; nb_idx < nbVec_.size(); ++nb_idx) {
     const auto& nb = nbVec_[nb_idx];
@@ -220,13 +240,13 @@ void GraphicsImpl::drawForce(gui::Painter& painter)
     int max_len = std::numeric_limits<int>::max();
     for (auto& bin : bins) {
       efMax = std::max(efMax,
-                       std::hypot(bin.electroForceX(), bin.electroForceY()));
+                       std::hypot(bin.electroFieldX(), bin.electroFieldY()));
       max_len = std::min({max_len, bin.dx(), bin.dy()});
     }
 
     for (auto& bin : bins) {
-      float fx = bin.electroForceX();
-      float fy = bin.electroForceY();
+      float fx = bin.electroFieldX();
+      float fy = bin.electroFieldY();
       float f = std::hypot(fx, fy);
       float ratio = f / efMax;
       float dx = fx / f * max_len * ratio;
@@ -286,6 +306,7 @@ void GraphicsImpl::drawSingleGCell(const GCell* gCell,
   switch (gCell->changeType()) {
     case GCell::GCellChange::kRoutability:
       color = gui::Painter::kWhite;
+      color.a = 75;
       break;
     case GCell::GCellChange::kNewInstance:
       color = gui::Painter::kDarkRed;
@@ -350,11 +371,13 @@ void GraphicsImpl::drawNesterov(gui::Painter& painter)
   }
 
   // Draw the placeable objects
-  painter.setPen(gui::Painter::kWhite);
-  drawCells(nbc_->getGCells(), painter);
-  for (size_t nb_idx = 0; nb_idx < nbVec_.size(); ++nb_idx) {
-    const auto& nb = nbVec_[nb_idx];
-    drawCells(nb->getGCells(), painter, nb_idx);
+  if (checkDisplayControl(kDrawInstances)) {
+    painter.setPen(gui::Painter::kWhite);
+    drawCells(nbc_->getGCells(), painter);
+    for (size_t nb_idx = 0; nb_idx < nbVec_.size(); ++nb_idx) {
+      const auto& nb = nbVec_[nb_idx];
+      drawCells(nb->getGCells(), painter, nb_idx);
+    }
   }
 
   // Create lighter versions of the region_colors_ with alpha 50
@@ -394,7 +417,7 @@ void GraphicsImpl::drawNesterov(gui::Painter& painter)
     }
 
     // Draw gradient direction lines in the GUI from the GCell center.
-    // We scale vectors to fit nicely within the cell (similar to drawForce()).
+    // We scale vectors to fit nicely within the cell (similar to drawField()).
     const GCell* gcell = nbc_->getGCellByIndex(selected_);
     auto wlCoeffX = np_->getWireLengthCoefX();
     auto wlCoeffY = np_->getWireLengthCoefY();
@@ -463,9 +486,9 @@ void GraphicsImpl::drawNesterov(gui::Painter& painter)
     }
   }
 
-  // Draw force direction lines
+  // Draw field lines
   if (draw_bins_) {
-    drawForce(painter);
+    drawField(painter);
   }
 }
 
@@ -484,6 +507,10 @@ void GraphicsImpl::drawMBFF(gui::Painter& painter)
 
 void GraphicsImpl::drawObjects(gui::Painter& painter)
 {
+  if (!enabled()) {
+    return;
+  }
+
   switch (mode_) {
     case Mbff:
       drawMBFF(painter);
@@ -546,51 +573,73 @@ void GraphicsImpl::reportSelected()
 
 void GraphicsImpl::addIter(const int iter, const double overflow)
 {
+  if (!gui::Gui::enabled()) {
+    return;
+  }
   odb::dbBlock* block = pbc_->db()->getChip()->getBlock();
   main_chart_->addPoint(iter, {block->dbuToMicrons(nbc_->getHpwl()), overflow});
 
-  if (logger_->debugCheck(utl::GPL, "debugPlot", 1)) {
-    if (density_chart_) {
-      std::vector<double> values;
-      if (!nbVec_.empty() && nbVec_[0]) {
-        values.push_back((static_cast<double>(nbVec_[0]->getDensityPenalty())));
-        values.push_back(static_cast<double>(nbVec_[0]->getStoredPhiCoef()));
-      } else {
-        values.push_back(0.0);
-        values.push_back(0.0);
-      }
-      density_chart_->addPoint(iter, values);
-    }
+  std::vector<double> values;
+  if (!nbVec_.empty() && nbVec_[0]) {
+    values.push_back((static_cast<double>(nbVec_[0]->getDensityPenalty())));
+    values.push_back(static_cast<double>(nbVec_[0]->getStoredPhiCoef()));
+  } else {
+    values.push_back(0.0);
+    values.push_back(0.0);
+  }
+  density_chart_->addPoint(iter, values);
 
-    if (stepLength_chart_) {
-      std::vector<double> values;
-      if (!nbVec_.empty() && nbVec_[0]) {
-        values.push_back(static_cast<double>(nbVec_[0]->getStoredStepLength()));
-        values.push_back(
-            static_cast<double>(nbVec_[0]->getStoredCoordiDistance()));
-        values.push_back(
-            static_cast<double>(nbVec_[0]->getStoredGradDistance()));
-        values.push_back(
-            static_cast<double>(nbVec_[0]->getNesterovInstsArea()));
-      } else {
-        values.push_back(0.0);
-        values.push_back(0.0);
-        values.push_back(0.0);
-        values.push_back(0.0);
-      }
-      stepLength_chart_->addPoint(iter, values);
+  values.clear();
+  if (!nbVec_.empty() && nbVec_[0]) {
+    values.push_back(static_cast<double>(nbVec_[0]->getStoredStepLength()));
+    values.push_back(static_cast<double>(nbVec_[0]->getStoredCoordiDistance()));
+    values.push_back(static_cast<double>(nbVec_[0]->getStoredGradDistance()));
+    values.push_back(
+        block->dbuAreaToMicrons(nbVec_[0]->getNesterovInstsArea()));
+  } else {
+    values.push_back(0.0);
+    values.push_back(0.0);
+    values.push_back(0.0);
+    values.push_back(0.0);
+  }
+  stepLength_chart_->addPoint(iter, values);
+
+  if (routing_chart_) {
+    values.clear();
+    if (!nbVec_.empty() && nbVec_[0] && rb_) {
+      values.push_back(static_cast<double>(rb_->getRudyAverage()));
+      values.push_back(
+          block->dbuAreaToMicrons(nbVec_[0]->getNesterovInstsArea()));
+      const double total_tiles = static_cast<double>(rb_->getTotalTilesCount());
+      values.push_back(total_tiles > 0.0 ? (static_cast<double>(
+                                                rb_->getOverflowedTilesCount())
+                                            / total_tiles * 100.0)
+                                         : 0.0);
+      values.push_back((rb_->getTotalRudyOverflow()));
+    } else {
+      values.push_back(0.0);
+      values.push_back(0.0);
+      values.push_back(0.0);
+      values.push_back(0.0);
     }
+    routing_chart_->addPoint(iter, values);
   }
 }
 
 void GraphicsImpl::addTimingDrivenIter(const int iter)
 {
   main_chart_->addVerticalMarker(iter, gui::Painter::kTurquoise);
+  if (routing_chart_) {
+    routing_chart_->addVerticalMarker(iter, gui::Painter::kTurquoise);
+  }
 }
 
 void GraphicsImpl::addRoutabilitySnapshot(int iter)
 {
   main_chart_->addVerticalMarker(iter, gui::Painter::kYellow);
+  if (routing_chart_) {
+    routing_chart_->addVerticalMarker(iter, gui::Painter::kYellow);
+  }
 }
 
 void GraphicsImpl::addRoutabilityIter(const int iter, const bool revert)
@@ -598,6 +647,10 @@ void GraphicsImpl::addRoutabilityIter(const int iter, const bool revert)
   gui::Painter::Color color
       = revert ? gui::Painter::kRed : gui::Painter::kGreen;
   main_chart_->addVerticalMarker(iter, color);
+  if (routing_chart_ && rb_) {
+    routing_chart_->addVerticalMarker(
+        iter, rb_->isMinRc() ? gui::Painter::kMagenta : gui::Painter::kBlack);
+  }
 }
 
 void GraphicsImpl::cellPlotImpl(bool pause)
@@ -824,7 +877,6 @@ void GraphicsImpl::addFrameLabelImpl(const odb::Rect& bbox,
 
 void GraphicsImpl::saveLabeledImageImpl(std::string_view path,
                                         std::string_view label,
-                                        bool select_buffers,
                                         std::string_view heatmap_control,
                                         int image_width_px)
 {
@@ -834,10 +886,6 @@ void GraphicsImpl::saveLabeledImageImpl(std::string_view path,
 
   if (!heatmap_control.empty()) {
     gui->setDisplayControlsVisible(std::string(heatmap_control), true);
-  }
-
-  if (select_buffers) {
-    gui->select("Inst", "", "Description", "Timing Repair Buffer", true, -1);
   }
 
   static int label_id = 0;
@@ -854,18 +902,18 @@ void GraphicsImpl::saveLabeledImageImpl(std::string_view path,
   gui->clearSelections();
 }
 
-void GraphicsImpl::gifStart(std::string_view path)
+int GraphicsImpl::gifStart(std::string_view path)
 {
-  gif_key_ = gui::Gui::get()->gifStart(std::string(path));
+  return gui::Gui::get()->gifStart(std::string(path));
 }
 
-void GraphicsImpl::gifAddFrameImpl(const odb::Rect& region,
+void GraphicsImpl::gifAddFrameImpl(int key,
+                                   const odb::Rect& region,
                                    int width_px,
                                    double dbu_per_pixel,
                                    std::optional<int> delay)
 {
-  gui::Gui::get()->gifAddFrame(
-      gif_key_, region, width_px, dbu_per_pixel, delay);
+  gui::Gui::get()->gifAddFrame(key, region, width_px, dbu_per_pixel, delay);
 }
 
 void GraphicsImpl::deleteLabel(std::string_view label_name)
@@ -873,9 +921,14 @@ void GraphicsImpl::deleteLabel(std::string_view label_name)
   gui::Gui::get()->deleteLabel(std::string(label_name));
 }
 
-void GraphicsImpl::gifEnd()
+void GraphicsImpl::gifEnd(int key)
 {
-  gui::Gui::get()->gifEnd(gif_key_);
+  gui::Gui::get()->gifEnd(key);
+}
+
+void GraphicsImpl::setDisplayControl(std::string_view name, bool value)
+{
+  gui::Gui::get()->setDisplayControlsVisible(std::string(name), value);
 }
 
 }  // namespace gpl

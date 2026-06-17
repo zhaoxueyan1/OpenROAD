@@ -6,7 +6,9 @@
 #include <map>
 #include <vector>
 
+#include "AntennaCheckerImpl.hh"
 #include "boost/polygon/polygon.hpp"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbShape.h"
 #include "odb/dbTransform.h"
@@ -30,6 +32,9 @@ Polygon rectToPolygon(const odb::Rect& rect)
 std::vector<int> findNodesWithIntersection(const GraphNodes& graph_nodes,
                                            const Polygon& pol)
 {
+  using gtl::operators::operator+=;
+  using gtl::operators::operator&;
+
   // expand object by 1
   PolygonSet obj;
   obj += pol;
@@ -46,9 +51,12 @@ std::vector<int> findNodesWithIntersection(const GraphNodes& graph_nodes,
   return ids;
 }
 
-void wiresToPolygonSetMap(odb::dbWire* wires,
-                          std::map<odb::dbTechLayer*, PolygonSet>& set_by_layer)
+void wiresToPolygonSetMap(
+    odb::dbWire* wires,
+    odb::PtrMap<odb::dbTechLayer, PolygonSet>& set_by_layer)
 {
+  using gtl::operators::operator+=;
+
   odb::dbShape shape;
   odb::dbWireShapeItr shapes_it;
   std::vector<odb::dbShape> via_boxes;
@@ -78,9 +86,12 @@ void wiresToPolygonSetMap(odb::dbWire* wires,
   }
 }
 
-void avoidPinIntersection(odb::dbNet* db_net,
-                          std::map<odb::dbTechLayer*, PolygonSet>& set_by_layer)
+void avoidPinIntersection(
+    odb::dbNet* db_net,
+    odb::PtrMap<odb::dbTechLayer, PolygonSet>& set_by_layer)
 {
+  using gtl::operators::operator-=;
+
   // iterate all instance pin
   for (odb::dbITerm* iterm : db_net->getITerms()) {
     odb::dbMTerm* mterm = iterm->getMTerm();

@@ -88,7 +88,7 @@ void BaseParser::parseDefines(std::string& content)
   std::string processed_content;
 
   while (std::getline(stream, line)) {
-    if (line.find("#!define") == 0) {
+    if (line.starts_with("#!define")) {
       std::string define_statement = line.substr(8);
       define_statement = trim(define_statement);
 
@@ -174,7 +174,8 @@ void BaseParser::resolvePaths(const std::string& path,
 
 void BaseParser::logError(const std::string& message)
 {
-  logger_->error(utl::ODB, 521, "Parser Error: {}", message);
+  logger_->error(
+      utl::ODB, 521, "Parser Error in {}: {}", current_file_path_, message);
 }
 
 std::string BaseParser::trim(const std::string& str)
@@ -187,7 +188,19 @@ std::string BaseParser::trim(const std::string& str)
   return str.substr(start, end - start + 1);
 }
 
+template <typename T>
+void BaseParser::extractValue(const YAML::Node& node, T& value)
+{
+  try {
+    value = node.as<T>();
+  } catch (const YAML::Exception& e) {
+    logError("Error parsing value: " + std::string(e.what()));
+  }
+}
+
 // Explicit template instantiations for common types
+template void BaseParser::extractValue<std::string>(const YAML::Node& node,
+                                                    std::string& value);
 template void BaseParser::extractValue<std::string>(const YAML::Node& node,
                                                     const std::string& key,
                                                     std::string& value);

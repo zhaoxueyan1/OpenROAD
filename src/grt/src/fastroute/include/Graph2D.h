@@ -55,6 +55,7 @@ class Graph2D
   void init(int x_grid, int y_grid, int num_layers, utl::Logger* logger);
   void InitEstUsage();
   void InitLastUsage(int upType);
+  void copyRoutingStateFrom(const Graph2D& other, bool include_ndr_state);
   void clear();
   void clearUsed();
   bool hasEdges() const;
@@ -79,6 +80,7 @@ class Graph2D
 
   void addCapH(int x, int y, int cap);
   void addCapV(int x, int y, int cap);
+  void rebuildUsedGrids();
   void addEstUsageToUsage();
   void addRedH(int x, int y, int red);
   void addRedV(int x, int y, int red);
@@ -122,9 +124,9 @@ class Graph2D
   std::vector<int> getMultipleCongestedNDRnet();
 
  private:
-  int x_grid_;
-  int y_grid_;
-  int num_layers_;
+  int x_grid_ = 0;
+  int y_grid_ = 0;
+  int num_layers_ = 0;
   std::set<std::string> congestion_nets_;
 
   void updateCongList(const std::string& net_name, double edge_cost);
@@ -156,7 +158,7 @@ class Graph2D
       h_ndr_nets_;  // The way it is indexed is (X, Y)
   std::vector<NDRCongestion> congested_ndrs_;
 
-  utl::Logger* logger_;
+  utl::Logger* logger_ = nullptr;
 
   std::set<std::pair<int, int>> h_used_ggrid_;
   std::set<std::pair<int, int>> v_used_ggrid_;

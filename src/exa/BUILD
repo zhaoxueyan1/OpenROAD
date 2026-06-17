@@ -24,9 +24,8 @@ cc_library(
         "include",
     ],
     deps = [
-        "//src/odb",
+        "//src/odb/src/db",
         "//src/utl",
-        "@tk_tcl//:tcl",
     ],
 )
 
@@ -43,20 +42,18 @@ cc_library(
     hdrs = [
         "include/exa/MakeExample.h",
     ],
-    copts = [
-        "-Isrc/exa/src",
-    ],
     includes = [
         "include",
+        "src",
     ],
     deps = [
         ":exa",
         "//:ord",
         "//src/gui",
-        "//src/odb",
+        "//src/odb/src/db",
         "//src/utl",
         "@boost.stacktrace",
-        "@tk_tcl//:tcl",
+        "@tcl_lang//:tcl",
     ],
 )
 

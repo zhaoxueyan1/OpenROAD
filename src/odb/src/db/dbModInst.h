@@ -4,11 +4,16 @@
 // Generator Code Begin Header
 #pragma once
 
+#include <cstdint>
+
 #include "dbCore.h"
 #include "dbVector.h"
 #include "odb/dbId.h"
 #include "odb/dbSet.h"
-#include "odb/odb.h"
+// User Code Begin Includes
+#include <string>
+#include <unordered_map>
+// User Code End Includes
 
 namespace odb {
 class dbIStream;
@@ -25,6 +30,8 @@ class _dbModInst : public _dbObject
 {
  public:
   _dbModInst(_dbDatabase*);
+
+  ~_dbModInst();
 
   bool operator==(const _dbModInst& rhs) const;
   bool operator!=(const _dbModInst& rhs) const { return !operator==(rhs); }

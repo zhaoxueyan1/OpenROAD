@@ -6,7 +6,7 @@ if { ![info exists repair_args] } {
 }
 read_liberty Nangate45/Nangate45_typ.lib
 read_lef Nangate45/Nangate45.lef
-read_def repair_setup_sizedown.def
+read_def repair_setup_size_down_fanout.def
 create_clock -period 0.35 clk
 set_load 1.0 [all_outputs]
 
@@ -20,7 +20,9 @@ set_dont_use [get_lib_cells CLKBUF*]
 
 #set_debug_level RSZ opt_moves 1
 repair_timing -setup -sequence "vt_swap"
-run_equivalence_test repair_setup_sizeup ./Nangate45/work_around_yosys/ "None"
+run_equivalence_test repair_setup_sizeup \
+  -lib_dir ./Nangate45/work_around_yosys/ \
+  -remove_cells "None"
 report_checks -fields input -digits 3
 
 repair_timing -setup -skip_vt_swap

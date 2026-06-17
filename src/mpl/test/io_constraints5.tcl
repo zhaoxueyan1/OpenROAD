@@ -9,15 +9,15 @@ read_lef "./Nangate45/Nangate45.lef"
 read_lef "./testcases/macro_only.lef"
 read_liberty "./testcases/macro_only.lib"
 
-read_verilog "./testcases/io_constraints1.v"
-link_design "io_constraints1"
-read_def "./testcases/io_constraints1.def" -floorplan_initialize
+# Input .def with enough std cells to generate a base pin access depth
+# that allow us to see the difference between the blockages.
+read_def "./testcases/io_constraints4.def"
 
 set_io_pin_constraint -pin_names {io_1 io_2} -region right:70-90
 set_io_pin_constraint -pin_names {io_3} -region right:10-50
 
 set_thread_count 0
-rtl_macro_placer -report_directory [make_result_dir] -halo_width 4.0
+rtl_macro_placer -report_directory [make_result_dir]
 
 set def_file [make_result_file io_constraints5.def]
 write_def $def_file

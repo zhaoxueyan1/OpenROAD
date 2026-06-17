@@ -4,16 +4,17 @@
 // Generator Code Begin Cpp
 #include "dbLogicPort.h"
 
+#include <cstdlib>
 #include <string>
 
 #include "dbBlock.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbHashTable.hpp"
 #include "dbIsolation.h"
 #include "dbModInst.h"
 #include "dbPowerSwitch.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "dbVector.h"
 #include "odb/db.h"
 // User Code Begin Includes
@@ -24,6 +25,7 @@ template class dbTable<_dbLogicPort>;
 
 bool _dbLogicPort::operator==(const _dbLogicPort& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (name_ != rhs.name_) {
     return false;
   }
@@ -35,6 +37,7 @@ bool _dbLogicPort::operator==(const _dbLogicPort& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbLogicPort::operator<(const _dbLogicPort& rhs) const
@@ -68,10 +71,18 @@ void _dbLogicPort::collectMemInfo(MemInfo& info)
   info.cnt++;
   info.size += sizeof(*this);
 
+  info.children["direction"].add(direction);
+
   // User Code Begin collectMemInfo
-  info.children_["name"].add(name_);
-  info.children_["direction"].add(direction);
+  info.children["name"].add(name_);
   // User Code End collectMemInfo
+}
+
+_dbLogicPort::~_dbLogicPort()
+{
+  if (name_) {
+    free((void*) name_);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -86,7 +97,7 @@ const char* dbLogicPort::getName() const
   return obj->name_;
 }
 
-std::string dbLogicPort::getDirection() const
+const std::string& dbLogicPort::getDirection() const
 {
   _dbLogicPort* obj = (_dbLogicPort*) this;
   return obj->direction;

@@ -19,6 +19,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <utility>
 #include <variant>
@@ -37,9 +38,9 @@
 #include "dbDescriptors.h"
 #include "db_sta/dbNetwork.hh"
 #include "db_sta/dbSta.hh"
+#include "gui/gui.h"
 #include "odb/db.h"
 #include "odb/dbTypes.h"
-#include "sta/Liberty.hh"
 #include "utl/Logger.h"
 
 Q_DECLARE_METATYPE(odb::dbTechLayer*);
@@ -185,10 +186,8 @@ QVariant DisplayControlModel::data(const QModelIndex& index, int role) const
 
           auto add_prop
               = [&props](const std::string& prop, QString& info) -> bool {
-            auto prop_find = std::find_if(
-                props.begin(), props.end(), [prop](const auto& p) {
-                  return p.name == prop;
-                });
+            auto prop_find = std::ranges::find_if(
+                props, [prop](const auto& p) { return p.name == prop; });
             if (prop_find == props.end()) {
               return false;
             }
@@ -462,7 +461,7 @@ DisplayControls::DisplayControls(QWidget* parent)
                "Vias",
                shape_types_srouting,
                Qt::Checked);
-  makeLeafItem(shape_types_.pins, "Pins", shape_types, Qt::Checked);
+  makeLeafItem(shape_types_.pins, "Pins", shape_types, Qt::Checked, true);
   makeLeafItem(shape_types_.pin_names, "Pin Names", shape_types, Qt::Checked);
   shape_types_.pins.visible->setData(
       QVariant::fromValue(&shape_types_.pin_names), kDisableRowItemIdx);
@@ -529,6 +528,8 @@ DisplayControls::DisplayControls(QWidget* parent)
       misc_.manufacturing_grid, "Manufacturing grid", misc, Qt::Unchecked);
   makeLeafItem(misc_.gcell_grid, "GCell grid", misc, Qt::Unchecked);
   makeLeafItem(misc_.flywires_only, "Flywires only", misc, Qt::Unchecked);
+  makeLeafItem(
+      misc_.focused_nets_guides, "Focused nets guides", misc, Qt::Unchecked);
   makeLeafItem(misc_.labels, "Labels", misc, Qt::Checked, true);
   setNameItemDoubleClickAction(misc_.labels, [this]() {
     label_font_
@@ -937,7 +938,7 @@ void DisplayControls::toggleParent(ModelRow& row)
 
 void DisplayControls::itemChanged(QStandardItem* item)
 {
-  if (item->isCheckable() == false) {
+  if (!item->isCheckable()) {
     emit changed();
     return;
   }
@@ -1084,7 +1085,8 @@ std::pair<QColor*, Qt::BrushStyle*> DisplayControls::lookupColor(
     QColor* item_color = &layer_color_[tech_layer];
     Qt::BrushStyle* item_pattern = &layer_pattern_[tech_layer];
     return {item_color, item_pattern};
-  } else if (site != nullptr) {
+  }
+  if (site != nullptr) {
     return {&site_color_[site], nullptr};
   }
 
@@ -1249,8 +1251,13 @@ void DisplayControls::findControlsInItems(const std::string& path,
   collectControls(model_->invisibleRootItem(), column, controls);
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  // NonPathWildcardConversion makes '*' match across '/' (like the old
+  // QRegExp::Wildcard); the default path mode would translate '*' to "[^/]*",
+  // so a bare '*' would fail to match any control path containing a separator.
   QString regexPattern = QRegularExpression::wildcardToRegularExpression(
-      QString::fromStdString(path));  // Defaults to exact match.
+      QString::fromStdString(path),
+      QRegularExpression::NonPathWildcardConversion);  // Defaults to exact
+                                                       // match.
 
   // Create the QRegularExpression object with the case-insensitive option.
   const QRegularExpression path_compare(
@@ -1879,9 +1886,19 @@ bool DisplayControls::isFlywireHighlightOnly() const
   return isModelRowVisible(&misc_.flywires_only);
 }
 
+bool DisplayControls::areFocusedNetsGuidesVisible() const
+{
+  return isModelRowVisible(&misc_.focused_nets_guides);
+}
+
 bool DisplayControls::areIOPinsVisible() const
 {
   return isModelRowVisible(&shape_types_.pins);
+}
+
+bool DisplayControls::areIOPinsSelectable() const
+{
+  return isModelRowSelectable(&shape_types_.pins);
 }
 
 bool DisplayControls::areIOPinNamesVisible() const
@@ -1921,7 +1938,7 @@ QFont DisplayControls::ioPinMarkersFont() const
 
 void DisplayControls::registerRenderer(Renderer* renderer)
 {
-  if (custom_controls_.count(renderer) != 0) {
+  if (custom_controls_.contains(renderer)) {
     // already registered
     return;
   }
@@ -2007,12 +2024,11 @@ void DisplayControls::registerRenderer(Renderer* renderer)
     custom_controls.push_back(
         model_->takeRow(model_->invisibleRootItem()->rowCount() - 1));
   }
-  std::stable_sort(custom_controls.begin(),
-                   custom_controls.end(),
-                   [](const QList<QStandardItem*>& list0,
-                      const QList<QStandardItem*>& list1) {
-                     return list0[kName]->text() < list1[kName]->text();
-                   });
+  std::ranges::stable_sort(custom_controls,
+                           [](const QList<QStandardItem*>& list0,
+                              const QList<QStandardItem*>& list1) {
+                             return list0[kName]->text() < list1[kName]->text();
+                           });
   for (const auto& row : custom_controls) {
     model_->appendRow(row);
   }
@@ -2022,16 +2038,16 @@ void DisplayControls::unregisterRenderer(Renderer* renderer)
 {
   saveRendererState(renderer);
 
-  if (custom_controls_.count(renderer) == 0) {
+  if (!custom_controls_.contains(renderer)) {
     return;
   }
 
   const auto& rows = custom_controls_[renderer];
 
   const QModelIndex& parent_idx = rows[0].name->index().parent();
-  for (auto itr = rows.rbegin(); itr != rows.rend(); itr++) {
+  for (const auto& row : std::ranges::reverse_view(rows)) {
     // remove from Display controls
-    auto index = model_->indexFromItem(itr->name);
+    auto index = model_->indexFromItem(row.name);
     model_->removeRow(index.row(), index.parent());
   }
   if (!model_->hasChildren(parent_idx)) {
@@ -2113,37 +2129,43 @@ void DisplayControls::techInit(odb::dbTech* tech)
   std::mt19937 gen_color(1);
 
   auto generate_next_color = [&gen_color]() -> QColor {
-    return QColor(
-        50 + gen_color() % 200, 50 + gen_color() % 200, 50 + gen_color() % 200);
+    const int blue = 50 + gen_color() % 200;
+    const int green = 50 + gen_color() % 200;
+    const int red = 50 + gen_color() % 200;
+    return QColor(red, green, blue);
   };
 
   // Iterate through the layers and set default colors
   for (dbTechLayer* layer : tech->getLayers()) {
     dbTechLayerType type = layer->getType();
     QColor color;
-    if (type == dbTechLayerType::ROUTING) {
-      if (metal < default_metal_colors.size()) {
-        color = default_metal_colors[metal++];
-      } else {
-        // pick a random color as we exceeded the built-in palette size
-        color = generate_next_color();
-      }
-    } else if (type == dbTechLayerType::CUT) {
-      if (via < default_cut_colors.size()) {
-        if (metal != 0) {
-          color = default_cut_colors[via++];
+    if (layer->isBackside()) {
+      color = generate_next_color();
+    } else {
+      if (type == dbTechLayerType::ROUTING) {
+        if (metal < default_metal_colors.size()) {
+          color = default_metal_colors[metal++];
         } else {
-          // via came first, so pick random color
+          // pick a random color as we exceeded the built-in palette size
+          color = generate_next_color();
+        }
+      } else if (type == dbTechLayerType::CUT) {
+        if (via < default_cut_colors.size()) {
+          if (metal != 0) {
+            color = default_cut_colors[via++];
+          } else {
+            // via came first, so pick random color
+            color = generate_next_color();
+          }
+        } else {
+          // pick a random color as we exceeded the built-in palette size
           color = generate_next_color();
         }
       } else {
-        // pick a random color as we exceeded the built-in palette size
+        // Do not draw from the existing palette so the metal layers can claim
+        // those colors.
         color = generate_next_color();
       }
-    } else {
-      // Do not draw from the existing palette so the metal layers can claim
-      // those colors.
-      color = generate_next_color();
     }
     color.setAlpha(180);
     layer_color_[layer] = std::move(color);
@@ -2163,7 +2185,7 @@ void DisplayControls::setCurrentChip(odb::dbChip* chip)
     return;
   }
 
-  std::set<odb::dbTech*> visible_techs;
+  odb::PtrSet<odb::dbTech> visible_techs;
 
   std::function<void(odb::dbChip*)> collect_techs = [&](odb::dbChip* chip) {
     auto tech = chip->getTech();
@@ -2303,7 +2325,7 @@ void DisplayControls::setOnlyVisibleLayers(
   }
 
   for (auto* layer : layers) {
-    if (layer_controls_.count(layer) != 0) {
+    if (layer_controls_.contains(layer)) {
       layer_controls_[layer].visible->setCheckState(Qt::Checked);
     }
   }
@@ -2363,11 +2385,7 @@ bool DisplayControls::eventFilter(QObject* obj, QEvent* event)
   if (obj == view_->viewport()) {
     if (event->type() == QEvent::MouseButtonPress) {
       QMouseEvent* mouse_event = static_cast<QMouseEvent*>(event);
-      if (mouse_event->button() == Qt::RightButton) {
-        ignore_selection_ = true;
-      } else {
-        ignore_selection_ = false;
-      }
+      ignore_selection_ = mouse_event->button() == Qt::RightButton;
     } else if (event->type() == QEvent::MouseButtonRelease) {
       ignore_selection_ = false;
     } else if (event->type() == QEvent::ContextMenu) {

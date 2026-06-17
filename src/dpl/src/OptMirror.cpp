@@ -3,6 +3,7 @@
 
 #include "dpl/OptMirror.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <unordered_set>
@@ -18,7 +19,6 @@ namespace dpl {
 
 using utl::DPL;
 
-using std::sort;
 using std::unordered_set;
 
 using odb::dbITerm;
@@ -48,7 +48,7 @@ void NetBox::restoreBox()
 
 ////////////////////////////////////////////////////////////////
 
-OptimizeMirroring::OptimizeMirroring(Logger* logger, odb::dbDatabase* db)
+OptimizeMirroring::OptimizeMirroring(utl::Logger* logger, odb::dbDatabase* db)
     : logger_(logger), db_(db), block_(db_->getChip()->getBlock())
 {
 }
@@ -63,11 +63,16 @@ void OptimizeMirroring::run()
   }
 
   // Sort net boxes by net hpwl.
-  sort(sorted_boxes.begin(),
-       sorted_boxes.end(),
-       [](NetBox* net_box1, NetBox* net_box2) -> bool {
-         return net_box1->hpwl() > net_box2->hpwl();
-       });
+  std::ranges::sort(
+      sorted_boxes, [](NetBox* net_box1, NetBox* net_box2) -> bool {
+        const int64_t hpwl1 = net_box1->hpwl();
+        const int64_t hpwl2 = net_box2->hpwl();
+        if (hpwl1 != hpwl2) {
+          return hpwl1 > hpwl2;
+        }
+        // net_box_map_ is unordered; tie-break for stable output.
+        return net_box1->getNet()->getId() < net_box2->getNet()->getId();
+      });
 
   std::vector<odb::dbInst*> mirror_candidates
       = findMirrorCandidates(sorted_boxes);

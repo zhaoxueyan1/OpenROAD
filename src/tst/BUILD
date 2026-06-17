@@ -10,59 +10,65 @@ package(
 
 cc_library(
     name = "nangate45_fixture",
+    testonly = 1,
     hdrs = ["include/tst/nangate45_fixture.h"],
     data = [
         "//test:nangate45_data",
     ],
-    includes = ["."],
+    includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [":tst"],
 )
 
 cc_library(
     name = "sky130_fixture",
+    testonly = 1,
     hdrs = ["include/tst/sky130_fixture.h"],
     data = [
         "//test:sky130hd_data",
     ],
-    includes = ["."],
+    includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [":tst"],
 )
 
 cc_library(
     name = "tst",
+    testonly = 1,
     srcs = [
         "src/fixture.cpp",
     ],
     hdrs = [
         "include/tst/fixture.h",
     ],
+    defines = [
+        "BAZEL_BUILD",
+    ],
     includes = [
         "include",
     ],
     deps = [
         "//src/dbSta",
-        "//src/dbSta:dbNetwork",
-        "//src/odb",
+        "//src/odb/src/db",
+        "//src/odb/src/lefin",
         "//src/sta:opensta_lib",
         "//src/utl",
         "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest",
-        "@spdlog",
-        "@tk_tcl//:tcl",
+        "@tcl_lang//:tcl",
     ],
 )
 
 cc_library(
     name = "integrated_fixture",
+    testonly = 1,
     srcs = ["src/IntegratedFixture.cpp"],
     hdrs = ["include/tst/IntegratedFixture.h"],
     data = [
         "//test:nangate45_data",
         "//test:sky130hd_data",
     ],
-    includes = ["."],
+    includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
         ":tst",
@@ -73,14 +79,11 @@ cc_library(
         "//src/dpl",
         "//src/est",
         "//src/grt",
-        "//src/odb",
+        "//src/odb/src/db",
         "//src/rsz",
         "//src/sta:opensta_lib",
         "//src/stt",
         "//src/utl",
-        "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest",
-        "@spdlog",
-        "@tk_tcl//:tcl",
     ],
 )

@@ -6,43 +6,36 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "utl/Logger.h"
 
 namespace pdn {
 
-using odb::dbBlock;
-using odb::dbBox;
-using odb::dbDatabase;
-using odb::dbGlobalConnect;
-using odb::dbInst;
-using odb::dbMaster;
-using odb::dbMTerm;
-using odb::dbNet;
-using odb::dbRegion;
-
-using utl::Logger;
-
 enum ExtensionMode
 {
-  CORE,
-  RINGS,
-  BOUNDARY,
-  FIXED
+  kCore,
+  kRings,
+  kBoundary,
+  kFixed
 };
 
 enum StartsWith
 {
-  GRID,
-  POWER,
-  GROUND
+  kGrid,
+  kPower,
+  kGround
 };
 
 enum PowerSwitchNetworkType
 {
-  STAR,
-  DAISY
+  kStar,
+  kDaisy
 };
 
 class VoltageDomain;
@@ -54,7 +47,7 @@ class SRoute;
 class PdnGen
 {
  public:
-  PdnGen(dbDatabase* db, Logger* logger);
+  PdnGen(odb::dbDatabase* db, utl::Logger* logger);
   ~PdnGen();
 
   void reset();
@@ -98,7 +91,8 @@ class PdnGen
                     const std::vector<odb::dbTechLayer*>& generate_obstructions,
                     PowerCell* powercell,
                     odb::dbNet* powercontrol,
-                    const char* powercontrolnetwork);
+                    const char* powercontrolnetwork,
+                    const std::vector<odb::dbTechLayer*>& pad_pin_layers);
   void makeInstanceGrid(
       VoltageDomain* domain,
       const std::string& name,
@@ -142,7 +136,8 @@ class PdnGen
                  bool snap,
                  StartsWith starts_with,
                  ExtensionMode extend,
-                 const std::vector<odb::dbNet*>& nets);
+                 const std::vector<odb::dbNet*>& nets,
+                 bool allow_out_of_core);
   void makeConnect(
       Grid* grid,
       odb::dbTechLayer* layer0,
@@ -154,7 +149,7 @@ class PdnGen
       int max_rows,
       int max_columns,
       const std::vector<odb::dbTechLayer*>& ongrid,
-      const std::map<odb::dbTechLayer*, std::pair<int, bool>>& split_cuts,
+      const odb::PtrMap<odb::dbTechLayer, std::pair<int, bool>>& split_cuts,
       const std::string& dont_use_vias);
 
   void writeToDb(bool add_pins, const std::string& report_file = "") const;
@@ -167,10 +162,10 @@ class PdnGen
 
   void checkSetup() const;
 
-  void repairVias(const std::set<odb::dbNet*>& nets);
+  void repairVias(const odb::PtrSet<odb::dbNet>& nets);
 
   void createSrouteWires(const char* net,
-                         const char* outerNet,
+                         const char* outer_net,
                          odb::dbTechLayer* layer0,
                          odb::dbTechLayer* layer1,
                          int cut_pitch_x,
@@ -180,8 +175,8 @@ class PdnGen
                          int max_rows,
                          int max_columns,
                          const std::vector<odb::dbTechLayer*>& ongrid,
-                         std::vector<int> metalWidths,
-                         std::vector<int> metalspaces,
+                         const std::vector<int>& metal_widths,
+                         const std::vector<int>& metalspaces,
                          const std::vector<odb::dbInst*>& insts);
 
   PDNRenderer* getDebugRenderer() const { return debug_renderer_.get(); }
@@ -199,7 +194,7 @@ class PdnGen
   VoltageDomain* getCoreDomain() const;
   void ensureCoreDomain();
 
-  void updateRenderer() const;
+  void updateRenderer(bool reset) const;
 
   bool importUPF(VoltageDomain* domain);
   bool importUPF(Grid* grid, PowerSwitchNetworkType type) const;

@@ -13,7 +13,7 @@ using utl::GUI;
 bool check_gui(const char* command)
 {
   auto logger = ord::OpenRoad::openRoad()->getLogger(); 
-  if (!gui::Gui::enabled()) {
+  if (!gui::Gui::hasUI()) {
     logger->info(GUI, 1, "Command {} is not usable in non-GUI mode", command);
     return false;
   }
@@ -47,16 +47,16 @@ odb::dbBlock* get_block()
 // converts from microns to DBU
 odb::Rect make_rect(double xlo, double ylo, double xhi, double yhi)
 {
-  auto block = get_block();
-  int dbuPerUU = block->getDbUnitsPerMicron();
+  auto db = ord::OpenRoad::openRoad()->getDb();
+  int dbuPerUU = db->getDbuPerMicron();
   return odb::Rect(xlo * dbuPerUU, ylo * dbuPerUU, xhi * dbuPerUU, yhi * dbuPerUU);
 }
 
 // converts from microns to DBU
 odb::Point make_point(double x, double y)
 {
-  auto block = get_block();
-  int dbuPerUU = block->getDbUnitsPerMicron();
+  auto db = ord::OpenRoad::openRoad()->getDb();
+  int dbuPerUU = db->getDbuPerMicron();
   return odb::Point(x * dbuPerUU, y * dbuPerUU);
 }
 
@@ -301,13 +301,13 @@ void save_image(const char* filename, double xlo, double ylo, double xhi, double
   gui->saveImage(filename, make_rect(xlo, ylo, xhi, yhi), width_px, dbu_per_pixel, display_settings);
 }
 
-void save_clocktree_image(const char* filename, const char* clock_name, const char* corner = "", int width_px = 0, int height_px = 0)
+void save_clocktree_image(const char* filename, const char* clock_name, const char* scene = "", int width_px = 0, int height_px = 0)
 {
   if (!check_gui("save_clocktree_image")) {
     return;
   }
   auto gui = gui::Gui::get();
-  gui->saveClockTreeImage(clock_name, filename, corner, width_px, height_px);
+  gui->saveClockTreeImage(clock_name, filename, scene, width_px, height_px);
 }
 
 void select_clockviewer_clock(const char* clock_name, int depth = 0)
@@ -330,6 +330,24 @@ void save_histogram_image(const char* filename, const char* mode, int width_px =
   }
   auto gui = gui::Gui::get();
   gui->saveHistogramImage(filename, mode, width_px, height_px);
+}
+
+void show_worst_path_internal(bool setup = true)
+{
+  if (!check_gui("show_worst_path")) {
+    return;
+  }
+  auto gui = gui::Gui::get();
+  gui->showWorstTimingPath(setup);
+}
+
+void clear_timing_path_internal()
+{
+  if (!check_gui("clear_timing_path")) {
+    return;
+  }
+  auto gui = gui::Gui::get();
+  gui->clearTimingPath();
 }
 
 void clear_rulers()
@@ -487,7 +505,9 @@ const std::string input_dialog(const char* title, const char* question)
 // language to avoid conflicts in C++.
 void gui_pause(int timeout = 0)
 {
-  if (!check_gui("pause")) {
+  if (!gui::Gui::enabled()) {
+    auto logger = ord::OpenRoad::openRoad()->getLogger();
+    logger->info(GUI, 96, "Command pause is not usable in non-GUI mode");
     return;
   }
   auto gui = gui::Gui::get();
@@ -836,7 +856,11 @@ void gif_add(int key, double xlo, double ylo, double xhi, double yhi, int width_
   if (delay > 0) {
     delay_pass = delay;
   }
-  gui->gifAddFrame(key, make_rect(xlo, ylo, xhi, yhi), width_px, dbu_per_pixel, delay_pass);
+  std::optional<int> key_pass;
+  if (key >= 0) {
+    key_pass = key;
+  }
+  gui->gifAddFrame(key_pass, make_rect(xlo, ylo, xhi, yhi), width_px, dbu_per_pixel, delay_pass);
 }
 
 void gif_end(int key)
@@ -844,8 +868,12 @@ void gif_end(int key)
   if (!check_gui("gif_end")) {
     return;
   }
+  std::optional<int> key_pass;
+  if (key >= 0) {
+    key_pass = key;
+  }
   auto gui = gui::Gui::get();
-  gui->gifEnd(key);
+  gui->gifEnd(key_pass);
 }
 
 %} // inline

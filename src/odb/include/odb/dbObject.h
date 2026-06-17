@@ -3,9 +3,8 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
-
-#include "odb/odb.h"
 
 namespace utl {
 class Logger;
@@ -33,7 +32,6 @@ class _dbObject;
 ///
 enum dbObjectType
 {
-
   // Design Objects
   dbGdsLibObj,
   dbBlockObj,
@@ -60,6 +58,7 @@ enum dbObjectType
   dbBPinObj,
   // Generator Code Begin DbObjectType
   dbAccessPointObj,
+  dbAlignmentMarkerRuleObj,
   dbBusPortObj,
   dbCellEdgeSpacingObj,
   dbChipObj,
@@ -68,6 +67,7 @@ enum dbObjectType
   dbChipConnObj,
   dbChipInstObj,
   dbChipNetObj,
+  dbChipPathObj,
   dbChipRegionObj,
   dbChipRegionInstObj,
   dbDatabaseObj,
@@ -124,13 +124,18 @@ enum dbObjectType
   dbTechLayerSpacingEolRuleObj,
   dbTechLayerSpacingTablePrlRuleObj,
   dbTechLayerTwoWiresForbiddenSpcRuleObj,
+  dbTechLayerVoltageSpacingObj,
   dbTechLayerWidthTableRuleObj,
   dbTechLayerWrongDirSpacingRuleObj,
+  dbUnfoldedChipBumpInstObj,
+  dbUnfoldedChipConnObj,
+  dbUnfoldedChipInstObj,
+  dbUnfoldedChipNetObj,
+  dbUnfoldedChipRegionInstObj,
   // Generator Code End DbObjectType
 
   // Lib Objects
   dbLibObj,
-  dbGDSLibObj,
   dbSiteObj,
   dbMasterObj,
   dbMPinObj,
@@ -163,17 +168,26 @@ class dbObject
  public:
   dbObjectType getObjectType() const;
   dbDatabase* getDb() const;
-  uint getId() const;
+  uint32_t getId() const;
   const char* getTypeName() const;
   std::string getName() const;
   bool isValid() const;
 
   static const char* getTypeName(dbObjectType type);
   static dbObjectType getType(const char* name, utl::Logger* logger);
-  // These are not intended for client use as the returned class is
-  // not exported.  They are for internal db convenience.
+
+  ///
+  /// These are not intended for client use as the returned class is
+  /// not exported.  They are for internal db convenience.
+  ///
   _dbObject* getImpl();
   const _dbObject* getImpl() const;
+
+  ///
+  /// Returns object name for debugging
+  /// e.g., "dbITerm(34, 0x555551234b, 'u0/buf/A')"
+  ///
+  std::string getDebugName() const;
 
  protected:
   dbObject() = default;

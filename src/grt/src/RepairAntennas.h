@@ -18,12 +18,12 @@
 #include "dpl/Opendp.h"
 #include "grt/GRoute.h"
 #include "grt/RoutePt.h"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbShape.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
 #include "odb/wOrder.h"
-#include "sta/Liberty.hh"
 
 // Forward declaration protects FastRoute code from any
 // header file from the DB. FastRoute code keeps independent.
@@ -47,7 +47,7 @@ class GlobalRouter;
 class Net;
 class Pin;
 
-using AntennaViolations = std::map<odb::dbNet*, std::vector<ant::Violation>>;
+using AntennaViolations = odb::PtrMap<odb::dbNet, std::vector<ant::Violation>>;
 
 struct RoutePtPins
 {
@@ -232,7 +232,7 @@ class RepairAntennas
   odb::dbOrientType getRowOrient(const odb::Point& point);
   RoutePtPinsMap findRoutePtPins(Net* net);
   bool pinOverlapsGSegment(const odb::Point& pin_position,
-                           const int pin_layer,
+                           int pin_layer,
                            const std::vector<odb::Rect>& pin_boxes,
                            const GRoute& route);
 

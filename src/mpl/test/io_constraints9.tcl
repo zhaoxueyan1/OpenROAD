@@ -9,14 +9,12 @@ read_lef "./Nangate45/Nangate45.lef"
 read_lef "./testcases/macro_only.lef"
 read_liberty "./testcases/macro_only.lib"
 
-read_verilog "./testcases/io_constraints1.v"
-link_design "io_constraints1"
-read_def "./testcases/io_constraints1.def" -floorplan_initialize
+read_def "./testcases/io_constraints1.def"
 
 set_io_pin_constraint -pin_names {io_1 io_2} -region right:70-90
 
 set_thread_count 0
-rtl_macro_placer -report_directory [make_result_dir] -halo_width 4.0
+rtl_macro_placer -report_directory [make_result_dir]
 
 set def_file [make_result_file io_constraints9.def]
 write_def $def_file

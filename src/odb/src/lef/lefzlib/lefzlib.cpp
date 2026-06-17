@@ -31,7 +31,6 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <zlib.h>
 
 #include <climits>
 #include <cstdio>
@@ -39,6 +38,7 @@
 #include <cstring>
 
 #include "lefrReader.hpp"
+#include "zlib.h"
 
 /*
  * Private functions:
@@ -62,7 +62,7 @@ lefGZFile lefGZipOpen(const char* gzipPath, const char* mode)
     /* successfully open the gzip file */
     /* set the read function to read from a compressed file */
     LefParser::lefrSetReadFunction(lefGZip_read);
-    return (lefGZFile) fptr;
+    return fptr;
   }
   return nullptr;
 }

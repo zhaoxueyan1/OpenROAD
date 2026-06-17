@@ -37,14 +37,8 @@ class MplObserver
   virtual void finishedClustering(PhysicalHierarchy* tree) {}
 
   virtual void setMaxLevel(int max_level) {}
-  virtual void setMacroBlockages(const std::vector<mpl::Rect>& macro_blockages)
-  {
-  }
-  virtual void setPlacementBlockages(
-      const std::vector<mpl::Rect>& placement_blockages)
-  {
-  }
-  virtual void setBundledNets(const std::vector<BundledNet>& bundled_nets) {}
+  virtual void setSoftBlockages(const std::vector<odb::Rect>& soft_blockages) {}
+  virtual void setNets(const BundledNetList& nets) {}
   virtual void setShowBundledNets(bool show_bundled_nets) {}
   virtual void setShowClustersIds(bool show_clusters_ids) {}
   virtual void setSkipSteps(bool skip_steps) {}
@@ -54,8 +48,10 @@ class MplObserver
   virtual void setCurrentCluster(Cluster* current_cluster) {}
 
   virtual void setOutline(const odb::Rect& outline) {}
-  virtual void setGuides(const std::map<int, Rect>& guides) {}
-  virtual void setFences(const std::map<int, Rect>& fences) {}
+  virtual void setGuides(const std::map<int, odb::Rect>& guides) {}
+  virtual void setFences(const std::map<int, odb::Rect>& fences) {}
+  virtual void addNotch(const odb::Rect& notch) {}
+  virtual void clearNotches() {}
   virtual void setIOConstraintsMap(
       const ClusterToBoundaryRegionMap& io_cluster_to_constraint)
   {
@@ -73,7 +69,7 @@ class MplObserver
   virtual void setBoundaryPenalty(const PenaltyData& penalty) {}
   virtual void setFencePenalty(const PenaltyData& penalty) {}
   virtual void setGuidancePenalty(const PenaltyData& penalty) {}
-  virtual void setMacroBlockagePenalty(const PenaltyData& penalty) {}
+  virtual void setSoftBlockagePenalty(const PenaltyData& penalty) {}
   virtual void setFixedMacrosPenalty(const PenaltyData& penalty) {}
   virtual void setNotchPenalty(const PenaltyData& penalty) {}
   virtual void setOutlinePenalty(const PenaltyData& penalty) {}

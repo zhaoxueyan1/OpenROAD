@@ -5,15 +5,16 @@
 #include "dbChipRegionInst.h"
 
 #include "dbChipRegion.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "odb/db.h"
 // User Code Begin Includes
 #include "dbChip.h"
 #include "dbChipBumpInst.h"
 #include "dbChipBumpInstItr.h"
 #include "dbChipInst.h"
+#include "odb/dbSet.h"
 #include "odb/dbTransform.h"
 #include "odb/geom.h"
 // User Code End Includes
@@ -22,6 +23,7 @@ template class dbTable<_dbChipRegionInst>;
 
 bool _dbChipRegionInst::operator==(const _dbChipRegionInst& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (region_ != rhs.region_) {
     return false;
   }
@@ -36,6 +38,7 @@ bool _dbChipRegionInst::operator==(const _dbChipRegionInst& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbChipRegionInst::operator<(const _dbChipRegionInst& rhs) const
@@ -79,21 +82,13 @@ void _dbChipRegionInst::collectMemInfo(MemInfo& info)
 
 // User Code Begin dbChipRegionInstPublicMethods
 
+// Returns the region's cuboid transformed into the parent chip's
+// coordinate system.
 Cuboid dbChipRegionInst::getCuboid() const
 {
-  auto box = getChipRegion()->getBox();
-  auto chip_inst = getChipInst();
-  auto transform = chip_inst->getTransform();
-  transform.apply(box);
-  int z = 0;
-  if (getChipRegion()->getSide() == dbChipRegion::Side::FRONT) {
-    z = getChipRegion()->getChip()->getThickness();
-  } else if (getChipRegion()->getSide() == dbChipRegion::Side::BACK) {
-    z = 0;
-  } else {
-    z = getChipRegion()->getChip()->getThickness() / 2;
-  }
-  return Cuboid(box.xMin(), box.yMin(), z, box.xMax(), box.yMax(), z);
+  Cuboid cuboid = getChipRegion()->getCuboid();
+  getChipInst()->getTransform().apply(cuboid);
+  return cuboid;
 }
 
 dbChipInst* dbChipRegionInst::getChipInst() const

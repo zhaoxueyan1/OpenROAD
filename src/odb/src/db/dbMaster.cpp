@@ -25,7 +25,6 @@
 #include "dbPolygonItr.h"
 #include "dbSite.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "dbTechLayerAntennaRule.h"
 #include "odb/db.h"
 #include "odb/dbObject.h"
@@ -33,7 +32,6 @@
 #include "odb/dbTransform.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
-#include "odb/odb.h"
 #include "utl/Logger.h"
 
 namespace odb {
@@ -62,6 +60,10 @@ bool _dbMaster::operator==(const _dbMaster& rhs) const
   }
 
   if (flags_.type != rhs.flags_.type) {
+    return false;
+  }
+
+  if (flags_.is_backside_bridge != rhs.flags_.is_backside_bridge) {
     return false;
   }
 
@@ -171,6 +173,7 @@ _dbMaster::_dbMaster(_dbDatabase* db)
   flags_.mark = 0;
   flags_.special_power = 0;
   flags_.sequential = 0;
+  flags_.is_backside_bridge = 0;
   flags_.spare_bits_19 = 0;
 
   x_ = 0;
@@ -234,7 +237,7 @@ _dbMaster::~_dbMaster()
 
 dbOStream& operator<<(dbOStream& stream, const _dbMaster& master)
 {
-  uint* bit_field = (uint*) &master.flags_;
+  uint32_t* bit_field = (uint32_t*) &master.flags_;
   stream << *bit_field;
   stream << master.x_;
   stream << master.y_;
@@ -263,7 +266,7 @@ dbOStream& operator<<(dbOStream& stream, const _dbMaster& master)
 dbIStream& operator>>(dbIStream& stream, _dbMaster& master)
 {
   _dbDatabase* db = master.getImpl()->getDatabase();
-  uint* bit_field = (uint*) &master.flags_;
+  uint32_t* bit_field = (uint32_t*) &master.flags_;
   stream >> *bit_field;
   stream >> master.x_;
   stream >> master.y_;
@@ -276,10 +279,10 @@ dbIStream& operator>>(dbIStream& stream, _dbMaster& master)
   stream >> master.leq_;
   stream >> master.eeq_;
   stream >> master.obstructions_;
-  if (db->isSchema(db_schema_polygon)) {
+  if (db->isSchema(kSchemaPolygon)) {
     stream >> master.poly_obstructions_;
   }
-  if (db->isSchema(db_schema_dbmaster_lib_for_site)) {
+  if (db->isSchema(kSchemaDbmasterLibForSite)) {
     stream >> master.lib_for_site_;
   } else {
     // The site was copied into the same dbLib previously
@@ -289,17 +292,17 @@ dbIStream& operator>>(dbIStream& stream, _dbMaster& master)
   stream >> master.mterm_hash_;
   stream >> *master.mterm_tbl_;
   stream >> *master.mpin_tbl_;
-  if (!db->isSchema(db_rm_target)) {
+  if (!db->isSchema(kSchemaRmTarget)) {
     // obsolete table is always unpopulated so type/values unimportant
     dbTable<_dbMaster, 4> dummy(nullptr, nullptr, nullptr, dbDatabaseObj);
     stream >> dummy;
   }
   stream >> *master.box_tbl_;
-  if (db->isSchema(db_schema_polygon)) {
+  if (db->isSchema(kSchemaPolygon)) {
     stream >> *master.poly_box_tbl_;
   }
   stream >> *master.antenna_pin_model_tbl_;
-  if (db->isSchema(db_schema_master_edge_type)) {
+  if (db->isSchema(kSchemaMasterEdgeType)) {
     stream >> *master.edge_types_tbl_;
   }
   return stream;
@@ -335,13 +338,13 @@ dbObjectTable* _dbMaster::getObjectTable(dbObjectType type)
 
 std::string dbMaster::getName() const
 {
-  _dbMaster* master = (_dbMaster*) this;
+  const _dbMaster* master = (const _dbMaster*) this;
   return master->name_;
 }
 
-const char* dbMaster::getConstName()
+const char* dbMaster::getConstName() const
 {
-  _dbMaster* master = (_dbMaster*) this;
+  const _dbMaster* master = (const _dbMaster*) this;
   return master->name_;
 }
 
@@ -370,25 +373,25 @@ void dbMaster::staSetCell(void* cell)
   master->sta_cell_ = cell;
 }
 
-uint dbMaster::getWidth() const
+uint32_t dbMaster::getWidth() const
 {
   _dbMaster* master = (_dbMaster*) this;
   return master->width_;
 }
 
-void dbMaster::setWidth(uint w)
+void dbMaster::setWidth(uint32_t w)
 {
   _dbMaster* master = (_dbMaster*) this;
   master->width_ = w;
 }
 
-uint dbMaster::getHeight() const
+uint32_t dbMaster::getHeight() const
 {
   _dbMaster* master = (_dbMaster*) this;
   return master->height_;
 }
 
-void dbMaster::setHeight(uint h)
+void dbMaster::setHeight(uint32_t h)
 {
   _dbMaster* master = (_dbMaster*) this;
   master->height_ = h;
@@ -491,7 +494,7 @@ dbMTerm* dbMaster::findMTerm(dbBlock* block, const char* name)
     return mterm;
   }
 
-  uint ii = 0;
+  uint32_t ii = 0;
   std::string ttname(name);
   if (lib_left_bus_del != blk_left_bus_del
       || lib_right_bus_del != blk_right_bus_del) {
@@ -626,13 +629,13 @@ bool dbMaster::isSequential()
   _dbMaster* master = (_dbMaster*) this;
   return master->flags_.sequential;
 }
-void dbMaster::setMark(uint mark)
+void dbMaster::setMark(uint32_t mark)
 {
   _dbMaster* master = (_dbMaster*) this;
   master->flags_.mark = mark;
 }
 
-uint dbMaster::isMarked()
+uint32_t dbMaster::isMarked()
 {
   _dbMaster* master = (_dbMaster*) this;
   return master->flags_.mark;
@@ -641,7 +644,19 @@ uint dbMaster::isMarked()
 void dbMaster::setSpecialPower(bool value)
 {
   _dbMaster* master = (_dbMaster*) this;
-  master->flags_.special_power = (value == true) ? 1 : 0;
+  master->flags_.special_power = (value) ? 1 : 0;
+}
+
+void dbMaster::setBacksideBridge(bool is_bridge)
+{
+  _dbMaster* master = (_dbMaster*) this;
+  master->flags_.is_backside_bridge = is_bridge ? 1 : 0;
+}
+
+bool dbMaster::isBacksideBridge() const
+{
+  _dbMaster* master = (_dbMaster*) this;
+  return master->flags_.is_backside_bridge == 1;
 }
 
 bool dbMaster::isSpecialPower()
@@ -715,7 +730,7 @@ void dbMaster::destroy(dbMaster* master)
   lib->master_tbl_->destroy(master_impl);
 }
 
-dbMaster* dbMaster::getMaster(dbLib* lib_, uint dbid_)
+dbMaster* dbMaster::getMaster(dbLib* lib_, uint32_t dbid_)
 {
   _dbLib* lib = (_dbLib*) lib_;
   return (dbMaster*) lib->master_tbl_->getPtr(dbid_);
@@ -775,7 +790,7 @@ bool dbMaster::isFiller()
 bool dbMaster::isCoreAutoPlaceable()
 {
   // Use switch so if new types are added we get a compiler warning.
-  switch (getType()) {
+  switch (getType().getValue()) {
     case dbMasterType::CORE:
     case dbMasterType::CORE_FEEDTHRU:
     case dbMasterType::CORE_TIEHIGH:
@@ -828,14 +843,14 @@ void _dbMaster::collectMemInfo(MemInfo& info)
   info.cnt++;
   info.size += sizeof(*this);
 
-  info.children_["name"].add(name_);
-  info.children_["mterm_hash"].add(mterm_hash_);
-  mterm_tbl_->collectMemInfo(info.children_["mterm"]);
-  mpin_tbl_->collectMemInfo(info.children_["mpin"]);
-  box_tbl_->collectMemInfo(info.children_["box"]);
-  poly_box_tbl_->collectMemInfo(info.children_["poly_box"]);
-  antenna_pin_model_tbl_->collectMemInfo(info.children_["antenna_pin_model"]);
-  edge_types_tbl_->collectMemInfo(info.children_["edge_types"]);
+  info.children["name"].add(name_);
+  info.children["mterm_hash"].add(mterm_hash_);
+  mterm_tbl_->collectMemInfo(info.children["mterm"]);
+  mpin_tbl_->collectMemInfo(info.children["mpin"]);
+  box_tbl_->collectMemInfo(info.children["box"]);
+  poly_box_tbl_->collectMemInfo(info.children["poly_box"]);
+  antenna_pin_model_tbl_->collectMemInfo(info.children["antenna_pin_model"]);
+  edge_types_tbl_->collectMemInfo(info.children["edge_types"]);
 }
 
 }  // namespace odb

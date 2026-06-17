@@ -24,12 +24,16 @@ static gpl::PlaceOptions getOptions(
 
   gpl::PlaceOptions options;
   checkFlag(flags, "-timing_driven", options.timingDrivenMode);
+  checkFlag(flags, "-timing_driven_repair_timing", options.timingDrivenRepairTiming);
   checkFlag(flags, "-routability_driven", options.routabilityDrivenMode);
   checkFlag(flags, "-routability_use_grt", options.routabilityUseRudy, false);
   checkFlag(
       flags, "-disable_revert_if_diverge", options.disableRevertIfDiverge);
   checkFlag(
+      flags, "-disable_pin_density_adjust", options.disablePinDensityAdjust);
+  checkFlag(
       flags, "-enable_routing_congestion", options.enable_routing_congestion);
+  checkFlag(flags, "-force_center_initial_place", options.forceCenterInitialPlace);
   checkFlag(flags, "-skip_initial_place", [&](bool) {
     options.initialPlaceMaxIter = 0;
   });
@@ -37,10 +41,11 @@ static gpl::PlaceOptions getOptions(
   checkKey(keys, "-initial_place_max_fanout", options.initialPlaceMaxFanout);
   checkKey(
       keys, "-routability_check_overflow", options.routabilityCheckOverflow);
+  checkKey(
+      keys,
+      "-routability_snapshot_overflow",
+      options.routabilitySnapshotOverflow);
   checkKey(keys, "-routability_max_density", options.routabilityMaxDensity);
-  checkKey(keys,
-           "-routability_max_inflation_iter",
-           options.routabilityMaxInflationIter);
   checkKey(
       keys, "-routability_target_rc_metric", options.routabilityTargetRcMetric);
   checkKey(keys,
@@ -64,11 +69,15 @@ static gpl::PlaceOptions getOptions(
   checkKey(keys, "-timing_driven_net_weight_max", options.timingNetWeightMax);
   checkKey(
       keys, "-keep_resize_below_overflow", options.keepResizeBelowOverflow);
+  checkKey(keys, "-timing_driven_nets_percentage", options.timingDrivenNetsPercentage);
   checkKey(keys, "-min_phi_coef", options.minPhiCoef);
   checkKey(keys, "-max_phi_coef", options.maxPhiCoef);
   checkKey(keys, "-init_density_penalty", options.initDensityPenaltyFactor);
   checkKey(keys, "-init_wirelength_coef", options.initWireLengthCoef);
   checkKey(keys, "-reference_hpwl", options.referenceHpwl);
+  checkKey(keys,
+           "-timing_driven_repair_tns_end_percent",
+           options.timingDrivenRepairTnsEndPercent);
 
   if (auto it = keys.find("-density"); it != keys.end()) {
     if (it->second == "uniform") {
@@ -173,6 +182,8 @@ set_debug_cmd(int pause_iterations,
               bool initial,
               const char* inst_name,
               int start_iter,
+              int start_rudy,
+              int rudy_stride,
               bool generate_images,
               const char* images_path)
 {
@@ -188,8 +199,8 @@ set_debug_cmd(int pause_iterations,
                                   : "REPORTS_DIR";
 
   replace->setDebug(pause_iterations, update_iterations, draw_bins,
-                    initial, inst, start_iter, generate_images,
-                    resolved_path);
+                    initial, inst, start_iter, start_rudy, rudy_stride,
+                    generate_images, resolved_path);
 }
 
 %} // inline

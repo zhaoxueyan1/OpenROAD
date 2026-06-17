@@ -32,6 +32,7 @@
 
 #include "db_sta/dbNetwork.hh"
 #include "gui/gui.h"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbBlockCallBackObj.h"
 #include "options.h"
@@ -121,11 +122,10 @@ class DisplayControlModel : public QStandardItemModel
  public:
   DisplayControlModel(int user_data_item_idx, QWidget* parent = nullptr);
 
-  QVariant data(const QModelIndex& index,
-                int role = Qt::DisplayRole) const override;
+  QVariant data(const QModelIndex& index, int role) const override;
   QVariant headerData(int section,
                       Qt::Orientation orientation,
-                      int role = Qt::DisplayRole) const override;
+                      int role) const override;
 
  private:
   const int user_data_item_idx_;
@@ -218,6 +218,7 @@ class DisplayControls : public QDockWidget,
   bool areNonPrefTracksVisible() override;
 
   bool areIOPinsVisible() const override;
+  bool areIOPinsSelectable() const override;
   bool areIOPinNamesVisible() const override;
   QFont ioPinMarkersFont() const override;
 
@@ -250,6 +251,7 @@ class DisplayControls : public QDockWidget,
 
   bool isGCellGridVisible() const override;
   bool isFlywireHighlightOnly() const override;
+  bool areFocusedNetsGuidesVisible() const override;
 
   // API from dbNetworkObserver
   void postReadLiberty() override;
@@ -388,6 +390,7 @@ class DisplayControls : public QDockWidget,
     ModelRow flywires_only;
     ModelRow labels;
     ModelRow background;
+    ModelRow focused_nets_guides;
   };
 
   struct InstanceShapeModels
@@ -551,7 +554,7 @@ class DisplayControls : public QDockWidget,
   std::map<std::string, Renderer::Settings> custom_controls_settings_;
   std::map<QStandardItem*, Qt::CheckState> saved_state_;
 
-  std::set<odb::dbTech*> techs_;
+  odb::PtrSet<odb::dbTech> techs_;
   utl::Logger* logger_;
   sta::dbSta* sta_;
   DbInstDescriptor* inst_descriptor_;

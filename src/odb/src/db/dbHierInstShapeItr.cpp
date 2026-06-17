@@ -10,7 +10,7 @@
 
 namespace odb {
 
-inline bool isFiltered(unsigned filter, unsigned mask)
+static bool isFiltered(unsigned filter, unsigned mask)
 {
   return (filter & mask) == mask;
 }
@@ -24,11 +24,11 @@ dbHierInstShapeItr::dbHierInstShapeItr(dbShapeItrCallback* callback)
 void dbHierInstShapeItr::iterate(dbInst* inst, unsigned filter)
 {
   transforms_.clear();
-  transforms_.push_back(dbTransform());
+  transforms_.emplace_back();
   iterate_inst(inst, filter, 0);
 }
 
-void dbHierInstShapeItr::push_transform(dbTransform t)
+void dbHierInstShapeItr::push_transform(const dbTransform& t)
 {
   dbTransform top = transforms_.back();
   top.concat(t);
@@ -318,7 +318,7 @@ bool dbHierInstShapeItr::iterate_swire(unsigned filter,
 
   for (dbBox* box : swire->getWires()) {
     if (box->isVia()) {
-      if (draw_vias == true) {
+      if (draw_vias) {
         getShape(box, shape);
 
         if (!callback_->nextBoxShape(box, shape)) {
@@ -327,7 +327,7 @@ bool dbHierInstShapeItr::iterate_swire(unsigned filter,
         }
       }
     } else {
-      if (draw_segments == true) {
+      if (draw_segments) {
         getShape(box, shape);
 
         if (!callback_->nextBoxShape(box, shape)) {
@@ -365,7 +365,7 @@ bool dbHierInstShapeItr::iterate_wire(unsigned filter,
 
   for (itr.begin(wire); itr.next(shape);) {
     if (shape.isVia()) {
-      if (draw_vias == true) {
+      if (draw_vias) {
         transform(shape);
 
         if (!callback_->nextWireShape(wire, itr.getShapeId(), shape)) {
@@ -374,7 +374,7 @@ bool dbHierInstShapeItr::iterate_wire(unsigned filter,
         }
       }
     } else {
-      if (draw_segments == true) {
+      if (draw_segments) {
         transform(shape);
 
         if (!callback_->nextWireShape(wire, itr.getShapeId(), shape)) {

@@ -19,6 +19,8 @@
 #include <numeric>
 #include <random>
 #include <set>
+#include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -77,7 +79,7 @@ CoarseGraphPtrs Coarsener::LazyFirstChoice(const HGraphPtr& hgraph) const
   hierarchy.push_back(hgraph);  // push original hgraph to hierarchy
   debugPrint(
       logger_, PAR, "coarsening", 1, "Running FC Multilevel Coarsening...");
-  if (timing_flag == true) {
+  if (timing_flag) {
     debugPrint(logger_,
                PAR,
                "coarsening",
@@ -107,7 +109,7 @@ CoarseGraphPtrs Coarsener::LazyFirstChoice(const HGraphPtr& hgraph) const
               // previous iteration
     }
     hierarchy.push_back(hg);
-    if (timing_flag == true) {
+    if (timing_flag) {
       debugPrint(logger_,
                  PAR,
                  "coarsening",
@@ -264,7 +266,7 @@ void Coarsener::VertexMatching(
   // vertex_cluster_map_vec has the size of the number of vertices of hgraph
   vertex_cluster_id_vec.clear();
   vertex_cluster_id_vec.resize(hgraph->GetNumVertices());
-  std::fill(vertex_cluster_id_vec.begin(), vertex_cluster_id_vec.end(), -1);
+  std::ranges::fill(vertex_cluster_id_vec, -1);
   // reset the attributes of clusters
   vertex_weights_c.clear();  // cluster weight
   community_attr_c.clear();  // cluster community
@@ -534,7 +536,7 @@ void Coarsener::ClusterBasedGroupInfo(
     Matrix<float>& placement_attr_c) const
 {
   // convert group_attr to vertex_cluster_id_vec
-  if (group_attr.empty() == true && hgraph->GetFixedAttrSize() == 0) {
+  if (group_attr.empty() && hgraph->GetFixedAttrSize() == 0) {
     // no need to any group based on group_attr and hgraph->fixed_attr_
     vertex_cluster_id_vec.clear();
     vertex_cluster_id_vec.resize(hgraph->GetNumVertices());
@@ -562,7 +564,7 @@ void Coarsener::ClusterBasedGroupInfo(
 
   std::vector<std::vector<int>> fixed_group;
   for (auto& group : temp_fixed_group) {
-    if (group.empty() == false) {
+    if (!group.empty()) {
       fixed_group.push_back(group);
     }
   }
@@ -573,7 +575,7 @@ void Coarsener::ClusterBasedGroupInfo(
   // first initialize the vertex_cluster_id_vec
   vertex_cluster_id_vec.clear();
   vertex_cluster_id_vec.resize(hgraph->GetNumVertices());
-  std::fill(vertex_cluster_id_vec.begin(), vertex_cluster_id_vec.end(), -1);
+  std::ranges::fill(vertex_cluster_id_vec, -1);
   int cluster_id = 0;  // start cluster id
   for (const auto& group : fixed_group) {
     // compute the cluster id of current group
@@ -610,12 +612,12 @@ void Coarsener::ClusterBasedGroupInfo(
   if (hgraph->HasCommunity()) {
     community_attr_c.clear();
     community_attr_c.resize(num_clusters);
-    std::fill(community_attr_c.begin(), community_attr_c.end(), -1);
+    std::ranges::fill(community_attr_c, -1);
   }
   if (hgraph->HasFixedVertices()) {
     fixed_attr_c.clear();
     fixed_attr_c.resize(num_clusters);
-    std::fill(fixed_attr_c.begin(), fixed_attr_c.end(), -1);
+    std::ranges::fill(fixed_attr_c, -1);
   }
   if (hgraph->HasPlacement()) {
     placement_attr_c.clear();
@@ -653,10 +655,10 @@ void Coarsener::OrderVertices(const HGraphPtr& hgraph,
                               std::vector<int>& vertices) const
 {
   switch (vertex_order_choice_) {
-    case CoarsenOrder::kRandom:
-      shuffle(vertices.begin(),
-              vertices.end(),
-              std::default_random_engine(random_seed_));
+    case CoarsenOrder::kRandom: {
+      std::mt19937 generator(random_seed_);
+      DeterministicShuffle(vertices.begin(), vertices.end(), generator);
+    }
       return;
 
     case CoarsenOrder::kDefault:
@@ -671,9 +673,9 @@ void Coarsener::OrderVertices(const HGraphPtr& hgraph,
       }
       // define the sort function
       auto lambda_sort_size = [&](int& x, int& y) -> bool {
-        return average_sizes[x] < average_sizes[y];
+        return std::tie(average_sizes[x], x) < std::tie(average_sizes[y], y);
       };
-      std::sort(vertices.begin(), vertices.end(), lambda_sort_size);
+      std::ranges::sort(vertices, lambda_sort_size);
     }
       return;
 
@@ -692,9 +694,13 @@ void Coarsener::OrderVertices(const HGraphPtr& hgraph,
         }
         degrees[v] = static_cast<int>(nbr_vertices.size());
       }
-      auto lambda_sort_degree
-          = [&](int& x, int& y) -> bool { return degrees[x] > degrees[y]; };
-      std::sort(vertices.begin(), vertices.end(), lambda_sort_degree);
+      auto lambda_sort_degree = [&](int& x, int& y) -> bool {
+        if (degrees[x] != degrees[y]) {
+          return degrees[x] > degrees[y];
+        }
+        return x < y;
+      };
+      std::ranges::sort(vertices, lambda_sort_degree);
     }
       return;
 
@@ -720,8 +726,7 @@ HGraphPtr Coarsener::Contraction(
                                               // in clustered hypergraph
   hyperedge_cluster_id_vec.resize(hgraph->GetNumHyperedges());
   // -1 means the hyperedge is fully within one cluster
-  std::fill(
-      hyperedge_cluster_id_vec.begin(), hyperedge_cluster_id_vec.end(), -1);
+  std::ranges::fill(hyperedge_cluster_id_vec, -1);
   Matrix<int> hyperedges_c;  // represent each hyperedge as a set of clusters
   Matrix<float> hyperedges_weights_c;  // each element represents the weight of
                                        // the clustered hyperedge
@@ -758,8 +763,7 @@ HGraphPtr Coarsener::Contraction(
       const int hyperedge_c_id = static_cast<int>(hyperedges_c.size());
       hyperedge_cluster_id_vec[e] = hyperedge_c_id;
       hash_map[hash_value] = hyperedge_c_id;
-      hyperedges_c.push_back(
-          std::vector<int>(hyperedge_c.begin(), hyperedge_c.end()));
+      hyperedges_c.emplace_back(hyperedge_c.begin(), hyperedge_c.end());
       hyperedges_weights_c.push_back(hgraph->GetHyperedgeWeights(e));
       if (hgraph->HasTiming()) {
         hyperedge_slack_c.push_back(
@@ -837,7 +841,7 @@ HGraphPtr Coarsener::Contraction(
       std::vector<int> path_c;  // create path_c
       for (const int vertex_id : path_range) {
         const int cluster_id = vertex_cluster_id_vec[vertex_id];
-        if (path_c.empty() == true || path_c.back() != cluster_id) {
+        if (path_c.empty() || path_c.back() != cluster_id) {
           path_c.push_back(cluster_id);
         }
       }
@@ -855,7 +859,7 @@ HGraphPtr Coarsener::Contraction(
           // if hyperedge_c_id is -1, that means that hyperedge has been merged
           // during coarsening
           if ((hyperedge_c_id > -1)
-              && (arcs_c.empty() == true || arcs_c.back() != hyperedge_c_id)) {
+              && (arcs_c.empty() || arcs_c.back() != hyperedge_c_id)) {
             arcs_c.push_back(hyperedge_c_id);
           }
         }
@@ -885,8 +889,7 @@ HGraphPtr Coarsener::Contraction(
           for (const int edge : hgraph->PathEdges(p)) {
             const int hyperedge_c_id = hyperedge_cluster_id_vec[edge];
             if ((hyperedge_c_id > -1)
-                && (arcs_c.empty() == true
-                    || arcs_c.back() != hyperedge_c_id)) {
+                && (arcs_c.empty() || arcs_c.back() != hyperedge_c_id)) {
               arcs_c.push_back(hyperedge_c_id);
             }
           }

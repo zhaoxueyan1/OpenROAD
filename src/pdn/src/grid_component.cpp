@@ -14,6 +14,7 @@
 #include "boost/geometry/geometry.hpp"
 #include "connect.h"
 #include "grid.h"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbTypes.h"
 #include "odb/geom.h"
@@ -47,19 +48,36 @@ VoltageDomain* GridComponent::getDomain() const
 std::string GridComponent::typeToString(Type type)
 {
   switch (type) {
-    case Ring:
+    case kRing:
       return "Ring";
-    case Strap:
+    case kStrap:
       return "Strap";
-    case Followpin:
+    case kFollowpin:
       return "Followpin";
-    case PadConnect:
+    case kPadConnect:
       return "Pad connect";
-    case RepairChannel:
+    case kRepairChannel:
       return "Repair channel";
   }
 
   return "Unknown";
+}
+
+bool GridComponent::make(Shape::ShapeTreeMap& shapes,
+                         Shape::ObstructionTreeMap& obstructions)
+{
+  const int shape_count = getShapeCount();
+
+  // make initial shapes
+  makeShapes(shapes);
+  // cut shapes to avoid obstructions
+  cutShapes(obstructions);
+  // add shapes and obstructions to they are accounted for in future
+  // components
+  getObstructions(obstructions);
+  getShapes(shapes);
+
+  return shape_count != getShapeCount();
 }
 
 ShapePtr GridComponent::addShape(std::unique_ptr<Shape> shape)
@@ -297,7 +315,7 @@ void GridComponent::cutShapes(const Shape::ObstructionTreeMap& obstructions)
              getShapeCount());
 
   for (const auto& [layer, shapes] : shapes_) {
-    if (obstructions.count(layer) == 0) {
+    if (!obstructions.contains(layer)) {
       continue;
     }
     const auto& obs = obstructions.at(layer);
@@ -325,9 +343,9 @@ void GridComponent::cutShapes(const Shape::ObstructionTreeMap& obstructions)
 }
 
 std::map<Shape*, std::vector<odb::dbBox*>> GridComponent::writeToDb(
-    const std::map<odb::dbNet*, odb::dbSWire*>& net_map,
-    bool add_pins,
-    const std::set<odb::dbTechLayer*>& convert_layer_to_pin) const
+    const odb::PtrMap<odb::dbNet, odb::dbSWire*>& net_map,
+    const odb::PtrMap<odb::dbNet, odb::dbBTerm*>& bterm_map,
+    const odb::PtrSet<odb::dbTechLayer>& convert_layer_to_pin) const
 {
   std::vector<ShapePtr> all_shapes;
   for (const auto& [layer, shapes] : shapes_) {
@@ -339,26 +357,30 @@ std::map<Shape*, std::vector<odb::dbBox*>> GridComponent::writeToDb(
   std::map<Shape*, std::vector<odb::dbBox*>> shape_map;
 
   // sort shapes so they get written to db in the same order
-  std::sort(
-      all_shapes.begin(), all_shapes.end(), [](const auto& l, const auto& r) {
-        auto* l_layer = l->getLayer();
-        int l_level = l_layer->getNumber();
-        auto* r_layer = r->getLayer();
-        int r_level = r_layer->getNumber();
+  std::ranges::sort(all_shapes, [](const auto& l, const auto& r) {
+    auto* l_layer = l->getLayer();
+    int l_level = l_layer->getNumber();
+    auto* r_layer = r->getLayer();
+    int r_level = r_layer->getNumber();
 
-        return std::tie(l_level, l->getRect())
-               < std::tie(r_level, r->getRect());
-      });
+    return std::tie(l_level, l->getRect()) < std::tie(r_level, r->getRect());
+  });
 
   for (const auto& shape : all_shapes) {
-    auto net = net_map.find(shape->getNet());
-    if (net == net_map.end()) {
+    const auto wire_itr = net_map.find(shape->getNet());
+    if (wire_itr == net_map.end()) {
       continue;
     }
+    odb::dbSWire* wire = wire_itr->second;
+
+    const auto bterm_itr = bterm_map.find(shape->getNet());
+    odb::dbBTerm* bterm
+        = bterm_itr == bterm_map.end() ? nullptr : bterm_itr->second;
+
     const bool is_pin_layer = convert_layer_to_pin.find(shape->getLayer())
                               != convert_layer_to_pin.end();
-    shape_map[shape.get()]
-        = shape->writeToDb(net->second, add_pins, is_pin_layer);
+
+    shape_map[shape.get()] = shape->writeToDb(wire, bterm, is_pin_layer);
   }
 
   return shape_map;
@@ -506,7 +528,7 @@ void GridComponent::setNets(const std::vector<odb::dbNet*>& nets)
 {
   const auto grid_nets = grid_->getNets();
   for (auto* net : nets) {
-    if (std::find(grid_nets.begin(), grid_nets.end(), net) == grid_nets.end()) {
+    if (std::ranges::find(grid_nets, net) == grid_nets.end()) {
       getLogger()->error(utl::PDN,
                          224,
                          "{} is not a net in {}.",

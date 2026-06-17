@@ -4,33 +4,38 @@
 // Generator Code Begin Cpp
 #include "dbMarkerCategory.h"
 
+#include <cstdlib>
 #include <string>
 
 #include "dbBlock.h"
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbMarker.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "odb/db.h"
 #include "odb/dbSet.h"
 // User Code Begin Includes
-#include <cstdlib>
 #include <fstream>
 #include <regex>
+#include <set>
 #include <sstream>
+#include <stdexcept>
 
 #include "boost/regex.hpp"
 #include "dbChip.h"
 #include "dbCommon.h"
 #include "dbHashTable.hpp"
-#include "odb/dbBlockCallBackObj.h"
+#include "odb/PtrSetMap.h"
+#include "odb/dbChipCallBackObj.h"
 #include "odb/dbObject.h"
+#include "utl/Logger.h"
 // User Code End Includes
 namespace odb {
 template class dbTable<_dbMarkerCategory>;
 
 bool _dbMarkerCategory::operator==(const _dbMarkerCategory& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (name_ != rhs.name_) {
     return false;
   }
@@ -57,6 +62,7 @@ bool _dbMarkerCategory::operator==(const _dbMarkerCategory& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbMarkerCategory::operator<(const _dbMarkerCategory& rhs) const
@@ -121,13 +127,11 @@ void _dbMarkerCategory::collectMemInfo(MemInfo& info)
   info.cnt++;
   info.size += sizeof(*this);
 
-  marker_tbl_->collectMemInfo(info.children_["marker_tbl_"]);
-
-  categories_tbl_->collectMemInfo(info.children_["categories_tbl_"]);
-
-  // User Code Begin collectMemInfo
-  info.children_["categories_hash"].add(categories_hash_);
-  // User Code End collectMemInfo
+  info.children["description"].add(description_);
+  info.children["source"].add(source_);
+  marker_tbl_->collectMemInfo(info.children["marker_tbl_"]);
+  categories_tbl_->collectMemInfo(info.children["categories_tbl_"]);
+  info.children["categories_hash"].add(categories_hash_);
 }
 
 _dbMarkerCategory::~_dbMarkerCategory()
@@ -248,7 +252,7 @@ void _dbMarkerCategory::writeJSON(
     return;
   }
 
-  std::set<dbMarkerCategory*> ordered_categories;
+  odb::PtrSet<dbMarkerCategory> ordered_categories;
   for (_dbMarkerCategory* category : categories) {
     ordered_categories.insert((dbMarkerCategory*) category);
   }
@@ -307,7 +311,7 @@ void dbMarkerCategory::setDescription(const std::string& description)
   obj->description_ = description;
 }
 
-std::string dbMarkerCategory::getDescription() const
+const std::string& dbMarkerCategory::getDescription() const
 {
   _dbMarkerCategory* obj = (_dbMarkerCategory*) this;
   return obj->description_;
@@ -471,31 +475,32 @@ void dbMarkerCategory::writeTR(std::ofstream& report) const
   obj->writeTR(report);
 }
 
-std::set<dbMarkerCategory*> dbMarkerCategory::fromJSON(dbBlock* block,
-                                                       const std::string& path)
+odb::PtrSet<dbMarkerCategory> dbMarkerCategory::fromJSON(
+    dbChip* chip,
+    const std::string& path)
 {
   std::ifstream report(path);
   if (!report.is_open()) {
-    _dbBlock* _block = (_dbBlock*) block;
-    utl::Logger* logger = _block->getLogger();
+    _dbChip* _chip = (_dbChip*) chip;
+    utl::Logger* logger = _chip->getLogger();
 
     logger->error(utl::ODB, 31, "Unable to open marker report: {}", path);
   }
 
-  std::set<dbMarkerCategory*> categories
-      = fromJSON(block, path.c_str(), report);
+  odb::PtrSet<dbMarkerCategory> categories
+      = fromJSON(chip, path.c_str(), report);
 
   report.close();
 
   return categories;
 }
 
-std::set<dbMarkerCategory*> dbMarkerCategory::fromJSON(dbBlock* block,
-                                                       const char* source,
-                                                       std::ifstream& report)
+odb::PtrSet<dbMarkerCategory> dbMarkerCategory::fromJSON(dbChip* chip,
+                                                         const char* source,
+                                                         std::ifstream& report)
 {
-  _dbBlock* _block = (_dbBlock*) block;
-  utl::Logger* logger = _block->getLogger();
+  _dbChip* _chip = (_dbChip*) chip;
+  utl::Logger* logger = _chip->getLogger();
 
   _dbMarkerCategory::PropertyTree tree;
   try {
@@ -504,10 +509,10 @@ std::set<dbMarkerCategory*> dbMarkerCategory::fromJSON(dbBlock* block,
     logger->error(utl::ODB, 238, "Unable to parse JSON file: {}", e1.what());
   }
 
-  std::set<dbMarkerCategory*> categories;
+  odb::PtrSet<dbMarkerCategory> categories;
   for (const auto& [name, subtree] : tree) {
     dbMarkerCategory* top_category
-        = dbMarkerCategory::createOrReplace(block, name.c_str());
+        = dbMarkerCategory::createOrReplace(chip, name.c_str());
     categories.insert(top_category);
     _dbMarkerCategory* top_category_ = (_dbMarkerCategory*) top_category;
 
@@ -517,36 +522,36 @@ std::set<dbMarkerCategory*> dbMarkerCategory::fromJSON(dbBlock* block,
   return categories;
 }
 
-dbMarkerCategory* dbMarkerCategory::fromTR(dbBlock* block,
+dbMarkerCategory* dbMarkerCategory::fromTR(dbChip* chip,
                                            const char* name,
                                            const std::string& path)
 {
   std::ifstream report(path);
   if (!report.is_open()) {
-    _dbBlock* _block = (_dbBlock*) block;
-    utl::Logger* logger = _block->getLogger();
+    _dbChip* _chip = (_dbChip*) chip;
+    utl::Logger* logger = _chip->getLogger();
 
     logger->error(
         utl::ODB, 30, "Unable to open TritonRoute DRC report: {}", path);
   }
 
-  dbMarkerCategory* category = fromTR(block, name, path.c_str(), report);
+  dbMarkerCategory* category = fromTR(chip, name, path.c_str(), report);
 
   report.close();
 
   return category;
 }
 
-dbMarkerCategory* dbMarkerCategory::fromTR(dbBlock* block,
+dbMarkerCategory* dbMarkerCategory::fromTR(dbChip* chip,
                                            const char* name,
                                            const char* source,
                                            std::ifstream& report)
 {
-  dbMarkerCategory* marker_category = createOrReplace(block, name);
+  dbMarkerCategory* marker_category = createOrReplace(chip, name);
   marker_category->setSource(source);
 
-  _dbBlock* _block = (_dbBlock*) block;
-  utl::Logger* logger = _block->getLogger();
+  _dbChip* _chip = (_dbChip*) chip;
+  utl::Logger* logger = _chip->getLogger();
 
   const std::regex violation_type("\\s*violation type: (.*)");
   const boost::regex srcs("\\s*srcs: (.*)");
@@ -556,7 +561,8 @@ dbMarkerCategory* dbMarkerCategory::fromTR(dbBlock* block,
       "\\s*\\(\\s*(.*),\\s*(.*)\\s*\\)\\s*-\\s*\\(\\s*(.*),\\s*(.*)\\s*\\)");
 
   int line_number = 0;
-  dbTech* tech = block->getTech();
+  dbTech* tech = chip->getTech();
+  dbBlock* block = chip->getBlock();
   while (!report.eof()) {
     std::string line;
     std::smatch base_match;
@@ -755,12 +761,12 @@ dbMarkerCategory* dbMarkerCategory::fromTR(dbBlock* block,
   return marker_category;
 }
 
-std::set<dbMarker*> dbMarkerCategory::getAllMarkers() const
+odb::PtrSet<dbMarker> dbMarkerCategory::getAllMarkers() const
 {
-  std::set<dbMarker*> markers;
+  odb::PtrSet<dbMarker> markers;
 
   for (dbMarkerCategory* category : getMarkerCategories()) {
-    const std::set<dbMarker*> category_markers = category->getAllMarkers();
+    const odb::PtrSet<dbMarker> category_markers = category->getAllMarkers();
     markers.insert(category_markers.begin(), category_markers.end());
   }
 
@@ -786,11 +792,8 @@ dbMarkerCategory* dbMarkerCategory::create(dbChip* chip, const char* name)
 
   parent->marker_categories_map_[name] = _category->getImpl()->getId();
 
-  _dbBlock* block = (_dbBlock*) chip->getBlock();
-  if (block) {
-    for (auto cb : block->callbacks_) {
-      cb->inDbMarkerCategoryCreate((dbMarkerCategory*) _category);
-    }
+  for (auto cb : parent->callbacks_) {
+    cb->inDbMarkerCategoryCreate((dbMarkerCategory*) _category);
   }
 
   return (dbMarkerCategory*) _category;
@@ -823,17 +826,23 @@ dbMarkerCategory* dbMarkerCategory::createOrReplace(dbChip* chip,
   return create(chip, name);
 }
 
+// For compatibility purposes only, Markers are now stored on the chip
+// This should be removed in the future
 dbMarkerCategory* dbMarkerCategory::create(dbBlock* block, const char* name)
 {
   return create(block->getChip(), name);
 }
 
+// For compatibility purposes only, Markers are now stored on the chip
+// This should be removed in the future
 dbMarkerCategory* dbMarkerCategory::createOrGet(dbBlock* block,
                                                 const char* name)
 {
   return createOrGet(block->getChip(), name);
 }
 
+// For compatibility purposes only, Markers are now stored on the chip
+// This should be removed in the future
 dbMarkerCategory* dbMarkerCategory::createOrReplace(dbBlock* block,
                                                     const char* name)
 {
@@ -855,9 +864,9 @@ dbMarkerCategory* dbMarkerCategory::create(dbMarkerCategory* category,
 
   parent->categories_hash_.insert(_category);
 
-  _dbBlock* block = parent->getBlock();
-  if (block) {
-    for (auto cb : block->callbacks_) {
+  _dbChip* chip = parent->getChip();
+  if (chip) {
+    for (auto cb : chip->callbacks_) {
       cb->inDbMarkerCategoryCreate((dbMarkerCategory*) _category);
     }
   }
@@ -895,10 +904,8 @@ void dbMarkerCategory::destroy(dbMarkerCategory* category)
 
   if (_category->isTopCategory()) {
     _dbChip* _chip = (_dbChip*) _category->getOwner();
-    if (_category->getBlock()) {
-      for (auto cb : _category->getBlock()->callbacks_) {
-        cb->inDbMarkerCategoryDestroy(category);
-      }
+    for (auto cb : _chip->callbacks_) {
+      cb->inDbMarkerCategoryDestroy(category);
     }
 
     _chip->marker_categories_map_.erase(_category->name_);
@@ -906,11 +913,9 @@ void dbMarkerCategory::destroy(dbMarkerCategory* category)
   } else {
     _dbMarkerCategory* parent = (_dbMarkerCategory*) _category->getOwner();
 
-    _dbBlock* block = parent->getBlock();
-    if (block) {
-      for (auto cb : block->callbacks_) {
-        cb->inDbMarkerCategoryDestroy(category);
-      }
+    _dbChip* chip = parent->getChip();
+    for (auto cb : chip->callbacks_) {
+      cb->inDbMarkerCategoryDestroy(category);
     }
 
     parent->categories_hash_.remove(_category);

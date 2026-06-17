@@ -4,21 +4,28 @@
 // Generator Code Begin Cpp
 #include "dbGuide.h"
 
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbNet.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "dbTechLayer.h"
 #include "odb/db.h"
 // User Code Begin Includes
+#include <cstdint>
+
 #include "dbBlock.h"
 #include "dbJournal.h"
+#include "odb/dbObject.h"
+#include "odb/dbSet.h"
+#include "odb/geom.h"
+#include "utl/Logger.h"
 // User Code End Includes
 namespace odb {
 template class dbTable<_dbGuide>;
 
 bool _dbGuide::operator==(const _dbGuide& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (net_ != rhs.net_) {
     return false;
   }
@@ -45,6 +52,7 @@ bool _dbGuide::operator==(const _dbGuide& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbGuide::operator<(const _dbGuide& rhs) const
@@ -64,17 +72,17 @@ dbIStream& operator>>(dbIStream& stream, _dbGuide& obj)
   stream >> obj.net_;
   stream >> obj.box_;
   stream >> obj.layer_;
-  if (obj.getDatabase()->isSchema(db_schema_db_guide_via_layer)) {
+  if (obj.getDatabase()->isSchema(kSchemaDbGuideViaLayer)) {
     stream >> obj.via_layer_;
   }
   stream >> obj.guide_next_;
-  if (obj.getDatabase()->isSchema(db_schema_db_guide_congested)) {
+  if (obj.getDatabase()->isSchema(kSchemaDbGuideCongested)) {
     stream >> obj.is_congested_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_has_jumpers)) {
+  if (obj.getDatabase()->isSchema(kSchemaHasJumpers)) {
     stream >> obj.is_jumper_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_guide_connected_to_term)) {
+  if (obj.getDatabase()->isSchema(kSchemaGuideConnectedToTerm)) {
     stream >> obj.is_connect_to_term_;
   }
   return stream;
@@ -150,15 +158,16 @@ dbGuide* dbGuide::create(dbNet* net,
   _dbBlock* block = (_dbBlock*) owner->getOwner();
   _dbGuide* guide = block->guide_tbl_->create();
 
+  debugPrint(block->getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             2,
+             "EDIT: create dbGuide at id {}, in layer {} box {}",
+             guide->getOID(),
+             layer->getName(),
+             box);
+
   if (block->journal_) {
-    debugPrint(block->getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "ECO: create dbGuide at id {}, in layer {} box {}",
-               guide->getOID(),
-               layer->getName(),
-               box);
     block->journal_->beginAction(dbJournal::kCreateObject);
     block->journal_->pushParam(dbGuideObj);
     block->journal_->pushParam(guide->getOID());
@@ -176,7 +185,7 @@ dbGuide* dbGuide::create(dbNet* net,
   return (dbGuide*) guide;
 }
 
-dbGuide* dbGuide::getGuide(dbBlock* block, uint dbid)
+dbGuide* dbGuide::getGuide(dbBlock* block, uint32_t dbid)
 {
   _dbBlock* owner = (_dbBlock*) block;
   return (dbGuide*) owner->guide_tbl_->getPtr(dbid);
@@ -188,15 +197,16 @@ void dbGuide::destroy(dbGuide* guide)
   _dbNet* net = (_dbNet*) guide->getNet();
   _dbGuide* _guide = (_dbGuide*) guide;
 
+  debugPrint(block->getImpl()->getLogger(),
+             utl::ODB,
+             "DB_EDIT",
+             2,
+             "EDIT: delete dbGuide at id {}, in layer {} box {}",
+             guide->getId(),
+             guide->getLayer()->getName(),
+             guide->getBox());
+
   if (block->journal_) {
-    debugPrint(block->getImpl()->getLogger(),
-               utl::ODB,
-               "DB_ECO",
-               1,
-               "ECO: delete dbGuide at id {}, in layer {} box {}",
-               guide->getId(),
-               guide->getLayer()->getName(),
-               guide->getBox());
     block->journal_->beginAction(dbJournal::kDeleteObject);
     block->journal_->pushParam(dbGuideObj);
     block->journal_->pushParam(net->getOID());
@@ -207,12 +217,14 @@ void dbGuide::destroy(dbGuide* guide)
     block->journal_->pushParam(_guide->layer_);
     block->journal_->pushParam(_guide->via_layer_);
     block->journal_->pushParam(_guide->is_congested_);
+    block->journal_->pushParam(_guide->is_jumper_);
+    block->journal_->pushParam(_guide->is_connect_to_term_);
     block->journal_->endAction();
   }
 
-  uint id = _guide->getOID();
+  uint32_t id = _guide->getOID();
   _dbGuide* prev = nullptr;
-  uint cur = net->guides_;
+  uint32_t cur = net->guides_;
   while (cur) {
     _dbGuide* c = block->guide_tbl_->getPtr(cur);
     if (cur == id) {
@@ -244,7 +256,7 @@ bool dbGuide::isJumper() const
   bool is_jumper = false;
   _dbGuide* guide = (_dbGuide*) this;
   _dbDatabase* db = guide->getDatabase();
-  if (db->isSchema(db_schema_has_jumpers)) {
+  if (db->isSchema(kSchemaHasJumpers)) {
     is_jumper = guide->is_jumper_;
   }
   return is_jumper;
@@ -254,7 +266,7 @@ void dbGuide::setIsJumper(bool jumper)
 {
   _dbGuide* guide = (_dbGuide*) this;
   _dbDatabase* db = guide->getDatabase();
-  if (db->isSchema(db_schema_has_jumpers)) {
+  if (db->isSchema(kSchemaHasJumpers)) {
     guide->is_jumper_ = jumper;
   }
 }

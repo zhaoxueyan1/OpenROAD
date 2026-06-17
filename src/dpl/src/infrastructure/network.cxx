@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2021-2025, The OpenROAD Authors
 
-#include "network.h"
+#include "infrastructure/network.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -12,8 +12,10 @@
 #include <vector>
 
 #include "PlacementDRC.h"
+#include "dpl/Opendp.h"
 #include "infrastructure/Grid.h"
 #include "infrastructure/Objects.h"
+#include "infrastructure/architecture.h"
 #include "odb/db.h"
 #include "odb/dbTypes.h"
 namespace dpl {
@@ -84,18 +86,20 @@ Pin* Network::addPin(odb::dbITerm* term)
   pins_.emplace_back(std::move(upin));
 
   auto node = getNode(term->getInst());
-  for (auto pin : term->getMTerm()->getMPins()) {
-    for (auto box : pin->getGeometry()) {
-      auto layer = box->getTechLayer();
-      if (layer->getType() != odb::dbTechLayerType::Value::ROUTING) {
-        continue;
+  if (node != nullptr) {
+    for (auto pin : term->getMTerm()->getMPins()) {
+      for (auto box : pin->getGeometry()) {
+        auto layer = box->getTechLayer();
+        if (layer->getType() != odb::dbTechLayerType::Value::ROUTING) {
+          continue;
+        }
+        if (layer->getRoutingLevel() > 3) {
+          continue;
+        }
+        node->addUsedLayer(layer->getRoutingLevel());
+        node->addUsedLayer(layer->getRoutingLevel()
+                           + 1);  // for via access from above
       }
-      if (layer->getRoutingLevel() > 3) {
-        continue;
-      }
-      node->addUsedLayer(layer->getRoutingLevel());
-      node->addUsedLayer(layer->getRoutingLevel()
-                         + 1);  // for via access from above
     }
   }
   return ptr;
@@ -136,11 +140,19 @@ void Network::addEdge(odb::dbNet* net)
     if (!iterm->getInst()->getMaster()->isCoreAutoPlaceable()) {
       continue;
     }
+    Node* node = getNode(iterm->getInst());
+    if (node == nullptr) {
+      continue;
+    }
     Pin* ptr = addPin(iterm);
-    connect(ptr, getNode(iterm->getInst()));
+    connect(ptr, node);
     connect(ptr, edge);
   }
   for (auto bterm : net->getBTerms()) {
+    if (!bterm->getFirstPinPlacementStatus().isPlaced()) {
+      // skip unplaced terminals
+      continue;
+    }
     Pin* ptr = addPin(bterm);
     connect(ptr, getNode(bterm));
     connect(ptr, edge);
@@ -168,9 +180,9 @@ std::vector<odb::Rect> difference(const odb::Rect& parent_segment,
   bool is_horizontal = parent_segment.yMin() == parent_segment.yMax();
   std::vector<odb::Rect> sorted_segs = segs;
   // Sort segments by start coordinate
-  std::sort(
-      sorted_segs.begin(),
-      sorted_segs.end(),
+  std::ranges::sort(
+      sorted_segs,
+
       [is_horizontal](const odb::Rect& a, const odb::Rect& b) {
         return (is_horizontal ? a.xMin() < b.xMin() : a.yMin() < b.yMin());
       });

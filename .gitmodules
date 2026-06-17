@@ -1,7 +1,10 @@
 [submodule "module/OpenSTA"]
 	path = src/sta
 	url = git@github.com:zhaoxueyan1/OpenSTA.git
-    branch = ecc-sizer
+	branch = ecc-sizer
 [submodule "src/abc"]
 	path = third-party/abc
 	url = git@github.com:The-OpenROAD-Project/abc.git
+[submodule "third-party/slang-elab"]
+	path = third-party/slang-elab
+	url = https://github.com/povik/yosys-slang

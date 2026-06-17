@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "odb/dbObject.h"
@@ -12,10 +13,11 @@
 #include "odb/dbTransform.h"
 #include "odb/dbWireCodec.h"
 #include "odb/geom.h"
-#include "odb/odb.h"
+
 namespace utl {
 class Logger;
 }
+
 namespace odb {
 
 class _dbWire;
@@ -176,6 +178,11 @@ class dbShape
   bool isVia() const;
 
   ///
+  /// Returns true if this object is a segment
+  ///
+  bool isSegment() const;
+
+  ///
   /// Returns true if this object is a via box
   ///
   bool isViaBox() const;
@@ -211,12 +218,12 @@ class dbShape
   ///
   /// Get the width (xMax-xMin) of the box.
   ///
-  uint getDX() const;
+  uint32_t getDX() const;
 
   ///
   /// Get the height (yMax-yMin) of the box.
   ///
-  uint getDY() const;
+  uint32_t getDY() const;
 
   ///
   /// Get the length of the box
@@ -251,7 +258,6 @@ class dbWireShapeItr
 {
  public:
   dbWireShapeItr();
-  ~dbWireShapeItr();
 
   void begin(dbWire* wire);
   bool next(dbShape& shape);
@@ -311,7 +317,6 @@ class dbWirePathItr
 {
  public:
   dbWirePathItr();
-  ~dbWirePathItr();
 
   void begin(dbWire* wire);
   bool getNextPath(dbWirePath& path);
@@ -352,6 +357,16 @@ class dbInstShapeItr
   bool next(dbShape& shape);
 
  private:
+  enum State
+  {
+    kInit = 0,
+    kMtermItr = 1,
+    kMpinItr = 2,
+    kMboxItr = 3,
+    kObsItr = 4,
+    kViaBoxItr = 5,
+    kPinsDone = 6
+  };
   void getShape(dbBox* box, dbShape& shape);
   void getViaBox(dbBox* box, dbShape& shape);
 
@@ -361,7 +376,7 @@ class dbInstShapeItr
   dbSet<dbBox>::iterator box_itr_;
   dbSet<dbMTerm>::iterator mterm_itr_;
   dbSet<dbMPin>::iterator mpin_itr_;
-  int state_;
+  State state_;
   dbInst* inst_;
   dbMaster* master_;
   dbMPin* _mpin_;
@@ -372,7 +387,7 @@ class dbInstShapeItr
   dbSet<dbBox>::iterator via_box_itr_;
   Point via_pt_;
   bool expand_vias_;
-  int prev_state_;
+  State prev_state_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -388,6 +403,14 @@ class dbITermShapeItr
   bool next(dbShape& shape);
 
  private:
+  enum State
+  {
+    kInit,
+    kMpinItr,
+    kMboxItr,
+    kViaBoxItr
+  };
+
   void getShape(dbBox* box, dbShape& shape);
   void getViaBox(dbBox* box, dbShape& shape);
 
@@ -396,7 +419,7 @@ class dbITermShapeItr
   dbMTerm* mterm_;
   dbSet<dbBox>::iterator box_itr_;
   dbSet<dbMPin>::iterator mpin_itr_;
-  int state_;
+  State state_;
   dbITerm* iterm_;
   dbMPin* mpin_;
   dbTransform transform_;
@@ -495,7 +518,7 @@ class dbHierInstShapeItr
                     bool draw_vias,
                     bool draw_segments);
   bool iterate_leaf(dbInst* inst, unsigned filter, int level);
-  void push_transform(dbTransform t);
+  void push_transform(const dbTransform& t);
   void transform(dbShape& shape);
 
   std::vector<dbTransform> transforms_;
@@ -525,6 +548,10 @@ inline int dbShape::yMax() const
 inline bool dbShape::isVia() const
 {
   return (type_ == VIA) || (type_ == TECH_VIA);
+}
+inline bool dbShape::isSegment() const
+{
+  return type_ == SEGMENT;
 }
 inline bool dbShape::isViaBox() const
 {
@@ -564,12 +591,12 @@ inline Rect dbShape::getBox() const
   return rect_;
 }
 
-inline uint dbShape::getDX() const
+inline uint32_t dbShape::getDX() const
 {
   return rect_.dx();
 }
 
-inline uint dbShape::getDY() const
+inline uint32_t dbShape::getDY() const
 {
   return rect_.dy();
 }

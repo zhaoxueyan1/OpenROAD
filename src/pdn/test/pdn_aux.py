@@ -1,8 +1,9 @@
 import re
 import utl
-import pdn
 import odb
 from collections import defaultdict
+
+import pdn
 
 
 #  In tcl land, this lives in OpenRoad.tcl. However, it seems to be only called
@@ -191,6 +192,8 @@ def define_pdn_grid_real(
     grid_over_pg_pins=False,
     grid_over_boundary=False,
     power_control_network="STAR",
+    connect_to_pads=False,
+    connect_to_pad_layers=None,
 ):  # (STAR|DAISY)]}
     pdngen = design.getPdnGen()
     if bool(voltage_domains):
@@ -237,7 +240,18 @@ def define_pdn_grid_real(
                     utl.PDN, 1521, f"Unable to find power control net: {power_control}"
                 )
 
-    starts_with = pdn.POWER if starts_with_power else pdn.GROUND
+    connect_to_pad_layers = []
+    if bool(connect_to_pads):
+        if not bool(connect_to_pad_layers):
+            for layer in design.getTech().getDB().getTech().getLayers():
+                if layer.getRoutingLevel() > 0:
+                    connect_to_pad_layers.append(layer)
+        else:
+            connect_to_pad_layers = [
+                get_layer(design, l) for l in connect_to_pad_layers
+            ]
+
+    starts_with = pdn.kPower if starts_with_power else pdn.kGround
     for domain in domains:
         pdngen.makeCoreGrid(
             domain,
@@ -248,6 +262,7 @@ def define_pdn_grid_real(
             power_cell,
             power_control,
             power_control_network,
+            connect_to_pad_layers,
         )
 
 
@@ -324,7 +339,7 @@ def define_pdn_grid_macro(
     obst_list = get_obstructions(design, obstructions)
     orient_list = get_orientations(orient)
 
-    starts_with = pdn.POWER if starts_with_power else pdn.GROUND
+    starts_with = pdn.kPower if starts_with_power else pdn.kGround
 
     if bool(instances):
         insts = []
@@ -396,6 +411,7 @@ def add_pdn_stripe(
     extend_to_core_ring=False,
     extend_to_boundary=False,
     snap_to_grid=False,
+    allow_out_of_core=False,
 ):
     pdngen = design.getPdnGen()
 
@@ -419,7 +435,7 @@ def add_pdn_stripe(
     nets_list = []
     if bool(nets):
         for net_name in nets:
-            net = design.getBlock.findNet(net_name)
+            net = design.getBlock().findNet(net_name)
             if net == None:
                 utl.error(utl.PDN, 1530, f"Unable to find net {net_name}.")
             nets_list.append(net)
@@ -430,7 +446,7 @@ def add_pdn_stripe(
     spacing = design.micronToDBU(spacing)
     offset = design.micronToDBU(offset)
 
-    extend = pdn.CORE
+    extend = pdn.kCore
     if extend_to_core_ring and extend_to_boundary:
         utl.error(
             utl.PDN,
@@ -439,9 +455,9 @@ def add_pdn_stripe(
             + "'extend_to_boundary' are mutually exclusive.",
         )
     elif extend_to_core_ring:
-        extend = pdn.RINGS
+        extend = pdn.kRings
     elif extend_to_boundary:
-        extend = pdn.BOUNDARY
+        extend = pdn.kBoundary
 
     if followpins:
         for g in pdngen.findGrid(grid):
@@ -449,11 +465,11 @@ def add_pdn_stripe(
 
     else:
         if not bool(starts_with):
-            starts_with = pdn.GRID
+            starts_with = pdn.kGrid
         elif starts_with.upper() == "POWER":
-            starts_with = pdn.POWER
+            starts_with = pdn.kPower
         elif starts_with.upper() == "GROUND":
-            starts_with = pdn.GROUND
+            starts_with = pdn.kGround
         else:
             utl.error(utl.PDN, 607, "Invalid starts_with. Must be POWER or GROUND")
 
@@ -470,6 +486,7 @@ def add_pdn_stripe(
                 starts_with,
                 extend,
                 nets_list,
+                allow_out_of_core,
             )
 
 
@@ -645,11 +662,11 @@ def add_pdn_ring(
         pad_offsets = [0, 0, 0, 0]
 
     if not bool(starts_with):
-        starts_with = pdn.GRID
+        starts_with = pdn.kGrid
     elif starts_with.upper() == "POWER":
-        starts_with = pdn.POWER
+        starts_with = pdn.kPower
     elif starts_with.upper() == "GROUND":
-        starts_with = pdn.GROUND
+        starts_with = pdn.kGround
     else:
         utl.error(
             utl.PDN, 608, "Invalid starts_with. Must be unspecified or POWER or GROUND"
@@ -677,7 +694,7 @@ def add_pdn_ring(
     if bool(connect_to_pads):
         if not bool(connect_to_pad_layers):
             for layer in design.getTech().getDB().getTech().getLayers():
-                if layer.getType() == "ROUTING":
+                if layer.getRoutingLevel() > 0:
                     connect_to_pad_layers.append(layer)
         else:
             connect_to_pad_layers = [
@@ -784,16 +801,16 @@ def repair_pdn_vias(design, *, net=None, all=False):
     if not bool(net) and not all:
         utl.error(utl.PDN, 31192, "Must use either 'net' or 'all' arguments.")
 
-    nets = []
+    nets = pdn.net_set()
     if bool(net):
         net = design.getBlock().findNet(net)
         if net is None:
             utl.error(utl.PDN, 31190, f"Unable to find net: {net}")
-        nets.append(net)
+        nets.insert(net)
 
     if all:
         for net in design.getBlock().getNets():
             if net.getSigType() == "POWER" or net.getSigType() == "GROUND":
-                nets.append(net)
+                nets.insert(net)
 
     pdngen.repairVias(nets)

@@ -32,11 +32,13 @@
 
 #include "gui/gui.h"
 #include "label.h"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbObject.h"
 #include "odb/geom.h"
 #include "options.h"
 #include "renderThread.h"
+#include "ruler.h"
 #include "search.h"
 
 namespace utl {
@@ -113,24 +115,26 @@ class LayoutViewer : public QWidget
   // makeSelected is so that we don't have to pass in the whole
   // MainWindow just to get access to one method.  Communication
   // should happen through signals & slots in all other cases.
-  LayoutViewer(Options* options,
-               ScriptWidget* output_widget,
-               const SelectionSet& selected,
-               const HighlightSet& highlighted,
-               const Rulers& rulers,
-               const Labels& labels,
-               const std::map<odb::dbModule*, ModuleSettings>& module_settings,
-               const std::set<odb::dbNet*>& focus_nets,
-               const std::set<odb::dbNet*>& route_guides,
-               const std::set<odb::dbNet*>& net_tracks,
-               Gui* gui,
-               const std::function<bool()>& using_dbu,
-               const std::function<bool()>& show_ruler_as_euclidian,
-               const std::function<bool()>& show_db_view,
-               QWidget* parent = nullptr);
+  LayoutViewer(
+      Options* options,
+      ScriptWidget* output_widget,
+      const SelectionSet& selected,
+      const HighlightSet& highlighted,
+      const Rulers& rulers,
+      const Labels& labels,
+      const odb::PtrMap<odb::dbModule, ModuleSettings>& module_settings,
+      const odb::PtrSet<odb::dbNet>& focus_nets,
+      const odb::PtrSet<odb::dbNet>& route_guides,
+      const odb::PtrSet<odb::dbNet>& net_tracks,
+      Gui* gui,
+      const std::function<bool()>& using_dbu,
+      const std::function<bool()>& show_ruler_as_euclidian,
+      const std::function<bool()>& show_db_view,
+      QWidget* parent = nullptr);
 
   odb::dbBlock* getBlock() const { return chip_->getBlock(); }
   odb::dbChip* getChip() const { return chip_; }
+  odb::PtrMap<odb::dbChipInst, odb::dbChip*> getChips() const;
   void setLogger(utl::Logger* logger);
   qreal getPixelsPerDBU() { return pixels_per_dbu_; }
   void setScroller(LayoutScroll* scroller);
@@ -167,6 +171,9 @@ class LayoutViewer : public QWidget
   bool isCursorInsideViewport();
   void updateCursorCoordinates();
 
+  // gets the size of the diameter of the biggest circle that fits the view
+  int getVisibleDiameter();
+
  signals:
   // indicates the current location of the mouse
   void location(int x, int y);
@@ -182,6 +189,8 @@ class LayoutViewer : public QWidget
   void addRuler(int x0, int y0, int x1, int y1);
 
   void focusNetsChanged();
+
+  void viewUpdated();
 
  public slots:
   // zoom in the layout, keeping the current center_
@@ -204,6 +213,9 @@ class LayoutViewer : public QWidget
 
   // zoom to the specified rect
   void zoomTo(const odb::Rect& rect_dbu);
+
+  // zoom to the specified point
+  void zoomTo(const odb::Point& focus, int diameter);
 
   // indicates a chip has been loaded
   void chipLoaded(odb::dbChip* chip);
@@ -269,18 +281,19 @@ class LayoutViewer : public QWidget
   struct Boxes
   {
     std::vector<QPolygon> obs;
-    std::map<odb::dbMTerm*, std::vector<QPolygon>> mterms;
+    odb::PtrMap<odb::dbMTerm, std::vector<QPolygon>> mterms;
   };
 
-  using LayerBoxes = std::map<odb::dbTechLayer*, Boxes>;
-  using CellBoxes = std::map<odb::dbMaster*, LayerBoxes>;
+  using LayerBoxes = odb::PtrMap<odb::dbTechLayer, Boxes>;
+  using CellBoxes = odb::PtrMap<odb::dbMaster, LayerBoxes>;
 
   void boxesByLayer(odb::dbMaster* master, LayerBoxes& boxes);
   const Boxes* boxesByLayer(odb::dbMaster* master, odb::dbTechLayer* layer);
   void setPixelsPerDBU(qreal pixels_per_dbu);
   void selectAt(odb::Rect region_dbu, std::vector<Selected>& selection);
   SelectionSet selectAt(odb::Rect region_dbu);
-  void selectViaShapesAt(odb::dbTechLayer* cut_layer,
+  void selectViaShapesAt(odb::dbBlock* block,
+                         odb::dbTechLayer* cut_layer,
                          odb::dbTechLayer* select_layer,
                          const odb::Rect& region,
                          int shape_limit,
@@ -291,7 +304,8 @@ class LayoutViewer : public QWidget
 
   qreal computePixelsPerDBU(const QSize& size, const odb::Rect& dbu_rect);
   odb::Rect getBounds() const;
-  odb::Rect getPaddedRect(const odb::Rect& rect, double factor = 0.05);
+  odb::Rect getPaddedRect(const odb::Rect& rect,
+                          double factor = defaultZoomMargin);
 
   bool hasDesign() const;
   int getDbuPerMicron() const;
@@ -301,6 +315,7 @@ class LayoutViewer : public QWidget
   int coarseViewableResolution() const;
   int instanceSizeLimit() const;
   int shapeSizeLimit() const;
+  int highlightSizeLimit() const;
 
   std::vector<std::tuple<odb::dbObject*, odb::Rect, int>> getRowRects(
       odb::dbBlock* block,
@@ -312,10 +327,11 @@ class LayoutViewer : public QWidget
 
   using Edge = std::pair<odb::Point, odb::Point>;
   // search for nearest edge to point
-  std::pair<Edge, bool> searchNearestEdge(const odb::Point& pt,
+  std::pair<Edge, bool> searchNearestEdge(odb::Point pt,
                                           bool horizontal,
                                           bool vertical);
   void searchNearestViaEdge(
+      odb::dbBlock* block,
       odb::dbTechLayer* cut_layer,
       odb::dbTechLayer* search_layer,
       const odb::Rect& search_line,
@@ -378,7 +394,7 @@ class LayoutViewer : public QWidget
   std::function<bool()> show_ruler_as_euclidian_;
   std::function<bool()> show_db_view_;
 
-  const std::map<odb::dbModule*, ModuleSettings>& modules_;
+  const odb::PtrMap<odb::dbModule, ModuleSettings>& modules_;
 
   bool building_ruler_;
   std::unique_ptr<odb::Point> ruler_start_;
@@ -420,11 +436,11 @@ class LayoutViewer : public QWidget
   // Cache of the maximum cut size per layer (units: dbu).
   // Used to determine when cuts are too small to be seen and should not be
   // drawn.
-  std::map<odb::dbTechLayer*, int> cut_maximum_size_;
+  odb::PtrMap<odb::dbTechLayer, int> cut_maximum_size_;
 
-  const std::set<odb::dbNet*>& focus_nets_;
-  const std::set<odb::dbNet*>& route_guides_;
-  const std::set<odb::dbNet*>& net_tracks_;
+  const odb::PtrSet<odb::dbNet>& focus_nets_;
+  const odb::PtrSet<odb::dbNet>& route_guides_;
+  const odb::PtrSet<odb::dbNet>& net_tracks_;
 
   RenderThread viewer_thread_;
   QPixmap draw_pixmap_;
@@ -434,6 +450,7 @@ class LayoutViewer : public QWidget
   std::string loading_indicator_;
 
   static constexpr qreal kZoomScaleFactor = 1.2;
+  static constexpr double defaultZoomMargin = 0.05;
 
   // parameters used to animate the selection of objects
   static constexpr int kAnimationRepeats = 6;

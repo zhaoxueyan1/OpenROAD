@@ -5,14 +5,16 @@
 
 #include <QObject>
 #include <atomic>
+#include <iterator>
 #include <map>
-#include <mutex>
 #include <tuple>
 #include <utility>
 #include <vector>
 
+#include "absl/synchronization/mutex.h"
 #include "boost/geometry/geometry.hpp"
 #include "boost/geometry/index/rtree.hpp"
+#include "odb/PtrSetMap.h"
 #include "odb/db.h"
 #include "odb/dbBlockCallBackObj.h"
 #include "odb/geom.h"
@@ -50,7 +52,7 @@ class Search : public QObject, public odb::dbBlockCallBackObj
   };
 
   template <typename T>
-  using LayerMap = std::map<odb::dbTechLayer*, T>;
+  using LayerMap = odb::PtrMap<odb::dbTechLayer, T>;
 
   template <typename T>
   using RectValue = std::pair<odb::Rect, T>;
@@ -60,12 +62,13 @@ class Search : public QObject, public odb::dbBlockCallBackObj
   using SNetValue = std::tuple<odb::dbSBox*, odb::Polygon, T>;
   template <typename T>
   using SNetDBoxValue = std::pair<odb::dbSBox*, T>;
-  ;
+  template <typename T>
+  using BoxValue = std::pair<odb::dbBox*, T>;
 
   template <typename T>
   struct BBoxIndexableGetter
   {
-    using result_type = odb::Rect;
+    using result_type = odb::Rect;  // NOLINT(readability-identifier-naming)
     odb::Rect operator()(T t) const { return t->getBBox()->getBox(); }
     odb::Rect operator()(const SNetValue<T>& t) const
     {
@@ -75,11 +78,15 @@ class Search : public QObject, public odb::dbBlockCallBackObj
     {
       return std::get<0>(t)->getBox();
     }
+    odb::Rect operator()(const BoxValue<T>& t) const
+    {
+      return std::get<0>(t)->getBox();
+    }
   };
 
   struct FillIndexableGetter
   {
-    using result_type = odb::Rect;
+    using result_type = odb::Rect;  // NOLINT(readability-identifier-naming)
     odb::Rect operator()(odb::dbFill* t) const
     {
       odb::Rect fill;
@@ -102,6 +109,9 @@ class Search : public QObject, public odb::dbBlockCallBackObj
       rtree<SNetDBoxValue<T>, bgi::quadratic<16>, BBoxIndexableGetter<T>>;
   using RtreeFill
       = bgi::rtree<odb::dbFill*, bgi::quadratic<16>, FillIndexableGetter>;
+  template <typename T>
+  using RtreeBox
+      = bgi::rtree<BoxValue<T>, bgi::quadratic<16>, BBoxIndexableGetter<T>>;
 
   // This is an iterator range for return values
   template <typename Tree>
@@ -118,6 +128,8 @@ class Search : public QObject, public odb::dbBlockCallBackObj
     Iterator begin() { return begin_; }
     Iterator end() { return end_; }
 
+    int size() const { return std::distance(begin_, end_); }
+
    private:
     Iterator begin_;
     Iterator end_;
@@ -130,6 +142,7 @@ class Search : public QObject, public odb::dbBlockCallBackObj
   using ObstructionRange = Range<RtreeDBox<odb::dbObstruction*>>;
   using BlockageRange = Range<RtreeDBox<odb::dbBlockage*>>;
   using RowRange = Range<RtreeRect<odb::dbRow*>>;
+  using BPinRange = Range<RtreeBox<odb::dbBPin*>>;
 
   ~Search() override;
 
@@ -210,12 +223,23 @@ class Search : public QObject, public odb::dbBlockCallBackObj
                       int y_hi,
                       int min_height = 0);
 
+  // Find all bpin boxes in the given bounds on the given layer which
+  // are at least min_size in either dimension.
+  BPinRange searchBPins(odb::dbBlock* block,
+                        odb::dbTechLayer* layer,
+                        int x_lo,
+                        int y_lo,
+                        int x_hi,
+                        int y_hi,
+                        int min_size = 0);
+
   void clearShapes();
   void clearFills();
   void clearInsts();
   void clearBlockages();
   void clearObstructions();
   void clearRows();
+  void clearBPins();
 
   // From dbBlockCallBackObj
   void inDbNetDestroy(odb::dbNet* net) override;
@@ -229,6 +253,9 @@ class Search : public QObject, public odb::dbBlockCallBackObj
   void inDbBPinAddBox(odb::dbBox* box) override;
   void inDbBPinRemoveBox(odb::dbBox* box) override;
   void inDbBPinDestroy(odb::dbBPin* pin) override;
+  void inDbBPinPlacementStatusBefore(
+      odb::dbBPin* pin,
+      const odb::dbPlacementStatus& status) override;
   void inDbFillCreate(odb::dbFill* fill) override;
   void inDbWireCreate(odb::dbWire* wire) override;
   void inDbWireDestroy(odb::dbWire* wire) override;
@@ -272,6 +299,7 @@ class Search : public QObject, public odb::dbBlockCallBackObj
   void updateBlockages(odb::dbBlock* block);
   void updateObstructions(odb::dbBlock* block);
   void updateRows(odb::dbBlock* block);
+  void updateBPins(odb::dbBlock* block);
 
   void clear();
 
@@ -286,12 +314,13 @@ class Search : public QObject, public odb::dbBlockCallBackObj
     RtreeDBox<odb::dbBlockage*> blockages;
     RtreeRect<odb::dbRow*> rows;
 
-    std::mutex shapes_init_mutex;
-    std::mutex fills_init_mutex;
-    std::mutex insts_init_mutex;
-    std::mutex blockages_init_mutex;
-    std::mutex obstructions_init_mutex;
-    std::mutex rows_init_mutex;
+    absl::Mutex shapes_init_mutex;
+    absl::Mutex fills_init_mutex;
+    absl::Mutex insts_init_mutex;
+    absl::Mutex blockages_init_mutex;
+    absl::Mutex obstructions_init_mutex;
+    absl::Mutex rows_init_mutex;
+    absl::Mutex bpins_init_mutex;
 
     // The net is used for filter shapes by net type
     LayerMap<RtreeRoutingShapes<odb::dbNet*>> box_shapes;
@@ -302,6 +331,7 @@ class Search : public QObject, public odb::dbBlockCallBackObj
     LayerMap<RtreeSNetShapes<odb::dbNet*>> snet_shapes;
     LayerMap<RtreeFill> fills;
     LayerMap<RtreeDBox<odb::dbObstruction*>> obstructions;
+    LayerMap<RtreeBox<odb::dbBPin*>> bpins;
 
     std::atomic_bool shapes_init{false};
     std::atomic_bool fills_init{false};
@@ -309,8 +339,9 @@ class Search : public QObject, public odb::dbBlockCallBackObj
     std::atomic_bool blockages_init{false};
     std::atomic_bool obstructions_init{false};
     std::atomic_bool rows_init{false};
+    std::atomic_bool bpins_init{false};
   };
-  std::map<odb::dbBlock*, BlockData> child_block_data_;
+  odb::PtrMap<odb::dbBlock, BlockData> child_block_data_;
   BlockData top_block_data_;
 };
 

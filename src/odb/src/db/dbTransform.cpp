@@ -81,7 +81,7 @@ static const dbOrientType::Value orientMul[8][8] = {{dbOrientType::R0,
 
 dbOStream& operator<<(dbOStream& stream, const dbTransform& t)
 {
-  stream << (int) t.orient_;
+  stream << static_cast<int>(t.orient_);
   stream << t.offset_;
   return stream;
 }
@@ -90,7 +90,7 @@ dbIStream& operator>>(dbIStream& stream, dbTransform& t)
 {
   int orient;
   stream >> orient;
-  t.orient_ = (dbOrientType::Value) orient;
+  t.orient_ = static_cast<dbOrientType::Value>(orient);
   stream >> t.offset_;
   return stream;
 }
@@ -160,8 +160,9 @@ void dbTransform::invert(dbTransform& result) const
       throw std::runtime_error("Unknown orientation");
   }
 
-  result.offset_ = offset;
+  result.offset_ = Point3D(offset, mirror_z_ ? offset_.z() : -offset_.z());
   result.orient_ = orient;
+  result.mirror_z_ = mirror_z_;
 }
 
 void dbTransform::apply(Point& p) const
@@ -205,6 +206,21 @@ void dbTransform::apply(Point& p) const
   p.addY(offset_.y());
 }
 
+void dbTransform::apply(Point3D& p) const
+{
+  Point p2d(p.x(), p.y());
+  apply(p2d);
+
+  int z = p.z();
+  if (mirror_z_) {
+    z = -z;
+  }
+
+  p.setX(p2d.x());
+  p.setY(p2d.y());
+  p.setZ(z + offset_.z());
+}
+
 void dbTransform::apply(Rect& r) const
 {
   Point ll = r.ll();
@@ -212,6 +228,15 @@ void dbTransform::apply(Rect& r) const
   apply(ll);
   apply(ur);
   r.init(ll.x(), ll.y(), ur.x(), ur.y());
+}
+
+void dbTransform::apply(Cuboid& c) const
+{
+  Point3D lll = c.lll();
+  Point3D uur = c.uur();
+  apply(lll);
+  apply(uur);
+  c.init(lll.x(), lll.y(), lll.z(), uur.x(), uur.y(), uur.z());
 }
 
 void dbTransform::apply(Polygon& p) const
@@ -228,6 +253,7 @@ void dbTransform::concat(const dbTransform& t, dbTransform& result)
   result.offset_ = offset_;
   t.apply(result.offset_);
   result.orient_ = orientMul[orient_][t.orient_];
+  result.mirror_z_ = mirror_z_ ^ t.mirror_z_;
 }
 
 }  // namespace odb

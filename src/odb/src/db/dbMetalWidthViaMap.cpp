@@ -6,12 +6,14 @@
 
 #include <string>
 
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "dbTechLayer.h"
 #include "odb/db.h"
 // User Code Begin Includes
+#include <cstdint>
+
 #include "dbTech.h"
 // User Code End Includes
 namespace odb {
@@ -19,6 +21,7 @@ template class dbTable<_dbMetalWidthViaMap>;
 
 bool _dbMetalWidthViaMap::operator==(const _dbMetalWidthViaMap& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (via_cut_class_ != rhs.via_cut_class_) {
     return false;
   }
@@ -45,6 +48,7 @@ bool _dbMetalWidthViaMap::operator==(const _dbMetalWidthViaMap& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbMetalWidthViaMap::operator<(const _dbMetalWidthViaMap& rhs) const
@@ -93,9 +97,7 @@ void _dbMetalWidthViaMap::collectMemInfo(MemInfo& info)
   info.cnt++;
   info.size += sizeof(*this);
 
-  // User Code Begin collectMemInfo
-  info.children_["via_name"].add(via_name_);
-  // User Code End collectMemInfo
+  info.children["via_name"].add(via_name_);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -183,7 +185,7 @@ void dbMetalWidthViaMap::setViaName(const std::string& via_name)
   obj->via_name_ = via_name;
 }
 
-std::string dbMetalWidthViaMap::getViaName() const
+const std::string& dbMetalWidthViaMap::getViaName() const
 {
   _dbMetalWidthViaMap* obj = (_dbMetalWidthViaMap*) this;
   return obj->via_name_;
@@ -226,7 +228,7 @@ void dbMetalWidthViaMap::destroy(dbMetalWidthViaMap* via_map)
 }
 
 dbMetalWidthViaMap* dbMetalWidthViaMap::getMetalWidthViaMap(dbTech* tech,
-                                                            uint dbid)
+                                                            uint32_t dbid)
 {
   _dbTech* _tech = (_dbTech*) tech;
   return (dbMetalWidthViaMap*) _tech->metal_width_via_map_tbl_->getPtr(dbid);

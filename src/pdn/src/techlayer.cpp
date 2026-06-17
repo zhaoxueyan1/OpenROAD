@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <string>
@@ -46,6 +47,10 @@ void TechLayer::populateGrid(odb::dbBlock* block, odb::dbTechLayerDir dir)
   }
 
   auto* tracks = block->findTrackGrid(layer_);
+  if (tracks == nullptr) {
+    return;
+  }
+
   if (dir == odb::dbTechLayerDir::HORIZONTAL) {
     grid_ = tracks->getGridY();
   } else if (dir == odb::dbTechLayerDir::VERTICAL) {
@@ -150,11 +155,7 @@ bool TechLayer::checkIfManufacturingGrid(odb::dbTech* tech, int value)
 
   const int grid = tech->getManufacturingGrid();
 
-  if (value % grid != 0) {
-    return false;
-  }
-
-  return true;
+  return value % grid == 0;
 }
 
 bool TechLayer::checkIfManufacturingGrid(int value,
@@ -190,8 +191,8 @@ std::vector<TechLayer::MinCutRule> TechLayer::getMinCutRules() const
 
   // get all the LEF55 rules
   for (auto* min_cut_rule : layer_->getMinCutRules()) {
-    odb::uint numcuts;
-    odb::uint rule_width;
+    uint32_t numcuts;
+    uint32_t rule_width;
     min_cut_rule->getMinimumCuts(numcuts, rule_width);
 
     rules.push_back(MinCutRule{nullptr,
@@ -230,27 +231,45 @@ int TechLayer::getMinIncrementStep() const
   return 1;
 }
 
-odb::Rect TechLayer::adjustToMinArea(const odb::Rect& rect) const
+odb::Rect TechLayer::adjustToMinArea(
+    const odb::Rect& rect,
+    const std::optional<odb::dbTechLayerDir>& dir) const
 {
-  if (!layer_->hasArea()) {
+  const bool has_rules = !layer_->getTechLayerAreaRules().empty();
+  if (!has_rules && !layer_->hasArea()) {
     return rect;
   }
 
-  const double min_area = layer_->getArea();
-  if (min_area == 0.0) {
+  int64_t min_area = 0;
+  if (has_rules) {
+    for (auto* rule : layer_->getTechLayerAreaRules()) {
+      const int64_t layer_min_area = rule->getArea();
+      if (layer_min_area == 0) {
+        continue;
+      }
+      // TODO: Check width rules
+      // TODO: Check length rules
+      // TODO: Check except rules
+      min_area = std::max(min_area, layer_min_area);
+    }
+  } else {
+    min_area = layer_->getArea();
+  }
+
+  if (min_area == 0) {
     return rect;
   }
 
   // make sure minimum area is honored
-  const int dbu_per_micron = getLefUnits();
-  const double area = min_area * dbu_per_micron * dbu_per_micron;
+  const double area = min_area;
 
   odb::Rect new_rect = rect;
 
   const int width = new_rect.dx();
   const int height = new_rect.dy();
-  if (width * height < area) {
-    if (layer_->getDirection() == odb::dbTechLayerDir::HORIZONTAL) {
+  if (new_rect.area() < area) {
+    if (dir.value_or(layer_->getDirection())
+        == odb::dbTechLayerDir::HORIZONTAL) {
       const int required_width = std::ceil(area / height);
       const double added_width = required_width - width;
       const int adjust_min = std::ceil(added_width / 2.0);

@@ -4,6 +4,7 @@
 // Generator Code Begin Header
 #pragma once
 
+#include <cstdint>
 #include <regex>
 #include <string>
 
@@ -14,11 +15,13 @@
 #include "dbRegion.h"
 #include "dbVector.h"
 #include "odb/dbId.h"
-#include "odb/odb.h"
 // User Code Begin Includes
 #include <map>
 #include <set>
+#include <utility>
 #include <vector>
+
+#include "odb/PtrSetMap.h"
 // User Code End Includes
 
 namespace odb {
@@ -51,10 +54,12 @@ class _dbGlobalConnect : public _dbObject
   static void testRegex(utl::Logger* logger,
                         const std::string& pattern,
                         const std::string& type);
-  std::map<dbMaster*, std::set<dbMTerm*>> getMTermMapping();
-  std::set<dbMTerm*> getMTermMapping(dbMaster* master,
-                                     const std::regex& pin_regex) const;
-  std::set<dbITerm*> connect(const std::vector<dbInst*>& insts);
+  odb::PtrMap<dbMaster, odb::PtrSet<dbMTerm>> getMTermMapping();
+  odb::PtrSet<dbMTerm> getMTermMapping(dbMaster* master,
+                                       const std::regex& pin_regex) const;
+  std::pair<odb::PtrSet<dbITerm>, odb::PtrSet<dbITerm>> connect(
+      const std::vector<dbInst*>& insts,
+      bool force);
   bool appliesTo(dbInst* inst) const;
   bool needsModification(dbInst* inst) const;
   // User Code End Methods

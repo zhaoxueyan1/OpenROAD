@@ -148,21 +148,23 @@ sta::define_cmd_args "global_route" {[-guide_file out_file] \
                                   [-critical_nets_percentage percent] \
                                   [-skip_large_fanout_nets fanout] \
                                   [-allow_congestion] \
+                                  [-snapshot_batched_width width] \
                                   [-verbose] \
                                   [-start_incremental] \
                                   [-end_incremental] \
                                   [-use_cugr] \
-                                  [-resistance_aware]
+                                  [-resistance_aware] \
+                                  [-infinite_cap]
 }
 
 proc global_route { args } {
   sta::parse_key_args "global_route" args \
     keys {-guide_file -congestion_iterations -congestion_report_file \
-          -grid_origin -critical_nets_percentage -congestion_report_iter_step\
-          -skip_large_fanout_nets
+          -grid_origin -critical_nets_percentage -congestion_report_iter_step \
+          -skip_large_fanout_nets -snapshot_batched_width
          } \
-    flags {-allow_congestion -resistance_aware -verbose -start_incremental -end_incremental \
-          -use_cugr}
+    flags {-allow_congestion -resistance_aware -infinite_cap -verbose -start_incremental \
+          -end_incremental -use_cugr}
 
   sta::check_argc_eq0 "global_route" $args
 
@@ -173,6 +175,8 @@ proc global_route { args } {
   if { [ord::get_db_block] == "NULL" } {
     utl::error GRT 52 "Missing dbBlock."
   }
+
+  grt::set_use_cugr [info exists flags(-use_cugr)]
 
   grt::set_verbose [info exists flags(-verbose)]
 
@@ -192,6 +196,11 @@ proc global_route { args } {
     set iterations $keys(-congestion_iterations)
     sta::check_positive_integer "-congestion_iterations" $iterations
     grt::set_congestion_iterations $iterations
+  } elseif { [info exists flags(-use_cugr)] } {
+    # CUGR's rip-up and re-route loop saturates around iteration 5, and
+    # each iteration runs a full 3D maze pass, so the default budget is
+    # tighter than FastRoute's 50.
+    grt::set_congestion_iterations 5
   } else {
     grt::set_congestion_iterations 50
   }
@@ -214,8 +223,6 @@ proc global_route { args } {
     grt::set_critical_nets_percentage $percentage
   }
 
-  grt::set_use_cugr [info exists flags(-use_cugr)]
-
   if { [info exists keys(-skip_large_fanout_nets)] } {
     set fanout $keys(-skip_large_fanout_nets)
     sta::check_positive_integer "-skip_large_fanout_nets" $fanout
@@ -228,10 +235,30 @@ proc global_route { args } {
   set resistance_aware [info exists flags(-resistance_aware)]
   grt::set_resistance_aware $resistance_aware
 
+  if { [info exists keys(-snapshot_batched_width)] } {
+    set snapshot_batched_width $keys(-snapshot_batched_width)
+    sta::check_positive_integer "-snapshot_batched_width" \
+      $snapshot_batched_width
+  } else {
+    set snapshot_batched_width 0
+  }
+  grt::set_snapshot_batched_width $snapshot_batched_width
+
+  set infinite_cap [info exists flags(-infinite_cap)]
+  grt::set_infinite_cap $infinite_cap
+
   set start_incremental [info exists flags(-start_incremental)]
   set end_incremental [info exists flags(-end_incremental)]
 
-  grt::global_route $start_incremental $end_incremental
+  if { $start_incremental && $end_incremental } {
+    utl::error GRT 295 "Only one of -start_incremental or -end_incremental can be used."
+  } elseif { $start_incremental } {
+    grt::start_incremental
+  } elseif { $end_incremental } {
+    grt::end_incremental
+  } else {
+    grt::global_route
+  }
 
   if { [info exists keys(-guide_file)] } {
     set out_file $keys(-guide_file)
@@ -241,11 +268,14 @@ proc global_route { args } {
 
 sta::define_cmd_args "repair_antennas" { diode_cell \
                                          [-iterations iterations] \
-                                         [-ratio_margin ratio_margin]}
+                                         [-ratio_margin ratio_margin] \
+                                         [-jumper_only] \
+                                         [-diode_only] \
+                                         [-allow_congestion]}
 
 proc repair_antennas { args } {
   sta::parse_key_args "repair_antennas" args \
-    keys {-iterations -ratio_margin} flags {}
+    keys {-iterations -ratio_margin} flags {-jumper_only -diode_only -allow_congestion}
   if { [ord::get_db_block] == "NULL" } {
     utl::error GRT 104 "No design block found."
   }
@@ -285,6 +315,16 @@ proc repair_antennas { args } {
       sta::check_positive_integer "-iterations" $iterations
     }
 
+    set allow_congestion [info exists flags(-allow_congestion)]
+    grt::set_allow_congestion $allow_congestion
+
+    set jumper_only [info exists flags(-jumper_only)]
+    set diode_only [info exists flags(-diode_only)]
+
+    if { $jumper_only && $diode_only } {
+      utl::error GRT 294 "Only use either -jumper_only or -diode_only flag"
+    }
+
     set ratio_margin 0
     if { [info exists keys(-ratio_margin)] } {
       set ratio_margin $keys(-ratio_margin)
@@ -293,7 +333,7 @@ proc repair_antennas { args } {
       }
     }
 
-    return [grt::repair_antennas $diode_mterm $iterations $ratio_margin]
+    return [grt::repair_antennas $diode_mterm $iterations $ratio_margin $jumper_only $diode_only]
   } else {
     utl::error GRT 45 "Run global_route before repair_antennas."
   }
@@ -330,15 +370,14 @@ proc read_guides { args } {
   grt::read_guides $file_name
 }
 
-sta::define_cmd_args "draw_route_guides" { net_names \
-                                           [-show_segments]
+sta::define_cmd_args "draw_route_segments" { net_names \
                                            [-show_pin_locations] }
 
-proc draw_route_guides { args } {
-  sta::parse_key_args "draw_route_guides" args \
+proc draw_route_segments { args } {
+  sta::parse_key_args "draw_route_segments" args \
     keys {} \
-    flags {-show_pin_locations -show_segments}
-  sta::check_argc_eq1 "draw_route_guides" $args
+    flags {-show_pin_locations}
+  sta::check_argc_eq1 "draw_route_segments" $args
   set net_names [lindex $args 0]
   set block [ord::get_db_block]
   if { $block == "NULL" } {
@@ -347,10 +386,9 @@ proc draw_route_guides { args } {
 
   grt::clear_route_guides
   set show_pins [info exists flags(-show_pin_locations)]
-  set show_segments [info exists flags(-show_segments)]
   foreach net [get_nets $net_names] {
     if { $net != "NULL" } {
-      grt::highlight_net_route [sta::sta_to_db_net $net] $show_segments $show_pins
+      grt::highlight_net_route [sta::sta_to_db_net $net] $show_pins
     }
   }
 }
@@ -378,8 +416,9 @@ proc read_global_route_segments { args } {
 sta::define_cmd_args "global_route_debug" {
   [-st]       # Show the Steiner Tree generated by stt
   [-rst]      # Show the Rectilinear Steiner Tree generated by FastRoute
-  [-tree2D]   # Show the Rectilinear Steiner Tree generated by FastRoute after overflow iterations
+  [-tree2D]   # Show the Rectilinear Steiner Tree generated by FastRoute after congestion iterations
   [-tree3D]   # Show The Rectilinear Steiner Tree 3D after layer assignment
+  [-edges3D]  # Show edges being rerouted during maze route 3D
   [-saveSttInput file_name] # Save the stt input for a net on file_name
   [-net name]
 }
@@ -387,7 +426,7 @@ sta::define_cmd_args "global_route_debug" {
 proc global_route_debug { args } {
   sta::parse_key_args "global_route_debug" args \
     keys {-saveSttInput -net} \
-    flags {-st -rst -tree2D -tree3D}
+    flags {-st -rst -tree2D -tree3D -edges3D}
 
   sta::check_argc_eq0 "global_route_debug" $args
 
@@ -395,6 +434,7 @@ proc global_route_debug { args } {
   set rst [info exists flags(-rst)]
   set tree2D [info exists flags(-tree2D)]
   set tree3D [info exists flags(-tree3D)]
+  set edges3D [info exists flags(-edges3D)]
   set db_block [ord::get_db_block]
 
   if { [info exists keys(-net)] } {
@@ -402,7 +442,7 @@ proc global_route_debug { args } {
     if { $net == "NULL" } {
       utl::error GRT 231 "Net name not found."
     }
-    grt::set_global_route_debug_cmd $net $st $rst $tree2D $tree3D
+    grt::set_global_route_debug_cmd $net $st $rst $tree2D $tree3D $edges3D
     if { [info exists keys(-saveSttInput)] } {
       set file_name $keys(-saveSttInput)
       grt::set_global_route_debug_stt_input_filename $file_name
@@ -461,6 +501,81 @@ proc report_wire_length { args } {
   } else {
     utl::error GRT 238 "-net is required."
   }
+}
+
+sta::define_cmd_args "estimate_path_resistance" { pin1_name pin2_name \
+                                                  [-layer1 layer1] \
+                                                  [-layer2 layer2] \
+                                                  [-verbose] }
+
+proc estimate_path_resistance { args } {
+  sta::parse_key_args "estimate_path_resistance" args \
+    keys {-layer1 -layer2} \
+    flags {-verbose}
+
+  if { [llength $args] != 2 } {
+    utl::error GRT 289 "estimate_path_resistance requires two pin names."
+  }
+  lassign $args pin1_name pin2_name
+
+  set block [ord::get_db_block]
+  if { $block == "NULL" } {
+    utl::error GRT 290 "Missing dbBlock."
+  }
+
+  set pin1 [$block findITerm $pin1_name]
+  if { $pin1 != "NULL" } {
+    set pin1 [grt::iterm_to_object $pin1]
+  } else {
+    set pin1 [$block findBTerm $pin1_name]
+    if { $pin1 != "NULL" } {
+      set pin1 [grt::bterm_to_object $pin1]
+    }
+  }
+  if { $pin1 == "NULL" } {
+    utl::error GRT 291 "Pin $pin1_name not found."
+  }
+
+  set pin2 [$block findITerm $pin2_name]
+  if { $pin2 != "NULL" } {
+    set pin2 [grt::iterm_to_object $pin2]
+  } else {
+    set pin2 [$block findBTerm $pin2_name]
+    if { $pin2 != "NULL" } {
+      set pin2 [grt::bterm_to_object $pin2]
+    }
+  }
+  if { $pin2 == "NULL" } {
+    utl::error GRT 292 "Pin $pin2_name not found."
+  }
+
+  set verbose [info exists flags(-verbose)]
+
+  if { [info exists keys(-layer1)] && [info exists keys(-layer2)] } {
+    set layer1_name $keys(-layer1)
+    set layer2_name $keys(-layer2)
+
+    set tech [ord::get_db_tech]
+    if { [info exists layer1_name] } {
+      set layer1 [$tech findLayer $layer1_name]
+    }
+    if { $layer1 == "NULL" } {
+      utl::error GRT 293 "Layer $layer1_name not found."
+    }
+
+    if { [info exists layer2_name] } {
+      set layer2 [$tech findLayer $layer2_name]
+    }
+    if { $layer2 == "NULL" } {
+      utl::error GRT 287 "Layer $layer2_name not found."
+    }
+
+    return [grt::estimate_path_resistance $pin1 $pin2 $layer1 $layer2 $verbose]
+  } elseif { [info exists keys(-layer1)] || [info exists keys(-layer2)] } {
+    utl::error GRT 288 "Both or neither -layer1 and -layer2 must be provided."
+  }
+
+  return [grt::estimate_path_resistance $pin1 $pin2 $verbose]
 }
 
 namespace eval grt {

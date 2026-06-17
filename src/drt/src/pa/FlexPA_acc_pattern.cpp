@@ -15,6 +15,7 @@
 
 #include "db/infra/frTime.h"
 #include "db/obj/frBlockObject.h"
+#include "db/obj/frFig.h"
 #include "db/obj/frInst.h"
 #include "db/obj/frInstTerm.h"
 #include "db/obj/frMPin.h"
@@ -140,7 +141,13 @@ int FlexPA::prepPatternInstHelper(frInst* unique_inst, const bool use_x)
             pins.end(),
             [](const std::pair<frCoord, std::pair<frMPin*, frInstTerm*>>& lhs,
                const std::pair<frCoord, std::pair<frMPin*, frInstTerm*>>& rhs) {
-              return lhs.first < rhs.first;
+              if (lhs.first != rhs.first) {
+                return lhs.first < rhs.first;
+              }
+              if (lhs.second.first->getId() != rhs.second.first->getId()) {
+                return lhs.second.first->getId() < rhs.second.first->getId();
+              }
+              return lhs.second.second->getId() < rhs.second.second->getId();
             });
 
   std::vector<std::pair<frMPin*, frInstTerm*>> pin_inst_term_pairs;
@@ -321,6 +328,7 @@ bool FlexPA::genPatternsGC(
     const std::set<frBlockObject*>& target_objs,
     const std::vector<std::pair<frConnFig*, frBlockObject*>>& objs,
     const PatternType pattern_type,
+    // NOLINTNEXTLINE(readability-non-const-parameter)
     std::set<frBlockObject*>* owners)
 {
   if (objs.empty()) {

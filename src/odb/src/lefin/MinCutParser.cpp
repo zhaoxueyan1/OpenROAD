@@ -10,7 +10,7 @@
 #include "odb/lefin.h"
 #include "parserUtils.h"
 
-using namespace odb;
+namespace odb {
 
 void MinCutParser::addCutClass(boost::fusion::vector<std::string, int>& params)
 {
@@ -43,7 +43,7 @@ void MinCutParser::setLengthWithin(double within)
 
 void MinCutParser::setArea(double area)
 {
-  rule_->setArea(lefin_->dbdist(area));
+  rule_->setArea(lefin_->dbarea(area));
   rule_->setAreaValid(true);
 }
 
@@ -110,3 +110,5 @@ bool MinCutParser::parseSubRule(const std::string& s)
   }
   return valid;
 }
+
+}  // namespace odb

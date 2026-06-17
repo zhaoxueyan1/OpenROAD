@@ -7,17 +7,22 @@
 #include <cstdint>
 #include <cstring>
 
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "odb/db.h"
 // User Code Begin Includes
+#include <vector>
+
 #include "dbBoxItr.h"
 #include "dbLib.h"
 #include "dbMPin.h"
 #include "dbMaster.h"
 #include "dbTech.h"
 #include "dbTechLayer.h"
+#include "odb/dbSet.h"
+#include "odb/dbTypes.h"
+#include "odb/geom.h"
 #include "odb/poly_decomp.h"
 // User Code End Includes
 namespace odb {
@@ -25,6 +30,7 @@ template class dbTable<_dbPolygon>;
 
 bool _dbPolygon::operator==(const _dbPolygon& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (flags_.owner_type != rhs.flags_.owner_type) {
     return false;
   }
@@ -48,6 +54,7 @@ bool _dbPolygon::operator==(const _dbPolygon& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbPolygon::operator<(const _dbPolygon& rhs) const
@@ -99,7 +106,7 @@ void _dbPolygon::collectMemInfo(MemInfo& info)
   info.size += sizeof(*this);
 
   // User Code Begin collectMemInfo
-  info.children_["polygon"].add(polygon_.getPoints());
+  info.children["polygon"].add(polygon_.getPoints());
   // User Code End collectMemInfo
 }
 
@@ -109,7 +116,7 @@ void _dbPolygon::collectMemInfo(MemInfo& info)
 //
 ////////////////////////////////////////////////////////////////////
 
-Polygon dbPolygon::getPolygon() const
+const Polygon& dbPolygon::getPolygon() const
 {
   _dbPolygon* obj = (_dbPolygon*) this;
   return obj->polygon_;
@@ -188,7 +195,7 @@ dbPolygon* dbPolygon::create(dbMPin* pin_,
   return (dbPolygon*) box;
 }
 
-Polygon _dbPolygon::checkPolygon(std::vector<Point> polygon)
+Polygon _dbPolygon::checkPolygon(const std::vector<Point>& polygon)
 {
   if (polygon.size() < 4) {
     return {};

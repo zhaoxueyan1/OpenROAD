@@ -8,9 +8,9 @@
 #include <cstring>
 #include <string>
 
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "dbTech.h"
 #include "odb/db.h"
 namespace odb {
@@ -18,7 +18,8 @@ template class dbTable<_dbCellEdgeSpacing>;
 
 bool _dbCellEdgeSpacing::operator==(const _dbCellEdgeSpacing& rhs) const
 {
-  if (flags_.except_abutted_ != rhs.flags_.except_abutted_) {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
+  if (flags_.except_abutted != rhs.flags_.except_abutted) {
     return false;
   }
   if (flags_.except_non_filler_in_between
@@ -45,6 +46,7 @@ bool _dbCellEdgeSpacing::operator==(const _dbCellEdgeSpacing& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbCellEdgeSpacing::operator<(const _dbCellEdgeSpacing& rhs) const
@@ -87,10 +89,8 @@ void _dbCellEdgeSpacing::collectMemInfo(MemInfo& info)
   info.cnt++;
   info.size += sizeof(*this);
 
-  // User Code Begin collectMemInfo
-  info.children_["first_edge_type"].add(first_edge_type_);
-  info.children_["second_edge_type"].add(second_edge_type_);
-  // User Code End collectMemInfo
+  info.children["first_edge_type"].add(first_edge_type_);
+  info.children["second_edge_type"].add(second_edge_type_);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -106,7 +106,7 @@ void dbCellEdgeSpacing::setFirstEdgeType(const std::string& first_edge_type)
   obj->first_edge_type_ = first_edge_type;
 }
 
-std::string dbCellEdgeSpacing::getFirstEdgeType() const
+const std::string& dbCellEdgeSpacing::getFirstEdgeType() const
 {
   _dbCellEdgeSpacing* obj = (_dbCellEdgeSpacing*) this;
   return obj->first_edge_type_;
@@ -119,7 +119,7 @@ void dbCellEdgeSpacing::setSecondEdgeType(const std::string& second_edge_type)
   obj->second_edge_type_ = second_edge_type;
 }
 
-std::string dbCellEdgeSpacing::getSecondEdgeType() const
+const std::string& dbCellEdgeSpacing::getSecondEdgeType() const
 {
   _dbCellEdgeSpacing* obj = (_dbCellEdgeSpacing*) this;
   return obj->second_edge_type_;
@@ -142,14 +142,14 @@ void dbCellEdgeSpacing::setExceptAbutted(bool except_abutted)
 {
   _dbCellEdgeSpacing* obj = (_dbCellEdgeSpacing*) this;
 
-  obj->flags_.except_abutted_ = except_abutted;
+  obj->flags_.except_abutted = except_abutted;
 }
 
 bool dbCellEdgeSpacing::isExceptAbutted() const
 {
   _dbCellEdgeSpacing* obj = (_dbCellEdgeSpacing*) this;
 
-  return obj->flags_.except_abutted_;
+  return obj->flags_.except_abutted;
 }
 
 void dbCellEdgeSpacing::setExceptNonFillerInBetween(

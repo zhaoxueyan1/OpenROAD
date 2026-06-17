@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2021-2025, The OpenROAD Authors
 
-#include "color.h"
+#include "util/color.h"
 
 #include <algorithm>
 #include <vector>
+
+#include "utl/algorithms.h"
 
 namespace dpl {
 
@@ -13,7 +15,7 @@ ColorGraph::ColorGraph(const int num_nodes)
   adj_.resize(num_nodes);
 
   color_.resize(num_nodes);
-  std::fill(color_.begin(), color_.end(), -1);
+  std::ranges::fill(color_, -1);
   num_colors_ = 0;
 }
 
@@ -26,15 +28,14 @@ void ColorGraph::addEdge(const int u, const int v)
 void ColorGraph::removeDuplicateEdges()
 {
   for (auto& adj : adj_) {
-    std::sort(adj.begin(), adj.end());
-    adj.erase(std::unique(adj.begin(), adj.end()), adj.end());
+    utl::sort_and_unique(adj);
   }
 }
 
 void ColorGraph::greedyColoring()
 {
   removeDuplicateEdges();
-  std::fill(color_.begin(), color_.end(), -1);
+  std::ranges::fill(color_, -1);
   color_[0] = 0;  // first node gets first color.
 
   num_colors_ = 1;

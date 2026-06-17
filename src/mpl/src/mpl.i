@@ -34,8 +34,6 @@ bool rtl_macro_placer_cmd(const int max_num_macro,
                           const int max_num_level,
                           const float coarsening_ratio,
                           const int large_net_threshold,
-                          const float halo_width,
-                          const float halo_height,
                           const float fence_lx,
                           const float fence_ly,
                           const float fence_ux,
@@ -47,15 +45,19 @@ bool rtl_macro_placer_cmd(const int max_num_macro,
                           const float fence_weight,
                           const float boundary_weight,
                           const float notch_weight,
-                          const float macro_blockage_weight,
+                          const float soft_blockage_weight,
                           const float target_util,
-                          const float target_dead_space,
                           const float min_ar,
                           const char* report_directory,
                           const bool keep_clustering_data) {
 
   auto macro_placer = getMacroPlacer();
   const int num_threads = ord::OpenRoad::openRoad()->getThreadCount();
+  auto block = ord::OpenRoad::openRoad()->getDb()->getChip()->getBlock();
+  odb::Rect global_fence = odb::Rect(block->micronsToDbu(fence_lx),
+                                    block->micronsToDbu(fence_ly),
+                                    block->micronsToDbu(fence_ux),
+                                    block->micronsToDbu(fence_uy));
   return macro_placer->place(num_threads,
                              max_num_macro,
                              min_num_macro,
@@ -65,12 +67,7 @@ bool rtl_macro_placer_cmd(const int max_num_macro,
                              max_num_level,
                              coarsening_ratio,
                              large_net_threshold,
-                             halo_width,
-                             halo_height,
-                             fence_lx,
-                             fence_ly,
-                             fence_ux,
-                             fence_uy,
+                             global_fence,
                              area_weight,
                              outline_weight,
                              wirelength_weight,
@@ -78,9 +75,8 @@ bool rtl_macro_placer_cmd(const int max_num_macro,
                              fence_weight,
                              boundary_weight,
                              notch_weight,
-                             macro_blockage_weight,
+                             soft_blockage_weight,
                              target_util,
-                             target_dead_space,
                              min_ar,
                              report_directory,
                              keep_clustering_data);
@@ -127,14 +123,54 @@ add_guidance_region(odb::dbInst* macro,
                     float x2,
                     float y2)
 {
-  getMacroPlacer()->addGuidanceRegion(macro, Rect(x1, y1, x2, y2));
+  auto block = ord::OpenRoad::openRoad()->getDb()->getChip()->getBlock();
+  odb::Rect region = odb::Rect(block->micronsToDbu(x1),
+                              block->micronsToDbu(y1),
+                              block->micronsToDbu(x2),
+                              block->micronsToDbu(y2));
+  getMacroPlacer()->addGuidanceRegion(macro, region);
 }
 
+void
+set_base_halo(float left,
+              float bottom,
+              float right,
+              float top)
+{
+  odb::dbBlock* block = ord::OpenRoad::openRoad()->getDb()->getChip()->getBlock();
+  getMacroPlacer()->setBaseHalo(block->micronsToDbu(left),
+                                block->micronsToDbu(bottom),
+                                block->micronsToDbu(right),
+                                block->micronsToDbu(top));
+}
+
+void
+set_macro_halo(odb::dbInst* macro,
+               float left,
+               float bottom,
+               float right,
+               float top) 
+{
+  auto block = ord::OpenRoad::openRoad()->getDb()->getChip()->getBlock();
+  int left_dbu = block->micronsToDbu(left);
+  int bottom_dbu = block->micronsToDbu(bottom);
+  int right_dbu = block->micronsToDbu(right);
+  int top_dbu = block->micronsToDbu(top);
+
+
+  getMacroPlacer()->setMacroHalo(macro, left_dbu, bottom_dbu, right_dbu, top_dbu);
+}
 
 void
 set_macro_placement_file(std::string file_name)
 {
   getMacroPlacer()->setMacroPlacementFile(file_name);
+}
+
+void
+block_macro_channels()
+{
+  getMacroPlacer()->blockMacroChannels();
 }
 
 } // namespace

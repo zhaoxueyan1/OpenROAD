@@ -28,7 +28,7 @@ namespace blif_parser {
 namespace qi = boost::spirit::qi;
 namespace ascii = boost::spirit::ascii;
 
-using namespace boost::placeholders;
+using boost::placeholders::_1;
 
 using boost::spirit::ascii::space_type;
 using boost::spirit::ascii::string;
@@ -38,43 +38,43 @@ using qi::lexeme;
 using ascii::char_;
 using ascii::space;
 
-void setNewInput(std::string input, cut::BlifParser* parser)
+void setNewInput(const std::string& input, cut::BlifParser* parser)
 {
   if (input != "\\") {
     parser->addInput(input);
   }
 }
 
-void setNewOutput(std::string output, cut::BlifParser* parser)
+void setNewOutput(const std::string& output, cut::BlifParser* parser)
 {
   if (output != "\\") {
     parser->addOutput(output);
   }
 }
 
-void setNewClock(std::string clock, cut::BlifParser* parser)
+void setNewClock(const std::string& clock, cut::BlifParser* parser)
 {
   if (clock != "\\") {
     parser->addClock(clock);
   }
 }
 
-void setNewInstanceType(std::string type, cut::BlifParser* parser)
+void setNewInstanceType(const std::string& type, cut::BlifParser* parser)
 {
   parser->addNewInstanceType(type);
 }
 
-void setNewGate(std::string gate, cut::BlifParser* parser)
+void setNewGate(const std::string& gate, cut::BlifParser* parser)
 {
   parser->addNewGate(gate);
 }
 
-void setGateNets(std::string net, cut::BlifParser* parser)
+void setGateNets(const std::string& net, cut::BlifParser* parser)
 {
   parser->addConnection(net);
 }
 
-void endParser(std::string end, cut::BlifParser* parser)
+void endParser(const std::string& end, cut::BlifParser* parser)
 {
   parser->endParser();
 }
@@ -83,25 +83,25 @@ bool parse(std::string::iterator first,
            std::string::iterator last,
            cut::BlifParser* parser)
 {
-  qi::rule<std::string::iterator, std::string(), ascii::space_type> _string;
-  _string %= lexeme[+(char_ - (' ' | qi::eol))];
+  qi::rule<std::string::iterator, std::string(), ascii::space_type> string_rule;
+  string_rule %= lexeme[+(char_ - (' ' | qi::eol))];
 
   qi::rule<std::string::iterator, space_type> rule
-      = (lit(".model") >> _string >> lit(".inputs")
+      = (lit(".model") >> string_rule >> lit(".inputs")
          >> +(!(&lit(".outputs"))
-              >> _string[boost::bind(&setNewInput, _1, parser)])
+              >> string_rule[boost::bind(&setNewInput, _1, parser)])
          >> lit(".outputs")
          >> +(!(&lit(".gate")) >> !(&lit(".clock"))
-              >> _string[boost::bind(&setNewOutput, _1, parser)])
+              >> string_rule[boost::bind(&setNewOutput, _1, parser)])
          >> -(lit(".clock")
               >> +(!(&lit(".gate"))
-                   >> _string[boost::bind(&setNewClock, _1, parser)]))
+                   >> string_rule[boost::bind(&setNewClock, _1, parser)]))
          >> +((lit(".gate")[boost::bind(&setNewInstanceType, "gate", parser)]
                | lit(".mlatch")[boost::bind(
                    &setNewInstanceType, "mlatch", parser)])
-              >> _string[boost::bind(&setNewGate, _1, parser)]
+              >> string_rule[boost::bind(&setNewGate, _1, parser)]
               >> +(!(&lit(".gate")) >> !(&lit(".mlatch")) >> !(&lit(".end"))
-                   >> _string[boost::bind(&setGateNets, _1, parser)]))
+                   >> string_rule[boost::bind(&setGateNets, _1, parser)]))
          >> string(".end")[boost::bind(&endParser, _1, parser)]);
 
   bool valid = qi::phrase_parse(first, last, rule, space);
@@ -116,7 +116,7 @@ BlifParser::BlifParser()
 {
   combCount_ = 0;
   flopCount_ = 0;
-  currentInstanceType_ = GateType::None;
+  currentInstanceType_ = GateType::kNone;
   currentGate_ = "";
 }
 void BlifParser::addInput(const std::string& input)
@@ -133,17 +133,17 @@ void BlifParser::addClock(const std::string& clock)
 }
 void BlifParser::addNewInstanceType(const std::string& type)
 {
-  if (currentInstanceType_ != GateType::None) {
-    gates_.push_back(
-        Gate(currentInstanceType_, currentGate_, currentConnections_));
+  if (currentInstanceType_ != GateType::kNone) {
+    gates_.emplace_back(
+        currentInstanceType_, currentGate_, currentConnections_);
   }
-  currentInstanceType_ = GateType::Mlatch;
+  currentInstanceType_ = GateType::kMlatch;
   if (type != "mlatch") {
-    currentInstanceType_ = (type == "gate") ? GateType::Gate : GateType::None;
+    currentInstanceType_ = (type == "gate") ? GateType::kGate : GateType::kNone;
   }
-  if (currentInstanceType_ == GateType::Mlatch) {
+  if (currentInstanceType_ == GateType::kMlatch) {
     flopCount_++;
-  } else if (currentInstanceType_ == GateType::Gate) {
+  } else if (currentInstanceType_ == GateType::kGate) {
     combCount_++;
   }
   currentConnections_.clear();
@@ -158,9 +158,9 @@ void BlifParser::addConnection(const std::string& connection)
 }
 void BlifParser::endParser()
 {
-  if (currentInstanceType_ != GateType::None) {
-    gates_.push_back(
-        Gate(currentInstanceType_, currentGate_, currentConnections_));
+  if (currentInstanceType_ != GateType::kNone) {
+    gates_.emplace_back(
+        currentInstanceType_, currentGate_, currentConnections_);
   }
 }
 

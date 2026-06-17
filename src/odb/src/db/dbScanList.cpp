@@ -4,19 +4,26 @@
 // Generator Code Begin Cpp
 #include "dbScanList.h"
 
+#include <cstdint>
+
+#include "dbCore.h"
 #include "dbDatabase.h"
 #include "dbDft.h"
 #include "dbScanChain.h"
 #include "dbScanListScanInstItr.h"
 #include "dbScanPartition.h"
 #include "dbTable.h"
-#include "dbTable.hpp"
 #include "odb/db.h"
+// User Code Begin Includes
+#include "dbBlock.h"
+#include "odb/dbSet.h"
+// User Code End Includes
 namespace odb {
 template class dbTable<_dbScanList>;
 
 bool _dbScanList::operator==(const _dbScanList& rhs) const
 {
+  // NOLINTBEGIN(readability-simplify-boolean-expr)
   if (unused_ != rhs.unused_) {
     return false;
   }
@@ -25,6 +32,7 @@ bool _dbScanList::operator==(const _dbScanList& rhs) const
   }
 
   return true;
+  // NOLINTEND(readability-simplify-boolean-expr)
 }
 
 bool _dbScanList::operator<(const _dbScanList& rhs) const
@@ -39,10 +47,10 @@ _dbScanList::_dbScanList(_dbDatabase* db)
 
 dbIStream& operator>>(dbIStream& stream, _dbScanList& obj)
 {
-  if (obj.getDatabase()->isSchema(db_schema_block_owns_scan_insts)) {
+  if (obj.getDatabase()->isSchema(kSchemaBlockOwnsScanInsts)) {
     stream >> obj.unused_;
   }
-  if (obj.getDatabase()->isSchema(db_schema_block_owns_scan_insts)) {
+  if (obj.getDatabase()->isSchema(kSchemaBlockOwnsScanInsts)) {
     stream >> obj.first_scan_inst_;
   }
   return stream;

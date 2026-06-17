@@ -22,6 +22,8 @@ using std::vector;
 
 using utl::DPL;
 
+using utl::format_as;  // NOLINT(misc-unused-using-decls)
+
 void Opendp::checkPlacement(const bool verbose,
                             const std::string& report_file_name)
 {
@@ -131,7 +133,8 @@ void Opendp::checkPlacement(const bool verbose,
           + region_placement_failures.size() + edge_spacing_failures.size()
           + blocked_layers_failures.size()
       > 0) {
-    logger_->error(DPL, 33, "detailed placement checks failed.");
+    logger_->error(
+        DPL, 33, "detailed placement checks failed during check placement.");
   }
 }
 
@@ -330,9 +333,9 @@ bool Opendp::checkInRows(const Node& cell) const
              "height {} in rows. Y start {} y end {}",
              cell.name(),
              cell.getSite()->getName(),
-             cell.getHeight().v,
-             grid_rect.ylo.v,
-             grid_rect.yhi.v);
+             cell.getHeight(),
+             grid_rect.ylo,
+             grid_rect.yhi);
 
   for (GridY y = grid_rect.ylo; y < grid_rect.yhi; y++) {
     const bool first_row = (y == grid_rect.ylo);
@@ -347,7 +350,8 @@ bool Opendp::checkInRows(const Node& cell) const
       }
     }
   }
-  return true;
+  return !cell.getMaster()->isMultiRow()
+         || checkRowPowerCompatible(&cell, grid_rect.ylo);
 }
 
 // Return the cell this cell overlaps.

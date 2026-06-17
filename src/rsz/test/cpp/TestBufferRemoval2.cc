@@ -17,13 +17,12 @@
 #include "odb/db.h"
 #include "odb/dbTypes.h"
 #include "rsz/Resizer.hh"
-#include "sta/Corner.hh"
 #include "sta/Liberty.hh"
 #include "sta/NetworkClass.hh"
 #include "sta/VerilogWriter.hh"
 #include "stt/SteinerTreeBuilder.h"
 #include "tst/nangate45_fixture.h"
-#include "utl/CallBackHandler.h"
+#include "utl/ServiceRegistry.h"
 
 namespace rsz {
 
@@ -32,17 +31,17 @@ class BufRemTest2 : public tst::Nangate45Fixture
  protected:
   BufRemTest2()
       : stt_(db_.get(), &logger_),
-        callback_handler_(&logger_),
+        service_registry_(&logger_),
         dp_(db_.get(), &logger_),
         ant_(db_.get(), &logger_),
         grt_(&logger_,
-             &callback_handler_,
+             &service_registry_,
              &stt_,
              db_.get(),
              sta_.get(),
              &ant_,
              &dp_),
-        ep_(&logger_, &callback_handler_, db_.get(), sta_.get(), &stt_, &grt_),
+        ep_(&logger_, &service_registry_, db_.get(), sta_.get(), &stt_, &grt_),
         resizer_(&logger_, db_.get(), sta_.get(), &stt_, &grt_, &dp_, &ep_)
   {
     const std::string prefix("_main/src/rsz/test/");
@@ -56,8 +55,8 @@ class BufRemTest2 : public tst::Nangate45Fixture
 
     // Create top level ports
     makeBTerm(block_, "in1");
-    makeBTerm(block_, "out1", {.io_type = odb::dbIoType::OUTPUT});
-    makeBTerm(block_, "out2", {.io_type = odb::dbIoType::OUTPUT});
+    makeBTerm(block_, "out1", {.io_type = odb::dbIoType::OUTPUT, .bpins = {}});
+    makeBTerm(block_, "out2", {.io_type = odb::dbIoType::OUTPUT, .bpins = {}});
 
     // Create top level nets
     odb::dbNet* net1 = odb::dbNet::create(block_, "net1");
@@ -143,12 +142,12 @@ class BufRemTest2 : public tst::Nangate45Fixture
   }
 
   stt::SteinerTreeBuilder stt_;
-  utl::CallBackHandler callback_handler_;
+  utl::ServiceRegistry service_registry_;
   dpl::Opendp dp_;
   ant::AntennaChecker ant_;
   grt::GlobalRouter grt_;
   est::EstimateParasitics ep_;
-  rsz::Resizer resizer_;
+  Resizer resizer_;
 
   sta::LibertyLibrary* library_{nullptr};
   sta::dbNetwork* db_network_{nullptr};
@@ -161,7 +160,7 @@ TEST_F(BufRemTest2, RemoveBuf)
 
   // Write verilog and check the content before buffer removal
   const std::string before_vlog_path = "TestBufferRemoval2_before.v";
-  sta::writeVerilog(before_vlog_path.c_str(), true, false, {}, sta_->network());
+  sta::writeVerilog(before_vlog_path.c_str(), false, {}, sta_->network());
 
   std::ifstream file_before(before_vlog_path);
   std::string content_before((std::istreambuf_iterator<char>(file_before)),
@@ -234,7 +233,7 @@ endmodule
 
   // Write verilog and check the content after buffer removal
   const std::string after_vlog_path = "TestBufferRemoval2_after.v";
-  sta::writeVerilog(after_vlog_path.c_str(), true, false, {}, sta_->network());
+  sta::writeVerilog(after_vlog_path.c_str(), false, {}, sta_->network());
 
   std::ifstream file_after(after_vlog_path);
   std::string content_after((std::istreambuf_iterator<char>(file_after)),

@@ -53,17 +53,22 @@ struct PlaceOptions
   float initialPlaceNetWeightScale = 800;
 
   bool skipIoMode = false;
+  bool forceCenterInitialPlace = false;
   bool timingDrivenMode = false;
+  bool timingDrivenRepairTiming = false;
+  float timingDrivenRepairTnsEndPercent = 1.0;
   bool routabilityDrivenMode = false;
   bool uniformTargetDensityMode = false;
   std::vector<int> timingNetWeightOverflows{64, 20};
   float timingNetWeightMax = 5;
+  float timingDrivenNetsPercentage = 10;
   float overflow = 0.1;
   int nesterovPlaceMaxIter = 5000;
   // timing driven check overflow to keep resizer changes (non-virtual resizer)
   float keepResizeBelowOverflow = 1.0;
   bool routabilityUseRudy = true;
   bool disableRevertIfDiverge = false;
+  bool disablePinDensityAdjust = false;
   bool enable_routing_congestion = false;
   float minPhiCoef = 0.95;
   float maxPhiCoef = 1.05;
@@ -75,11 +80,11 @@ struct PlaceOptions
   float density = 0.7;
 
   float routabilityCheckOverflow = 0.3;
+  float routabilitySnapshotOverflow = 0.6;
   float routabilityMaxDensity = 0.99;
   float routabilityTargetRcMetric = 1.01;
   float routabilityInflationRatioCoef = 2;
   float routabilityMaxInflationRatio = 3;
-  int routabilityMaxInflationIter = 4;
 
   // routability RC metric coefficients
   float routabilityRcK1 = 1.0;
@@ -135,11 +140,15 @@ class Replace
                 bool initial,
                 odb::dbInst* inst,
                 int start_iter,
+                int start_rudy,
+                int rudy_stride,
                 bool generate_images,
                 const std::string& images_path);
 
  private:
-  bool initNesterovPlace(const PlaceOptions& options, int threads);
+  bool initNesterovPlace(const PlaceOptions& options,
+                         int threads,
+                         bool check_density);
   void checkHasCoreRows();
 
   odb::dbDatabase* db_ = nullptr;
@@ -171,6 +180,8 @@ class Replace
   int gui_debug_initial_ = false;
   odb::dbInst* gui_debug_inst_ = nullptr;
   int gui_debug_start_iter_ = 0;
+  int gui_debug_rudy_start_ = 0;
+  int gui_debug_rudy_stride_ = 0;
   bool gui_debug_generate_images_ = false;
   std::string gui_debug_images_path_ = "REPORTS_DIR";
 };
