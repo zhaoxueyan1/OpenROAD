@@ -863,7 +863,6 @@ void EstimateParasitics::estimateWireParasiticSteiner(
         if (arc_delay_calc_->reduceSupported()) {
           arc_delay_calc_->reduceParasitic(
               parasitic, net, corner, sta::MinMaxAll::all());
-          parasitics->deleteParasiticNetwork(net);
         }
       }
       delete tree;
