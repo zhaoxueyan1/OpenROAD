@@ -932,7 +932,7 @@ bool FastRouteCore::updateRouteType2(const int net_id,
     if (verbose_) {
       logger_->warn(
           GRT,
-          170,
+          173,
           "Net {}: Invalid index for position ({}, {}). Net degree: {}.",
           nets_[net_id]->getName(),
           x_pos,

@@ -348,6 +348,14 @@ int ord::flow_OpenROAD(int argc, char* argv[])
   }
 #endif  // ENABLE_PYTHON3
 
+  if (argc > 0 && argv != nullptr) {
+    // Standalone OpenROAD execution path. ECC Sizer calls this function with
+    // argc == 0 to initialize OpenROAD in-process and return.
+    Tcl_Main(1, argv, ord::tclAppInit);
+    cut::abcStop();
+    return 0;
+  }
+
   auto* interp = Tcl_CreateInterp();
   Tcl_Init(interp);
   the_tech_and_design->tech = std::make_unique<ord::Tech>(interp);
@@ -361,13 +369,9 @@ int ord::flow_OpenROAD(int argc, char* argv[])
   }
 
   utl::Logger* logger = ord::OpenRoad::openRoad()->getLogger();
-  // if (findCmdLineFlag(cmd_argc, cmd_argv, "-gui")) {
-  //   logger->warn(utl::ORD, 38, "-gui is not yet supported with -python");
-  // }
+  // Python GUI warning is handled in the Python-specific path above.
   // logger->setDebugLevel(utl::GRT, "est_rc", 10);
-  // if (!findCmdLineFlag(cmd_argc, cmd_argv, "-no_init")) {
-  //   logger->warn(utl::ORD, 39, ".openroad ignored with -python");
-  // }
+  // Python init-file warning is handled in the Python-specific path above.
 
   const char* threads = "8";
   ord::OpenRoad::openRoad()->setThreadCount(threads);

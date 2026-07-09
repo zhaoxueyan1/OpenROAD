@@ -505,12 +505,20 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
   target_link_libraries(openroad ${LIBRT})
 endif()
 
+add_executable(openroad_app OpenRoadApp.cc)
+set_target_properties(openroad_app PROPERTIES
+  OUTPUT_NAME openroad
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+target_link_libraries(openroad_app PRIVATE openroad)
+
 ################################################################
 # Install
 # cmake .. -DCMAKE_INSTALL_PREFIX=<prefix_path>
 
 # executable
 install(TARGETS openroad DESTINATION bin)
+install(TARGETS openroad_app DESTINATION bin)
 
 ################################################################
 

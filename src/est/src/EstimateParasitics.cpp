@@ -1398,10 +1398,8 @@ IncrementalParasiticsGuard::IncrementalParasiticsGuard(
       estimate_parasitics_->initBlock();
     }
 
-    if (estimate_parasitics_->hasParasiticsInvalid()) {
-      estimate_parasitics_->getLogger()->error(
-          EST, 104, "inconsistent parasitics state");
-    }
+    const bool has_pending_invalid_parasitics
+        = estimate_parasitics_->hasParasiticsInvalid();
 
     switch (estimate_parasitics_->getParasiticsSrc()) {
       case ParasiticsSrc::kPlacement:
@@ -1420,6 +1418,9 @@ IncrementalParasiticsGuard::IncrementalParasiticsGuard(
     }
 
     estimate_parasitics_->setIncrementalParasiticsEnabled(true);
+    if (has_pending_invalid_parasitics) {
+      estimate_parasitics_->updateParasitics();
+    }
     estimate_parasitics_->setDbCbkOwner(estimate_parasitics_->getBlock());
     need_unregister_ = true;
   }
