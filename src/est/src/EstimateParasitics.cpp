@@ -1419,6 +1419,8 @@ IncrementalParasiticsGuard::IncrementalParasiticsGuard(
 
     estimate_parasitics_->setIncrementalParasiticsEnabled(true);
     if (has_pending_invalid_parasitics) {
+      estimate_parasitics_->getLogger()->warn(
+          EST, 104, "inconsistent parasitics state");
       estimate_parasitics_->updateParasitics();
     }
     estimate_parasitics_->setDbCbkOwner(estimate_parasitics_->getBlock());
