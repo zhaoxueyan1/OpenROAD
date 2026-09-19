@@ -1943,8 +1943,25 @@ LoadRegion RepairDesign::findLoadRegions(const sta::Net* net,
 
 void RepairDesign::subdivideRegion(LoadRegion& region, int max_fanout)
 {
-  if (region.pins_.size() > max_fanout && region.bbox_.dx() > dbu_
-      && region.bbox_.dy() > dbu_) {
+  if (region.pins_.size() > max_fanout) {
+    // Unplaced (pre-place stage) or otherwise degenerate-geometry regions
+    // cannot be partitioned geometrically; fall back to a plain list split
+    // so fanout repair still inserts repeaters.
+    if (region.bbox_.dx() <= dbu_ || region.bbox_.dy() <= dbu_) {
+      sta::PinSeq& pins = region.pins_;
+      const size_t mid = (pins.size() + 1) / 2;
+      region.regions_.resize(2);
+      for (size_t i = 0; i < pins.size(); ++i) {
+        region.regions_[i >= mid ? 1 : 0].pins_.push_back(pins[i]);
+      }
+      pins.clear();
+      for (LoadRegion& sub : region.regions_) {
+        if (!sub.pins_.empty()) {
+          subdivideRegion(sub, max_fanout);
+        }
+      }
+      return;
+    }
     int x_min = region.bbox_.xMin();
     int x_max = region.bbox_.xMax();
     int y_min = region.bbox_.yMin();
