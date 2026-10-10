@@ -16,7 +16,7 @@ namespace rsz {
 
 namespace {
 
-constexpr int kRebufferMaxFanout = 20;
+constexpr int kRebufferMaxFanout = 33;
 
 }  // namespace
 
@@ -27,7 +27,7 @@ BufferGenerator::BufferGenerator(const GeneratorContext& context)
 
 bool BufferGenerator::isApplicable(const Target& target) const
 {
-  return MoveGenerator::isApplicable(target) && target.fanout > 1
+  return MoveGenerator::isApplicable(target) && target.fanout > 0
          && target.fanout < kRebufferMaxFanout
          && resizer_.okToBufferNet(target.driver_pin);
 }
