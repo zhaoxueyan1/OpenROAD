@@ -247,6 +247,10 @@ class GlobalRouter
   bool haveDetailedRoutes(const std::vector<odb::dbNet*>& db_nets);
 
   void addNetToRoute(odb::dbNet* db_net);
+  // Clear the explicit net-selection list used by the next global route.
+  // This is separate from clear(), because global_route() intentionally
+  // preserves the list until its initFastRoute() consumes it.
+  void clearNetsToRoute() { nets_to_route_.clear(); }
   std::vector<odb::dbNet*> getNetsToRoute();
   void mergeNetsRouting(odb::dbNet* db_net1, odb::dbNet* db_net2);
   bool connectRouting(odb::dbNet* db_net1, odb::dbNet* db_net2);

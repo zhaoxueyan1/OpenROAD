@@ -6177,8 +6177,16 @@ AbstractGrouteRenderer* GlobalRouter::getRenderer()
 
 void GlobalRouter::addDirtyNet(odb::dbNet* net)
 {
-  db_net_map_[net]->setDirtyNet(true);
-  db_net_map_[net]->saveLastPinPositions();
+  // Selective global routing may intentionally leave clock and large-fanout
+  // nets out of db_net_map_. Database callbacks still report moves on every
+  // connected net, so ignore nets that were not initialized for this route
+  // instead of dereferencing a missing map entry.
+  auto it = db_net_map_.find(net);
+  if (it == db_net_map_.end() || it->second == nullptr) {
+    return;
+  }
+  it->second->setDirtyNet(true);
+  it->second->saveLastPinPositions();
   dirty_nets_.insert(net);
 }
 
