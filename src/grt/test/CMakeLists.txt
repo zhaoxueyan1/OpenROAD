@@ -101,6 +101,7 @@ or_integration_tests(
     top_level_term1
     top_level_term2
     top_level_term3
+    external_pad_only
     tracks1
     tracks2
     tracks3

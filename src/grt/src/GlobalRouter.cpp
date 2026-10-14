@@ -4610,8 +4610,19 @@ void GlobalRouter::findClockNets(const std::vector<Net*>& nets,
   }
 }
 
+namespace {
+
+bool isExternalPadPin(odb::dbITerm* iterm);
+bool isExternalPadOnlyNet(odb::dbNet* db_net);
+
+}  // namespace
+
 Net* GlobalRouter::addNet(odb::dbNet* db_net)
 {
+  if (isExternalPadOnlyNet(db_net)) {
+    return nullptr;
+  }
+
   if (!db_net->getSigType().isSupply() && !db_net->isSpecial()
       && db_net->getSWires().empty() && !db_net->isConnectedByAbutment()) {
     Net* net = new Net(db_net, db_net->getWire() != nullptr);
@@ -4761,6 +4772,33 @@ bool GlobalRouter::isNonLeafClock(odb::dbNet* db_net)
   return true;
 }
 
+namespace {
+
+bool isExternalPadPin(odb::dbITerm* iterm)
+{
+  odb::dbMTerm* mterm = iterm->getMTerm();
+  const odb::dbMasterType type = mterm->getMaster()->getType();
+  return (type.isPad() || type.isCover())
+         && strcasecmp(mterm->getConstName(), "PAD") == 0;
+}
+
+bool isExternalPadOnlyNet(odb::dbNet* db_net)
+{
+  if (db_net->getBTerms().empty() || db_net->getITerms().empty()) {
+    return false;
+  }
+
+  for (odb::dbITerm* iterm : db_net->getITerms()) {
+    if (!isExternalPadPin(iterm)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+}  // namespace
+
 void GlobalRouter::makeItermPins(Net* net,
                                  odb::dbNet* db_net,
                                  const odb::Rect& die_area)
@@ -4769,10 +4807,19 @@ void GlobalRouter::makeItermPins(Net* net,
   int max_routing_layer = (is_clock && getMaxLayerForClock() > 0)
                               ? getMaxLayerForClock()
                               : getMaxRoutingLayer();
+  const bool external_pad_only_net = isExternalPadOnlyNet(db_net);
   for (odb::dbITerm* iterm : db_net->getITerms()) {
     odb::dbMTerm* mterm = iterm->getMTerm();
     odb::dbMaster* master = mterm->getMaster();
     const odb::dbMasterType type = master->getType();
+
+    // A top-level PAD terminal represents the package/RDL side of an IO
+    // cell.  When the net has no core-facing terminal, the connection is
+    // handled by the padframe or package flow and must not be introduced into
+    // the core global-router pin model.
+    if (external_pad_only_net && isExternalPadPin(iterm)) {
+      continue;
+    }
 
     if (type.isCover() && verbose_) {
       logger_->warn(
