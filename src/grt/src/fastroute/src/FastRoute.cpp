@@ -126,6 +126,10 @@ FastRouteCore::~FastRouteCore()
 void FastRouteCore::clear()
 {
   clearNets();
+  // A full global-route run starts with planar routes.  Layer assignment sets
+  // this flag for the previous run; retaining it makes a subsequent run read
+  // partial planar routes as 3D routes during parasitic estimation.
+  is_3d_step_ = false;
 
   num_adjust_ = 0;
   v_capacity_ = 0;
