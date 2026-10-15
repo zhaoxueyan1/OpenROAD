@@ -96,4 +96,44 @@ TEST_F(TestResizer, SwapPinsFeedthroughModNet)
   writeAndCompareVerilogOutputFile(test_name, test_name + "_post.v");
 }
 
+TEST_F(TestResizer, ExternalPadOnlyNetCannotBeBuffered)
+{
+  readVerilogAndSetup("TestResizer_SwapPinsFeedthroughModNet_pre.v");
+
+  odb::dbMaster* pad_master = odb::dbMaster::create(lib_, "TEST_PAD");
+  pad_master->setWidth(100);
+  pad_master->setHeight(100);
+  pad_master->setType(odb::dbMasterType::PAD);
+  odb::dbMTerm::create(
+      pad_master, "PAD", odb::dbIoType::INOUT, odb::dbSigType::SIGNAL);
+  odb::dbMTerm::create(
+      pad_master, "C", odb::dbIoType::OUTPUT, odb::dbSigType::SIGNAL);
+  pad_master->setFrozen();
+  pad_master->staSetCell(sta_->network()->findLibertyCell("BUF_X1"));
+  odb::dbInst* pad_inst = odb::dbInst::create(block_, pad_master, "pad0");
+
+  odb::dbNet* external_net
+      = odb::dbNet::create(block_, "external_pad_test_net");
+  odb::dbBTerm* external_port
+      = odb::dbBTerm::create(external_net, "external_pad_test_port");
+  external_port->setIoType(odb::dbIoType::INPUT);
+  pad_inst->findITerm("PAD")->connect(external_net);
+
+  odb::dbNet* core_net = odb::dbNet::create(block_, "core_side_test_net");
+  odb::dbBTerm* core_port
+      = odb::dbBTerm::create(core_net, "core_side_test_port");
+  core_port->setIoType(odb::dbIoType::INPUT);
+  pad_inst->findITerm("C")->connect(core_net);
+
+  sta_->postReadDef(block_);
+
+  sta::Pin* external_pin = db_network_->dbToSta(external_port);
+  ASSERT_NE(external_pin, nullptr);
+  EXPECT_FALSE(resizer_.okToBufferNet(external_pin));
+
+  sta::Pin* core_pin = db_network_->dbToSta(pad_inst->findITerm("C"));
+  ASSERT_NE(core_pin, nullptr);
+  EXPECT_TRUE(resizer_.okToBufferNet(core_pin));
+}
+
 }  // namespace rsz

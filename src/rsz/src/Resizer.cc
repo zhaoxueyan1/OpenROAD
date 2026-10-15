@@ -98,6 +98,31 @@ namespace {
 
 using LibertyPortVec = std::vector<sta::LibertyPort*>;
 
+bool isExternalPadPin(odb::dbITerm* iterm)
+{
+  odb::dbMTerm* mterm = iterm->getMTerm();
+  const odb::dbMasterType type = mterm->getMaster()->getType();
+  return (type.isPad() || type.isCover())
+         && sta::stringEqual(mterm->getConstName(), "PAD");
+}
+
+// A net with only a top-level terminal and external PAD terminals belongs to
+// the package/padframe boundary and must not be modified by core buffering.
+bool isExternalPadOnlyNet(odb::dbNet* db_net)
+{
+  if (db_net->getBTerms().empty() || db_net->getITerms().empty()) {
+    return false;
+  }
+
+  for (odb::dbITerm* iterm : db_net->getITerms()) {
+    if (!isExternalPadPin(iterm)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool simulateExprForSwapReport(
     utl::Logger* logger,
     sta::FuncExpr* expr,
@@ -6152,6 +6177,10 @@ bool Resizer::okToBufferNet(const sta::Pin* driver_pin) const
   }
 
   odb::dbNet* db_net = db_network_->staToDb(net);
+
+  if (isExternalPadOnlyNet(db_net)) {
+    return false;
+  }
 
   return !(db_net->isConnectedByAbutment() || db_net->isSpecial());
 }
