@@ -1944,10 +1944,10 @@ LoadRegion RepairDesign::findLoadRegions(const sta::Net* net,
 void RepairDesign::subdivideRegion(LoadRegion& region, int max_fanout)
 {
   if (region.pins_.size() > max_fanout) {
-    // Unplaced (pre-place stage) or otherwise degenerate-geometry regions
-    // cannot be partitioned geometrically; fall back to a plain list split
-    // so fanout repair still inserts repeaters.
-    if (region.bbox_.dx() <= dbu_ || region.bbox_.dy() <= dbu_) {
+    // Only regions with no span in either direction lack geometric
+    // information.  A region that is collinear in one direction can still be
+    // partitioned geometrically along the other direction.
+    if (region.bbox_.dx() <= dbu_ && region.bbox_.dy() <= dbu_) {
       sta::PinSeq& pins = region.pins_;
       const size_t mid = (pins.size() + 1) / 2;
       region.regions_.resize(2);
