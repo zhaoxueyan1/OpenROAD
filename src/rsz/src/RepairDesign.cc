@@ -222,10 +222,9 @@ void RepairDesign::performEarlySizingRound(int& repaired_net_count)
     db_network_->staToDb(net, net_db, mod_net_db);
     search_->findRequireds(drvr->level() + 1);
 
+    // Fanout repair also applies to constant and timing-exception nets.
     if (resizer_->okToBufferNet(drvr_pin)
-        && !sta_->isClock(drvr_pin, sta_->cmdMode())
-        // Exclude tie hi/low cells and supply nets.
-        && !sta_->isConstant(drvr_pin, sta_->cmdMode())) {
+        && !sta_->isClock(drvr_pin, sta_->cmdMode())) {
       debugPrint(logger_,
                  RSZ,
                  "early_sizing",
@@ -994,10 +993,9 @@ void RepairDesign::repairDriver(sta::Vertex* drvr,
   }
   // Don't check okToBufferNet here as we are going to do a mix of driver
   // sizing and buffering.  Further checks exist in repairNet.
+  // Fanout repair also applies to constant and timing-exception nets.
   if (net && !resizer_->dontTouch(net) && !net_db->isConnectedByAbutment()
-      && !sta_->isClock(drvr_pin, sta_->cmdMode())
-      // Exclude tie hi/low cells and supply nets.
-      && !sta_->isConstant(drvr_pin, sta_->cmdMode())) {
+      && !sta_->isClock(drvr_pin, sta_->cmdMode())) {
     repairNet(net,
               drvr_pin,
               drvr,
