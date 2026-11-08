@@ -86,6 +86,7 @@ or_integration_tests(
     repair_hold14
     repair_hold15
     repair_hold_multi_output_load
+    repair_max_util_increase
     repair_setup_buffer_legacy_basic
     repair_setup_clone_legacy_flat
     repair_setup_clone_high_fanout

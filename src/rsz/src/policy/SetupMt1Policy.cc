@@ -74,6 +74,7 @@ void SetupMt1Policy::buildMoveGenerators(
         generator = std::make_unique<SizeUpMtGenerator>(context);
         break;
       case MoveType::kBuffer:
+      case MoveType::kTreeRebuffer:
       case MoveType::kClone:
       case MoveType::kSizeUpMatch:
       case MoveType::kSizeDownFanout:

@@ -12,6 +12,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -71,6 +72,17 @@ struct ParasiticsCapacitance
 {
   double h_cap;
   double v_cap;
+};
+
+struct NetRcScale
+{
+  float cap_scale = 1.0f;       // Full SPEF-to-Steiner C ratio: C_spef / C_steiner_lef
+  float res_scale = 1.0f;       // Full SPEF-to-Steiner R ratio: R_spef / R_steiner_lef
+  float unit_cap_scale = 1.0f;  // Per-unit-routed-length C ratio: C_spef / C_routed_lef
+  float unit_res_scale = 1.0f;  // Per-unit-routed-length R ratio: R_spef / R_routed_lef
+  float detour_ratio = 1.0f;    // L_routed / L_steiner
+  int orig_steiner_wl_dbu = 0;  // Original Steiner tree wirelength (dbu)
+  bool valid = false;
 };
 
 class AbstractSteinerRenderer;
@@ -153,6 +165,33 @@ class EstimateParasitics : public sta::dbStaState, public ParasiticsService
                          double wire_length,  // meters
                          const sta::Scene* corner);
   bool haveEstimatedParasitics() const;
+  void initSpefParasitics();
+  void refreshNonSpefParasitics(bool use_grt = false);
+  bool hasSpefNets() const { return !spef_nets_.empty(); }
+  bool isSpefNet(const sta::Net* net) const
+  {
+    return net != nullptr && spef_nets_.contains(net);
+  }
+  void clearSpefNet(const sta::Net* net);
+  void clearSpefNet(const odb::dbNet* net);
+  void clearSpefNets()
+  {
+    spef_nets_.clear();
+    spef_net_baselines_.clear();
+    net_rc_scales_.clear();
+  }
+  void spefNetMasterSwapped(const sta::Net* net);
+  bool hasSpefCalibration() const { return !spef_net_baselines_.empty(); }
+  float defaultUnitCapScale() const { return default_unit_cap_scale_; }
+  float defaultUnitResScale() const { return default_unit_res_scale_; }
+  bool hasNetRcScale(const sta::Net* net) const;
+  NetRcScale ensureNetRcScale(const sta::Net* net);
+  NetRcScale netRcScale(const sta::Net* net) const;
+  void setNetRcScale(const sta::Net* net, const NetRcScale& scale);
+  void copyNetRcScale(const sta::Net* src_net, const sta::Net* dst_net);
+  NetRcScale calibrateTreeNets(const sta::Net* root_net,
+                               const std::vector<const sta::Net*>& tree_nets,
+                               int unbuffered_steiner_wl_dbu);
   void parasiticsInvalid(const sta::Net* net);
   void parasiticsInvalid(const odb::dbNet* net);
   void eraseParasitics(const sta::Net* net);
@@ -221,6 +260,9 @@ class EstimateParasitics : public sta::dbStaState, public ParasiticsService
   bool isPad(const sta::Instance* inst) const;
   odb::dbTechLayer* getPinLayer(const sta::Pin* pin);
   double computeAverageCutResistance(sta::Scene* scene);
+  double computeViaStackResistance(odb::dbTechLayer* pin_layer,
+                                   odb::dbTechLayer* tree_layer,
+                                   const sta::Scene* corner) const;
   void parasiticNodeConnectPins(sta::Parasitics* parasitics,
                                 sta::Parasitic* parasitic,
                                 sta::ParasiticNode* node,
@@ -231,7 +273,8 @@ class EstimateParasitics : public sta::dbStaState, public ParasiticsService
                                 std::set<const sta::Pin*>& connected_pins,
                                 const sta::Net* net,
                                 int& max_node_index,
-                                bool is_clk);
+                                bool is_clk,
+                                double res_scale = 1.0);
   void insertViaResistances(odb::dbTechLayer* pin_layer,
                             odb::dbTechLayer* tree_layer,
                             sta::Parasitics* parasitics,
@@ -241,11 +284,18 @@ class EstimateParasitics : public sta::dbStaState, public ParasiticsService
                             size_t& resistor_id,
                             sta::Scene* corner,
                             const sta::Net* net,
-                            int& max_node_index);
+                            int& max_node_index,
+                            double res_scale = 1.0);
   void net2Pins(const sta::Net* net,
                 const sta::Pin*& pin1,
                 const sta::Pin*& pin2) const;
   double dbuToMeters(int dist) const;
+
+  struct SpefNetBaseline
+  {
+    float c_spef = 0.0f;
+    float r_spef = 0.0f;
+  };
 
   utl::Logger* logger_ = nullptr;
   utl::ServiceRegistry* service_registry_ = nullptr;
@@ -272,6 +322,12 @@ class EstimateParasitics : public sta::dbStaState, public ParasiticsService
   ParasiticsSrc parasitics_src_ = ParasiticsSrc::kNone;
 
   std::unordered_set<const sta::Net*, NetHash> parasitics_invalid_;
+  std::unordered_set<const sta::Net*, NetHash> spef_nets_;
+  std::unordered_map<const sta::Net*, SpefNetBaseline, NetHash>
+      spef_net_baselines_;
+  std::unordered_map<const sta::Net*, NetRcScale, NetHash> net_rc_scales_;
+  float default_unit_cap_scale_ = 1.0f;
+  float default_unit_res_scale_ = 1.0f;
 
   std::unique_ptr<AbstractSteinerRenderer> steiner_renderer_;
 

@@ -24,6 +24,7 @@
 #include "SetupReroutePolicy.hh"
 #include "SetupTnsPolicy.hh"
 #include "SetupWnsPolicy.hh"
+#include "SetupWnsTreeRebufferPolicy.hh"
 #include "est/EstimateParasitics.h"
 #include "rsz/Resizer.hh"
 #include "sta/StringUtil.hh"
@@ -50,7 +51,8 @@ bool isLegacyCompatiblePhase(const std::string_view phase_name)
 {
   return phase_name == "LEGACY" || phase_name == "LEGACY_MT"
          || phase_name == "WNS" || phase_name == "WNS_PATH"
-         || phase_name == "WNS_CONE" || phase_name == "TNS"
+         || phase_name == "WNS_CONE" || phase_name == "WNS_TREE_REBUFFER"
+         || phase_name == "TREE_REBUFFER" || phase_name == "TNS"
          || phase_name == "ENDPOINT_FANIN" || phase_name == "STARTPOINT_FANOUT"
          || phase_name == "LAST_GASP";
 }
@@ -108,6 +110,10 @@ std::unique_ptr<OptimizationPolicy> Optimizer::makePolicyForPhase(
   if (phase_name == "WNS_CONE") {
     return std::make_unique<SetupWnsPolicy>(
         resizer_, committer_, setup_context, config_, /*use_cone=*/true);
+  }
+  if (phase_name == "WNS_TREE_REBUFFER" || phase_name == "TREE_REBUFFER") {
+    return std::make_unique<SetupWnsTreeRebufferPolicy>(
+        resizer_, committer_, setup_context, config_);
   }
   if (phase_name == "TNS") {
     return std::make_unique<SetupTnsPolicy>(

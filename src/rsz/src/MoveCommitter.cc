@@ -679,7 +679,8 @@ bool MoveCommitter::hasBlockingBufferRemovalMove(sta::Instance* inst,
     reason = "it has been cloned";
   } else if (hasMoves(MoveType::kSplitLoad, inst)) {
     reason = "it was from split load buffering";
-  } else if (hasMoves(MoveType::kBuffer, inst)) {
+  } else if (hasMoves(MoveType::kBuffer, inst)
+             || hasMoves(MoveType::kTreeRebuffer, inst)) {
     reason = "it was from rebuffering";
   } else if (hasMoves(MoveType::kSizeUp, inst)) {
     reason = "it has been resized";

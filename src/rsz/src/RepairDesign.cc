@@ -1042,6 +1042,7 @@ void RepairDesign::repairNet(sta::Net* net,
                sdc_network_->pathName(drvr_pin));
     const sta::Scene* corner = sta_->cmdScene();
     bool repaired_net = false;
+    resizer_->setActiveNetRcScale(net);
 
     // Fanout is addressed by creating region repeaters
     if (check_fanout) {
@@ -1167,14 +1168,35 @@ void RepairDesign::repairNet(sta::Net* net,
       }
 
       if (bnet) {
+        bool crosses_macro = false;
+        int effective_max_length = max_length;
+        if (resizer_->blockageAwareSteiner()) {
+          resizer_->ensurePlacementBlockagesInitialized();
+          if (resizer_->treeCrossesPlacementBlockage(bnet)) {
+            crosses_macro = true;
+            bnet = resizer_->rerouteBufferedNetAroundBlockages(bnet, corner);
+            const int detoured_wl = bnet ? bnet->maxLoadWireLength() : 0;
+            const int macro_detour_max_len = std::min<int>(
+                resizer_->metersToDbu(180e-6),
+                std::max<int>(resizer_->metersToDbu(60e-6),
+                              detoured_wl * 2 / 3));
+            if (effective_max_length == 0
+                || macro_detour_max_len < effective_max_length) {
+              effective_max_length = macro_detour_max_len;
+            }
+          }
+        }
         int wire_length = bnet->maxLoadWireLength();
-        repair_wire
-            = needRepairWire(max_length, wire_length, length_violations);
+        repair_wire = needRepairWire(
+            effective_max_length, wire_length, length_violations);
 
         // Insert buffers on the Steiner tree if need be
-        if (repair_cap || repair_load_slew || repair_wire) {
+        if (repair_cap || repair_load_slew || repair_wire || crosses_macro) {
           repaired_net = true;
-          repairNet(bnet, drvr_pin, max_cap, max_length, corner);
+          if (resizer_->blockageAwareSteiner() && !crosses_macro) {
+            bnet = resizer_->rerouteBufferedNetAroundBlockages(bnet, corner);
+          }
+          repairNet(bnet, drvr_pin, max_cap, effective_max_length, corner);
         }
       }
     }
@@ -1326,6 +1348,9 @@ void RepairDesign::repairNet(const BufferedNetPtr& bnet,
   max_cap_ = max_cap;
   max_length_ = max_length;
   corner_ = corner;
+  odb::dbNet* flat_db_net = db_network_->findFlatDbNet(drvr_pin);
+  resizer_->setActiveNetRcScale(
+      flat_db_net ? db_network_->dbToSta(flat_db_net) : nullptr);
 
   if (graphics_) {
     sta::Net* net = db_network_->net(drvr_pin);
@@ -2260,6 +2285,12 @@ bool RepairDesign::makeRepeater(
 
   // Insert buffer
   odb::Point loc(x, y);
+  if (resizer_->blockageAwareSteiner()) {
+    resizer_->ensurePlacementBlockagesInitialized();
+    if (resizer_->isPointInPlacementBlockage(loc)) {
+      loc = resizer_->snapPointOutsidePlacementBlockage(loc, loc);
+    }
+  }
   sta::Instance* buffer = resizer_->insertBufferBeforeLoads(
       nullptr, &load_pins, buffer_cell, &loc, reason);
   if (!buffer) {
@@ -2270,6 +2301,11 @@ bool RepairDesign::makeRepeater(
 
   odb::dbInst* new_buffer = db_network_->staToDb(buffer);
   out_net = db_network_->dbToSta(new_buffer->getFirstOutput()->getNet());
+  if (out_net && estimate_parasitics_ && estimate_parasitics_->hasSpefCalibration()
+      && !estimate_parasitics_->hasNetRcScale(out_net)
+      && resizer_->activeNetRcScale().valid) {
+    estimate_parasitics_->setNetRcScale(out_net, resizer_->activeNetRcScale());
+  }
 
   if (graphics_) {
     odb::dbInst* db_inst = db_network_->staToDb(buffer);

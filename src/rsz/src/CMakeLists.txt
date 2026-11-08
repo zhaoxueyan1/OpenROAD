@@ -34,6 +34,7 @@ add_library(rsz_lib
     policy/SetupLegacyPolicy.cc
     policy/SetupTnsPolicy.cc
     policy/SetupWnsPolicy.cc
+    policy/SetupWnsTreeRebufferPolicy.cc
     policy/SetupMt1Policy.cc
     policy/SetupReroutePolicy.cc
     Resizer.cc
@@ -43,6 +44,8 @@ add_library(rsz_lib
 
     move/BufferCandidate.cc
     move/BufferGenerator.cc
+    move/TreeRebufferCandidate.cc
+    move/TreeRebufferGenerator.cc
     move/CloneCandidate.cc
     move/CloneGenerator.cc
     move/MeasuredVtSwapCandidate.cc

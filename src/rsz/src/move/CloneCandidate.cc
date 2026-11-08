@@ -11,6 +11,7 @@
 #include "OptimizerTypes.hh"
 #include "db_sta/dbNetwork.hh"
 #include "db_sta/dbSta.hh"
+#include "est/EstimateParasitics.h"
 #include "odb/db.h"
 #include "odb/geom.h"
 #include "rsz/Resizer.hh"
@@ -102,6 +103,15 @@ bool CloneCandidate::connectCloneOutput()
 
   sta::Port* clone_output_port = resizer_.network()->port(clone_output_pin_);
   out_net_ = resizer_.dbNetwork()->makeNet(parent_);
+  if (resizer_.getEstimateParasitics()
+      && resizer_.getEstimateParasitics()->hasSpefCalibration()) {
+    const sta::Net* orig_net = resizer_.dbNetwork()->dbToSta(
+        resizer_.dbNetwork()->findFlatDbNet(drvr_pin_));
+    if (orig_net) {
+      resizer_.getEstimateParasitics()->ensureNetRcScale(orig_net);
+      resizer_.getEstimateParasitics()->copyNetRcScale(orig_net, out_net_);
+    }
+  }
   resizer_.sta()->connectPin(clone_inst_, clone_output_port, out_net_);
   clone_output_iterm_ = resizer_.dbNetwork()->flatPin(clone_output_pin_);
   return true;

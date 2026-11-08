@@ -433,6 +433,8 @@ inline const char* moveName(const MoveType move_type)
   switch (move_type) {
     case MoveType::kBuffer:
       return "BufferMove";
+    case MoveType::kTreeRebuffer:
+      return "TreeRebufferMove";
     case MoveType::kClone:
       return "CloneMove";
     case MoveType::kSizeUp:

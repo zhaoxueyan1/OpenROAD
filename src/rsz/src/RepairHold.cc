@@ -584,13 +584,21 @@ void RepairHold::repairEndHold(sta::Vertex* end_vertex,
                 continue;
               }
               if (fanout_hold_slack < hold_margin) {
-                load_pins.push_back(load_pin);
                 Slacks fanout_slacks;
                 sta_->slacks(fanout, fanout_slacks);
-                mergeInto(fanout_slacks, slacks);
-                if (network_->direction(load_pin)->isAnyOutput()
-                    && network_->isTopLevelPort(load_pin)) {
-                  loads_have_out_port = true;
+                if (allow_setup_violations
+                    || (fanout_slacks[rise_index_][max_index_] - setup_margin
+                            > -(fanout_slacks[rise_index_][min_index_]
+                                - hold_margin)
+                        && fanout_slacks[fall_index_][max_index_] - setup_margin
+                               > -(fanout_slacks[fall_index_][min_index_]
+                                   - hold_margin))) {
+                  load_pins.push_back(load_pin);
+                  mergeInto(fanout_slacks, slacks);
+                  if (network_->direction(load_pin)->isAnyOutput()
+                      && network_->isTopLevelPort(load_pin)) {
+                    loads_have_out_port = true;
+                  }
                 }
               }
             }
@@ -653,6 +661,7 @@ void RepairHold::repairEndHold(sta::Vertex* end_vertex,
               // rolled back via journalRestore().
               resizer_->journalBegin();
               sta::Slack setup_slack_before = sta_->worstSlack(max_);
+              sta::Slack path_setup_before = sta_->slack(path_vertex, max_);
               sta::Slew slew_before = sta_->slew(path_vertex,
                                                  sta::RiseFallBoth::riseFall(),
                                                  sta_->scenes(),
@@ -667,13 +676,16 @@ void RepairHold::repairEndHold(sta::Vertex* end_vertex,
                                                 sta_->scenes(),
                                                 max_);
               sta::Slack setup_slack_after = sta_->worstSlack(max_);
+              sta::Slack path_setup_after = sta_->slack(path_vertex, max_);
               float slew_factor
                   = (slew_before > 0) ? slew_after / slew_before : 1.0;
 
               if (slew_factor > 1.20
                   || (!allow_setup_violations
-                      && sta::fuzzyLess(setup_slack_after, setup_slack_before)
-                      && setup_slack_after < setup_margin)) {
+                      && ((sta::fuzzyLess(setup_slack_after, setup_slack_before)
+                           && setup_slack_after < setup_margin)
+                          || (sta::fuzzyLess(path_setup_after, path_setup_before)
+                              && path_setup_after < setup_margin)))) {
                 resizer_->journalRestore();
                 inserted_buffer_count_ = 0;
               } else {
@@ -691,8 +703,8 @@ void RepairHold::mergeInit(Slacks& slacks)
 {
   slacks[rise_index_][min_index_] = sta::INF;
   slacks[fall_index_][min_index_] = sta::INF;
-  slacks[rise_index_][max_index_] = -sta::INF;
-  slacks[fall_index_][max_index_] = -sta::INF;
+  slacks[rise_index_][max_index_] = sta::INF;
+  slacks[fall_index_][max_index_] = sta::INF;
 }
 
 void RepairHold::mergeInto(Slacks& from, Slacks& result)
@@ -702,9 +714,9 @@ void RepairHold::mergeInto(Slacks& from, Slacks& result)
   result[fall_index_][min_index_]
       = min(result[fall_index_][min_index_], from[fall_index_][min_index_]);
   result[rise_index_][max_index_]
-      = max(result[rise_index_][max_index_], from[rise_index_][max_index_]);
+      = min(result[rise_index_][max_index_], from[rise_index_][max_index_]);
   result[fall_index_][max_index_]
-      = max(result[fall_index_][max_index_], from[fall_index_][max_index_]);
+      = min(result[fall_index_][max_index_], from[fall_index_][max_index_]);
 }
 
 void RepairHold::makeHoldDelay(sta::Vertex* drvr,

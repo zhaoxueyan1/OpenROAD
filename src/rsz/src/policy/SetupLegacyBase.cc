@@ -159,6 +159,9 @@ void SetupLegacyBase::buildMainMoveSequence(const bool log_sequence)
         case MoveType::kBuffer:
           pushMoveIfEnabled(!config_.skip_buffering, MoveType::kBuffer);
           break;
+        case MoveType::kTreeRebuffer:
+          pushMoveIfEnabled(!config_.skip_buffering, MoveType::kTreeRebuffer);
+          break;
         case MoveType::kUnbuffer:
           pushMoveIfEnabled(!config_.skip_buffer_removal, MoveType::kUnbuffer);
           break;
@@ -836,7 +839,8 @@ void SetupLegacyBase::printProgress(const int iteration,
       totalMoves(MoveType::kUnbuffer),
       totalMoves(MoveType::kSizeUp) + totalMoves(MoveType::kSizeDownFanout)
           + totalMoves(MoveType::kSizeUpMatch) + totalMoves(MoveType::kVtSwap),
-      totalMoves(MoveType::kBuffer) + totalMoves(MoveType::kSplitLoad),
+      totalMoves(MoveType::kBuffer) + totalMoves(MoveType::kTreeRebuffer)
+          + totalMoves(MoveType::kSplitLoad),
       totalMoves(MoveType::kClone),
       totalMoves(MoveType::kSwapPins),
       area_growth_percent,

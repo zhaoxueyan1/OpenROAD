@@ -22,8 +22,14 @@ class OdbCallBack : public odb::dbBlockCallBackObj
   void inDbInstCreate(odb::dbInst* inst) override;
   void inDbNetCreate(odb::dbNet* net) override;
   void inDbNetDestroy(odb::dbNet* net) override;
+  void inDbITermPreConnect(odb::dbITerm* iterm, odb::dbNet* net) override;
   void inDbITermPostConnect(odb::dbITerm* iterm) override;
+  void inDbITermPreDisconnect(odb::dbITerm* iterm) override;
   void inDbITermPostDisconnect(odb::dbITerm* iterm, odb::dbNet* net) override;
+  void inDbBTermPreConnect(odb::dbBTerm* bterm, odb::dbNet* net) override;
+  void inDbBTermPostConnect(odb::dbBTerm* bterm) override;
+  void inDbBTermPreDisconnect(odb::dbBTerm* bterm) override;
+  void inDbBTermPostDisConnect(odb::dbBTerm* bterm, odb::dbNet* net) override;
   void inDbInstSwapMasterAfter(odb::dbInst* inst) override;
 
  private:

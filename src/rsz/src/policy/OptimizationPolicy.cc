@@ -24,6 +24,7 @@
 #include "SizeUpMatchGenerator.hh"
 #include "SplitLoadGenerator.hh"
 #include "SwapPinsGenerator.hh"
+#include "TreeRebufferGenerator.hh"
 #include "UnbufferGenerator.hh"
 #include "VtSwapGenerator.hh"
 #include "db_sta/dbNetwork.hh"
@@ -159,6 +160,7 @@ void OptimizationPolicy::printFinalProgress(
           + committer_.totalMoves(MoveType::kSizeUpMatch)
           + committer_.totalMoves(MoveType::kVtSwap),
       committer_.totalMoves(MoveType::kBuffer)
+          + committer_.totalMoves(MoveType::kTreeRebuffer)
           + committer_.totalMoves(MoveType::kSplitLoad),
       committer_.totalMoves(MoveType::kClone),
       committer_.totalMoves(MoveType::kSwapPins),
@@ -184,7 +186,8 @@ bool OptimizationPolicy::reportRepairSummary() const
 {
   bool repaired = false;
 
-  const int buffer_moves = committer_.summaryCommittedMoves(MoveType::kBuffer);
+  const int buffer_moves = committer_.summaryCommittedMoves(MoveType::kBuffer)
+                           + committer_.summaryCommittedMoves(MoveType::kTreeRebuffer);
   const int size_up_moves = committer_.summaryCommittedMoves(MoveType::kSizeUp);
   const int size_down_fanout_moves
       = committer_.summaryCommittedMoves(MoveType::kSizeDownFanout);
@@ -308,6 +311,9 @@ void OptimizationPolicy::buildMoveGenerators(
         break;
       case MoveType::kBuffer:
         generator = std::make_unique<BufferGenerator>(context);
+        break;
+      case MoveType::kTreeRebuffer:
+        generator = std::make_unique<TreeRebufferGenerator>(context);
         break;
       case MoveType::kClone:
         generator = std::make_unique<CloneGenerator>(context);

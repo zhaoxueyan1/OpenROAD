@@ -34,7 +34,9 @@ namespace rsz {
 class Resizer;
 class BufferedNet;
 class BufferCandidate;
+class TreeRebufferCandidate;
 class SetupLegacyBase;
+class SetupWnsTreeRebufferPolicy;
 enum class BufferedNetType;
 using BufferedNetPtr = std::shared_ptr<BufferedNet>;
 using BufferedNetSeq = std::vector<BufferedNetPtr>;
@@ -45,6 +47,9 @@ class Rebuffer : public sta::dbStaState
   Rebuffer(Resizer* resizer);
   void fullyRebuffer(sta::Pin* user_pin = nullptr);
   void rebufferNet(const sta::Pin* drvr_pin);
+  bool isRemovableTreeBuffer(sta::Instance* inst) const;
+  const sta::Pin* findBufferTreeRootDriver(const sta::Pin* drvr_pin) const;
+  int rebufferTreePin(const sta::Pin* drvr_pin);
 
  protected:
   void init();
@@ -134,8 +139,9 @@ class Rebuffer : public sta::dbStaState
                               const BufferedNetPtr& bnet,
                               int extra_wire_length = 0);
 
-  bool hasTopLevelOutputPort(sta::Net* net);
+  bool hasTopLevelOutputPort(sta::Net* net) const;
   int rebufferPin(const sta::Pin* drvr_pin);
+  bool isPointInMacroBlockage(const odb::Point& pt) const;
 
   utl::Logger* logger_ = nullptr;
   sta::dbNetwork* db_network_ = nullptr;
@@ -176,7 +182,9 @@ class Rebuffer : public sta::dbStaState
   double long_wire_stepping_runtime_ = 0;
 
   friend class rsz::BufferCandidate;
+  friend class rsz::TreeRebufferCandidate;
   friend class rsz::SetupLegacyBase;
+  friend class rsz::SetupWnsTreeRebufferPolicy;
   friend class Resizer;
 };
 

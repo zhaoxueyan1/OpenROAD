@@ -61,7 +61,10 @@ void OdbCallBack::inDbNetCreate(odb::dbNet* net)
              1,
              "inDbNetCreate {}",
              net->getName());
-  estimate_parasitics_->parasiticsInvalid(net);
+  if (!estimate_parasitics_->hasSpefNets()
+      || estimate_parasitics_->isIncrementalParasiticsEnabled()) {
+    estimate_parasitics_->parasiticsInvalid(net);
+  }
 }
 
 void OdbCallBack::inDbNetDestroy(odb::dbNet* net)
@@ -74,7 +77,19 @@ void OdbCallBack::inDbNetDestroy(odb::dbNet* net)
              net->getName());
   Net* sta_net = db_network_->dbToSta(net);
   if (sta_net) {
+    estimate_parasitics_->clearSpefNet(sta_net);
     estimate_parasitics_->eraseParasitics(sta_net);
+  }
+}
+
+void OdbCallBack::inDbITermPreConnect(odb::dbITerm* /* iterm */,
+                                      odb::dbNet* net)
+{
+  if (net && estimate_parasitics_->hasSpefCalibration()) {
+    sta::Net* sta_net = db_network_->dbToSta(net);
+    if (estimate_parasitics_->isSpefNet(sta_net)) {
+      estimate_parasitics_->ensureNetRcScale(sta_net);
+    }
   }
 }
 
@@ -88,7 +103,22 @@ void OdbCallBack::inDbITermPostConnect(odb::dbITerm* iterm)
              iterm->getName());
   odb::dbNet* db_net = iterm->getNet();
   if (db_net) {
-    estimate_parasitics_->parasiticsInvalid(db_net);
+    estimate_parasitics_->clearSpefNet(db_net);
+    if (!estimate_parasitics_->hasSpefNets()
+        || estimate_parasitics_->isIncrementalParasiticsEnabled()) {
+      estimate_parasitics_->parasiticsInvalid(db_net);
+    }
+  }
+}
+
+void OdbCallBack::inDbITermPreDisconnect(odb::dbITerm* iterm)
+{
+  odb::dbNet* db_net = iterm ? iterm->getNet() : nullptr;
+  if (db_net && estimate_parasitics_->hasSpefCalibration()) {
+    sta::Net* sta_net = db_network_->dbToSta(db_net);
+    if (estimate_parasitics_->isSpefNet(sta_net)) {
+      estimate_parasitics_->ensureNetRcScale(sta_net);
+    }
   }
 }
 
@@ -101,7 +131,58 @@ void OdbCallBack::inDbITermPostDisconnect(odb::dbITerm* iterm, odb::dbNet* net)
              "inDbITermPostDisconnect iterm={} net={}",
              iterm->getName(),
              net->getName());
-  estimate_parasitics_->parasiticsInvalid(net);
+  if (net) {
+    estimate_parasitics_->clearSpefNet(net);
+    if (!estimate_parasitics_->hasSpefNets()
+        || estimate_parasitics_->isIncrementalParasiticsEnabled()) {
+      estimate_parasitics_->parasiticsInvalid(net);
+    }
+  }
+}
+
+void OdbCallBack::inDbBTermPreConnect(odb::dbBTerm* /* bterm */,
+                                      odb::dbNet* net)
+{
+  if (net && estimate_parasitics_->hasSpefCalibration()) {
+    sta::Net* sta_net = db_network_->dbToSta(net);
+    if (estimate_parasitics_->isSpefNet(sta_net)) {
+      estimate_parasitics_->ensureNetRcScale(sta_net);
+    }
+  }
+}
+
+void OdbCallBack::inDbBTermPostConnect(odb::dbBTerm* bterm)
+{
+  odb::dbNet* db_net = bterm->getNet();
+  if (db_net) {
+    estimate_parasitics_->clearSpefNet(db_net);
+    if (!estimate_parasitics_->hasSpefNets()
+        || estimate_parasitics_->isIncrementalParasiticsEnabled()) {
+      estimate_parasitics_->parasiticsInvalid(db_net);
+    }
+  }
+}
+
+void OdbCallBack::inDbBTermPreDisconnect(odb::dbBTerm* bterm)
+{
+  odb::dbNet* db_net = bterm ? bterm->getNet() : nullptr;
+  if (db_net && estimate_parasitics_->hasSpefCalibration()) {
+    sta::Net* sta_net = db_network_->dbToSta(db_net);
+    if (estimate_parasitics_->isSpefNet(sta_net)) {
+      estimate_parasitics_->ensureNetRcScale(sta_net);
+    }
+  }
+}
+
+void OdbCallBack::inDbBTermPostDisConnect(odb::dbBTerm* bterm, odb::dbNet* net)
+{
+  if (net) {
+    estimate_parasitics_->clearSpefNet(net);
+    if (!estimate_parasitics_->hasSpefNets()
+        || estimate_parasitics_->isIncrementalParasiticsEnabled()) {
+      estimate_parasitics_->parasiticsInvalid(net);
+    }
+  }
 }
 
 void OdbCallBack::inDbInstSwapMasterAfter(odb::dbInst* inst)
@@ -127,7 +208,13 @@ void OdbCallBack::inDbInstSwapMasterAfter(odb::dbInst* inst)
     if (!port || !port->direction()->isAnyTristate()) {
       // we can only update parasitics for flat net
       odb::dbNet* db_net = db_network_->findFlatDbNet(net);
-      estimate_parasitics_->parasiticsInvalid(db_network_->dbToSta(db_net));
+      sta::Net* flat_net = db_network_->dbToSta(db_net);
+      if (estimate_parasitics_->isSpefNet(flat_net)) {
+        estimate_parasitics_->spefNetMasterSwapped(flat_net);
+      } else if (!estimate_parasitics_->hasSpefNets()
+                 || estimate_parasitics_->isIncrementalParasiticsEnabled()) {
+        estimate_parasitics_->parasiticsInvalid(flat_net);
+      }
     }
   }
 }

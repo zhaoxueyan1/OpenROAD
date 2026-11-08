@@ -256,6 +256,15 @@ bool Rebuffer::loadSlewSatisfactory(sta::LibertyPort* driver,
 {
   double wire_res, wire_cap;
   estimate_parasitics_->wireSignalRC(corner_, wire_res, wire_cap);
+  if (estimate_parasitics_->hasSpefCalibration()) {
+    const auto& rc_scale = resizer_->activeNetRcScale();
+    wire_cap *= rc_scale.valid
+                    ? rc_scale.cap_scale
+                    : estimate_parasitics_->defaultUnitCapScale();
+    wire_res *= rc_scale.valid
+                    ? rc_scale.res_scale
+                    : estimate_parasitics_->defaultUnitResScale();
+  }
   float r_drvr = driver->driveResistance();
   float load_slew
       = (r_drvr + resizer_->dbuToMeters(bnet->maxLoadWireLength()) * wire_res)
@@ -371,6 +380,15 @@ bool Rebuffer::bufferSizeCanDriveLoad(const BufferSize& size,
   double wire_res, wire_cap;
   sta::LibertyPort *inp, *outp;
   estimate_parasitics_->wireSignalRC(corner_, wire_res, wire_cap);
+  if (estimate_parasitics_->hasSpefCalibration()) {
+    const auto& rc_scale = resizer_->activeNetRcScale();
+    wire_cap *= rc_scale.valid
+                    ? rc_scale.cap_scale
+                    : estimate_parasitics_->defaultUnitCapScale();
+    wire_res *= rc_scale.valid
+                    ? rc_scale.res_scale
+                    : estimate_parasitics_->defaultUnitResScale();
+  }
   size.cell->bufferPorts(inp, outp);
 
   const float extra_cap = resizer_->dbuToMeters(extra_wire_length) * wire_cap
@@ -395,6 +413,10 @@ int Rebuffer::wireLengthLimitImpliedByLoadSlew(sta::LibertyCell* cell)
   const float r_drvr = out->driveResistance();
   double wire_res, wire_cap;
   estimate_parasitics_->wireSignalRC(corner_, wire_res, wire_cap);
+  if (estimate_parasitics_->hasSpefCalibration()) {
+    wire_cap *= estimate_parasitics_->defaultUnitCapScale();
+    wire_res *= estimate_parasitics_->defaultUnitResScale();
+  }
 
   const float max_slew = maxSlewMargined(resizer_->maxInputSlew(in, corner_));
 
@@ -443,6 +465,10 @@ int Rebuffer::wireLengthLimitImpliedByMaxCap(sta::LibertyCell* cell)
   if (cap_limit_exists) {
     double wire_res, wire_cap;
     estimate_parasitics_->wireSignalRC(corner_, wire_res, wire_cap);
+    if (estimate_parasitics_->hasSpefCalibration()) {
+      wire_cap *= estimate_parasitics_->defaultUnitCapScale();
+      wire_res *= estimate_parasitics_->defaultUnitResScale();
+    }
     double slack = maxCapMargined(cap_limit) - in->capacitance();
     return std::max(0, resizer_->metersToDbu(slack / wire_cap));
   }
@@ -469,6 +495,10 @@ int Rebuffer::wireLengthStepForLayer(int layer)
 
   double layer_res, layer_cap;
   estimate_parasitics_->layerRC(tech_layer, corner_, layer_res, layer_cap);
+  if (estimate_parasitics_->hasSpefCalibration()) {
+    layer_cap *= estimate_parasitics_->defaultUnitCapScale();
+    layer_res *= estimate_parasitics_->defaultUnitResScale();
+  }
   if (layer_cap <= 0.0 || layer_res <= 0.0) {
     layer_wire_length_step_[layer] = wire_length_step_;
     return wire_length_step_;
@@ -661,23 +691,31 @@ BnetPtr Rebuffer::bufferForTiming(const BnetPtr& tree,
                          "",
                          level);
               // This is a long wire, allow for insertion of buffers at the
-              // farther end
-              insertBufferOptions(opts, level, std::min(full_wl, layer_step));
+              // farther end (unless the farther end is inside a macro)
+              if (!isPointInMacroBlockage(location)) {
+                insertBufferOptions(opts, level, std::min(full_wl, layer_step));
+              }
             } else {
               BnetSeq opts1 = opts;
               for (BnetPtr& opt : opts1) {
                 opt = addWire(opt, node->location(), layer, level);
               }
-              insertBufferOptions(opts1, level, 0);
+              if (!isPointInMacroBlockage(node->location())) {
+                insertBufferOptions(opts1, level, 0);
+              }
               if (opts1.empty()) {
                 // if generated options empty, start again but allow for
                 // insertion of buffers at the farther end
                 opts1 = opts;
-                insertBufferOptions(opts1, level, full_wl);
+                if (!isPointInMacroBlockage(location)) {
+                  insertBufferOptions(opts1, level, full_wl);
+                }
                 for (BnetPtr& opt : opts1) {
                   opt = addWire(opt, node->location(), layer, level);
                 }
-                insertBufferOptions(opts1, level, 0);
+                if (!isPointInMacroBlockage(node->location())) {
+                  insertBufferOptions(opts1, level, 0);
+                }
               }
               if (opts1.empty()) {
                 // if generated options still empty, this is an internal error
@@ -723,8 +761,7 @@ BnetPtr Rebuffer::bufferForTiming(const BnetPtr& tree,
                 dy = dy > 0 ? dy_abs : -dy_abs;
               }
 
-              location.addX(dx);
-              location.addY(dy);
+              location = odb::Point(location.x() + dx, location.y() + dy);
 
               const int remaining_wl
                   = odb::Point::manhattanDistance(node->location(), location);
@@ -732,7 +769,10 @@ BnetPtr Rebuffer::bufferForTiming(const BnetPtr& tree,
               for (BnetPtr& opt : opts) {
                 opt = addWire(opt, location, layer, level);
               }
-              insertBufferOptions(opts, level, std::min(remaining_wl, step));
+              if (!isPointInMacroBlockage(location)) {
+                insertBufferOptions(
+                    opts, level, std::min(remaining_wl, step));
+              }
 
               if (opts.empty()) {
                 logger_->warn(
@@ -979,6 +1019,8 @@ BufferedNetPtr Rebuffer::recoverArea(const BufferedNetPtr& root,
       [&](auto& recurse, int level, const BnetPtr& node, int upstream_wl)
           -> BufferedNetSeq {
         switch (node->type()) {
+          case BnetType::via:
+            return recurse(node->ref(), upstream_wl);
           case BnetType::buffer:
           case BnetType::wire: {
             const BnetPtr& inner
@@ -994,8 +1036,10 @@ BufferedNetPtr Rebuffer::recoverArea(const BufferedNetPtr& root,
               opts = recurse(inner, 0);
             }
 
-            FixedDelay threshold = FixedDelay::lerp(
-                node->slack(), slack_target + node->arrivalDelay(), alpha);
+            FixedDelay threshold = std::min(
+                node->slack(),
+                FixedDelay::lerp(
+                    node->slack(), slack_target + node->arrivalDelay(), alpha));
             insertBufferOptions(opts,
                                 level,
                                 /*next_segment_wl=*/upstream_wl,
@@ -1008,8 +1052,10 @@ BufferedNetPtr Rebuffer::recoverArea(const BufferedNetPtr& root,
             const BnetSeq& left_opts = recurse(node->ref(), upstream_wl);
             const BnetSeq& right_opts = recurse(node->ref2(), upstream_wl);
 
-            FixedDelay threshold = FixedDelay::lerp(
-                node->slack(), slack_target + node->arrivalDelay(), alpha);
+            FixedDelay threshold = std::min(
+                node->slack(),
+                FixedDelay::lerp(
+                    node->slack(), slack_target + node->arrivalDelay(), alpha));
             BnetMetrics assured_envelope = node->metrics().withSlack(threshold);
             BnetPtr assured_fallback;
 
@@ -1057,7 +1103,7 @@ BufferedNetPtr Rebuffer::recoverArea(const BufferedNetPtr& root,
               }
             }
 
-            if (!assured_found) {
+            if (!assured_found && assured_fallback) {
               insertAssuredOption(opts, assured_fallback, level);
             }
             return opts;
@@ -1454,12 +1500,31 @@ void Rebuffer::insertBufferOptions(
     }
 
     if (!assured_satisfied) {
-      logger_->error(
-          RSZ,
-          501,
-          "buffering pin {} failed: area recovery cannot reproduce solution",
-          network_->name(pin_),
-          delayAsString(slack_threshold.toSeconds(), 3, this));
+      if (exemplar && exemplar->type() == BnetType::buffer && !opts.empty()) {
+        sta::LibertyCell* buffer_cell = exemplar->bufferCell();
+        sta::LibertyPort *in, *out;
+        buffer_cell->bufferPorts(in, out);
+        BnetPtr load_opt = opts.front();
+        const FixedDelay buffer_delay
+            = bufferDelay(buffer_cell,
+                          load_opt->slackTransition(),
+                          load_opt->cap() + out->capacitance());
+        BnetPtr z = make_shared<BufferedNet>(BnetType::buffer,
+                                             load_opt->location(),
+                                             buffer_cell,
+                                             load_opt,
+                                             corner_,
+                                             resizer_,
+                                             estimate_parasitics_);
+        z->setSlack(load_opt->slack() - buffer_delay);
+        z->setSlackTransition(load_opt->slackTransition());
+        z->setDelay(buffer_delay);
+        insertAssuredOption(new_opts, z, level);
+        assured_satisfied = true;
+      } else if (!opts.empty()) {
+        insertAssuredOption(new_opts, opts.front(), level);
+        assured_satisfied = true;
+      }
     }
   }
 
@@ -1507,11 +1572,22 @@ void Rebuffer::init()
   for (auto& size : buffer_sizes_) {
     buffer_sizes_index_[size.cell] = &size;
   }
+
+  resizer_->ensurePlacementBlockagesInitialized();
+}
+
+bool Rebuffer::isPointInMacroBlockage(const odb::Point& pt) const
+{
+  if (!resizer_ || !resizer_->blockageAwareSteiner()) {
+    return false;
+  }
+  return resizer_->isPointInPlacementBlockage(pt);
 }
 
 void Rebuffer::initOnCorner(sta::Scene* corner)
 {
   corner_ = corner;
+  resizer_->clearActiveNetRcScale();
   layer_wire_length_step_.clear();
   wire_length_step_
       = std::min({resizer_max_wire_length_,
@@ -1676,9 +1752,7 @@ BnetPtr Rebuffer::importBufferTree(const sta::Pin* drvr_pin,
             }
 
             sta::Instance* inst = network_->instance(pin);
-            if (!resizer_->isLogicStdCell(inst)
-                || isPortBuffer(db_network_, inst)
-                || !resizer_->canRemoveBuffer(inst, true)) {
+            if (!isRemovableTreeBuffer(inst)) {
               return node;
             }
 
@@ -1692,14 +1766,17 @@ BnetPtr Rebuffer::importBufferTree(const sta::Pin* drvr_pin,
             }
 
             auto inner_bnet = importBufferTree(buffer_drvr_pin, corner);
+            odb::dbNet* parent_db_net = db_network_->findFlatDbNet(drvr_pin);
+            resizer_->setActiveNetRcScale(
+                parent_db_net ? db_network_->dbToSta(parent_db_net) : nullptr);
             sta::Vertex* buffer_drvr = graph_->pinDrvrVertex(buffer_drvr_pin);
 
             if (!inner_bnet) {
               if (fanout(buffer_drvr) != 0) {
-                logger_->error(RSZ,
-                               2002,
-                               "failed bnet construction for {}",
-                               network_->name(pin));
+                logger_->warn(RSZ,
+                              2002,
+                              "failed bnet construction for {}",
+                              network_->name(pin));
               }
               return node;
             }
@@ -1753,6 +1830,7 @@ std::vector<sta::Instance*> Rebuffer::collectImportedTreeBufferInstances(
       [&](auto& recurse, int level, const BnetPtr& node) -> int {
         switch (node->type()) {
           case BnetType::wire:
+          case BnetType::via:
           case BnetType::buffer:
             return recurse(node->ref());
           case BnetType::junction:
@@ -1894,6 +1972,11 @@ int Rebuffer::exportBufferTree(const BufferedNetPtr& choice,
         // In this rebuffer logic, target loads can be on different dbNets.
         // So we pass 'true' to 'loads_on_diff_nets' argument.
         odb::Point buffer_loc = node->location();
+        if (resizer_->blockageAwareSteiner()
+            && resizer_->isPointInPlacementBlockage(buffer_loc)) {
+          buffer_loc = resizer_->snapPointOutsidePlacementBlockage(
+              buffer_loc, buffer_loc);
+        }
         odb::dbInst* buf_inst = db_network_->staToDb(
             resizer_->insertBufferBeforeLoads(net,
                                               &child_loads,
@@ -2016,6 +2099,9 @@ void Rebuffer::setPin(sta::Pin* drvr_pin)
   pin_ = drvr_pin;
   drvr_port_ = network_->libertyPort(drvr_pin);
   drvr_load_high_water_mark_ = 0;
+  odb::dbNet* flat_db_net = db_network_->findFlatDbNet(drvr_pin);
+  resizer_->setActiveNetRcScale(
+      flat_db_net ? db_network_->dbToSta(flat_db_net) : nullptr);
 
   {
     float fanout, max_fanout, fanout_slack;
@@ -2317,7 +2403,7 @@ void Rebuffer::fullyRebuffer(sta::Pin* user_pin)
   debugPrint(logger_, RSZ, "rebuffer", 1, "Recover area {:.2f}", ra_runtime);
 }
 
-bool Rebuffer::hasTopLevelOutputPort(sta::Net* net)
+bool Rebuffer::hasTopLevelOutputPort(sta::Net* net) const
 {
   sta::NetConnectedPinIterator* pin_iter = network_->connectedPinIterator(net);
   while (pin_iter->hasNext()) {
@@ -2375,6 +2461,9 @@ int Rebuffer::rebufferPin(const sta::Pin* drvr_pin)
 
     sta_->findRequireds();
     annotateLoadSlacks(bnet, drvr);
+    if (resizer_->blockageAwareSteiner()) {
+      bnet = resizer_->rerouteBufferedNetAroundBlockages(bnet, corner_);
+    }
 
     const bool allow_topology_rewrite
         = (estimate_parasitics_->getParasiticsSrc()
@@ -2443,6 +2532,282 @@ void Rebuffer::rebufferNet(const sta::Pin* drvr_pin)
   est::IncrementalParasiticsGuard guard(estimate_parasitics_);
   const int inserted_buffer_count = rebufferPin(drvr_pin);
   logger_->report("Inserted {} buffers.", inserted_buffer_count);
+}
+
+bool Rebuffer::isRemovableTreeBuffer(sta::Instance* inst) const
+{
+  if (!inst) {
+    return false;
+  }
+  sta::LibertyCell* cell = network_->libertyCell(inst);
+  if (!cell || !cell->isBuffer()) {
+    return false;
+  }
+  if (!resizer_->isLogicStdCell(inst)
+      || isPortBuffer(db_network_, inst)
+      || !resizer_->canRemoveBuffer(inst, true)) {
+    return false;
+  }
+  sta::LibertyPort* in_port = nullptr;
+  sta::LibertyPort* out_port = nullptr;
+  cell->bufferPorts(in_port, out_port);
+  const sta::Pin* out_pin = network_->findPin(inst, out_port);
+  if (!out_pin) {
+    return false;
+  }
+  sta::Net* out_net = network_->net(out_pin);
+  if (!out_net || hasTopLevelOutputPort(out_net)) {
+    return false;
+  }
+  return true;
+}
+
+const sta::Pin* Rebuffer::findBufferTreeRootDriver(
+    const sta::Pin* drvr_pin) const
+{
+  if (!drvr_pin) {
+    return nullptr;
+  }
+  const sta::Pin* cur_pin = drvr_pin;
+  std::set<const sta::Pin*> visited;
+  while (cur_pin && !visited.contains(cur_pin)) {
+    visited.insert(cur_pin);
+    sta::Instance* inst = network_->instance(cur_pin);
+    if (!isRemovableTreeBuffer(inst)) {
+      break;
+    }
+    sta::LibertyCell* cell = network_->libertyCell(inst);
+    sta::LibertyPort* in_port = nullptr;
+    sta::LibertyPort* out_port = nullptr;
+    cell->bufferPorts(in_port, out_port);
+    const sta::Pin* in_pin = network_->findPin(inst, in_port);
+    if (!in_pin) {
+      break;
+    }
+    sta::PinSet* drvrs = network_->drivers(in_pin);
+    if (!drvrs || drvrs->size() != 1) {
+      break;
+    }
+    const sta::Pin* up_drvr = *drvrs->begin();
+    if (!up_drvr || network_->isTopLevelPort(up_drvr)) {
+      break;
+    }
+    cur_pin = up_drvr;
+  }
+  return cur_pin;
+}
+
+int Rebuffer::rebufferTreePin(const sta::Pin* drvr_pin)
+{
+  const sta::Pin* root_pin = findBufferTreeRootDriver(drvr_pin);
+  if (!root_pin || network_->isTopLevelPort(root_pin)) {
+    return 0;
+  }
+
+  sta::Net* const net = network_->net(root_pin);
+  odb::dbNet* const db_net = db_network_->flatNet(root_pin);
+  drvr_port_ = network_->libertyPort(root_pin);
+  if (!net || !db_net || !drvr_port_ || hasTopLevelOutputPort(net)
+      || !resizer_->okToBufferNet(root_pin)) {
+    return 0;
+  }
+
+  if (estimate_parasitics_->isIncrementalParasiticsEnabled()) {
+    estimate_parasitics_->updateParasitics();
+  }
+  sta_->findRequireds();
+
+  setPin(const_cast<sta::Pin*>(root_pin));
+  BufferedNetPtr original_tree = importBufferTree(root_pin, corner_);
+  resizer_->setActiveNetRcScale(db_network_->dbToSta(db_net));
+  if (!original_tree || original_tree->loadCount() > 64) {
+    return 0;
+  }
+
+  sta::Vertex* drvr = graph_->pinDrvrVertex(root_pin);
+  if (!drvr) {
+    return 0;
+  }
+
+  annotateLoadSlacks(original_tree, drvr);
+  BnetPtr baseline_tree = original_tree;
+  if (resizer_->blockageAwareSteiner()
+      && resizer_->treeCrossesPlacementBlockage(original_tree)) {
+    BnetPtr detoured_orig
+        = resizer_->rerouteBufferedNetAroundBlockages(original_tree, corner_);
+    if (detoured_orig) {
+      baseline_tree = detoured_orig;
+    }
+  }
+  annotateTiming(baseline_tree);
+
+  const FixedDelay orig_slack = slackAtDriverPin(baseline_tree);
+  const int orig_buf_count = original_tree->bufferCount();
+  sta::Path* req_path = sta_->vertexWorstSlackPath(drvr, sta::MinMax::max());
+  const sta::Slack sta_slack
+      = req_path ? (req_path->required() - req_path->arrival()) : sta::INF;
+  const sta::Delay original_tree_slack_error
+      = orig_slack.toSeconds() - sta_slack;
+
+  BnetPtr stripped_tree = stripTreeBuffers(original_tree);
+  if (!stripped_tree) {
+    return 0;
+  }
+
+  auto insts = collectImportedTreeBufferInstances(
+      const_cast<sta::Pin*>(root_pin), stripped_tree);
+  BnetPtr steiner_tree = resteiner(stripped_tree);
+  est::NetRcScale tree_agg_scale;
+  if (orig_buf_count > 0 && estimate_parasitics_->hasSpefCalibration()) {
+    const sta::Net* root_flat_net = db_network_->dbToSta(db_net);
+    std::vector<const sta::Net*> tree_nets = {root_flat_net};
+    for (sta::Instance* buf_inst : insts) {
+      sta::LibertyCell* cell = network_->libertyCell(buf_inst);
+      if (cell) {
+        sta::LibertyPort *in_p, *out_p;
+        cell->bufferPorts(in_p, out_p);
+        const sta::Pin* out_pin = network_->findPin(buf_inst, out_p);
+        if (out_pin) {
+          odb::dbNet* sub_db_net = db_network_->findFlatDbNet(out_pin);
+          if (sub_db_net) {
+            tree_nets.push_back(db_network_->dbToSta(sub_db_net));
+          }
+        }
+      }
+    }
+    BnetPtr ref_tree = steiner_tree ? steiner_tree : stripped_tree;
+    const int64_t total_wl_dbu = visitTree(
+        [](auto& recurse, int level, const BnetPtr& node) -> int64_t {
+          switch (node->type()) {
+            case BnetType::wire:
+              return node->length() + recurse(node->ref());
+            case BnetType::via:
+            case BnetType::buffer:
+              return recurse(node->ref());
+            case BnetType::junction:
+              return recurse(node->ref()) + recurse(node->ref2());
+            case BnetType::load:
+              return 0;
+          }
+          return 0;
+        },
+        ref_tree);
+    tree_agg_scale = estimate_parasitics_->calibrateTreeNets(
+        root_flat_net, tree_nets, static_cast<int>(total_wl_dbu));
+    if (tree_agg_scale.valid) {
+      resizer_->setActiveNetRcScale(tree_agg_scale);
+    }
+    stripped_tree = stripTreeBuffers(original_tree);
+    steiner_tree = resteiner(stripped_tree);
+  }
+
+  auto runBufferForTimingRounds = [&](BnetPtr candidate_tree) -> BnetPtr {
+    for (int i = 0; i < 3 && candidate_tree; i++) {
+      candidate_tree = bufferForTiming(candidate_tree, true);
+    }
+    return candidate_tree;
+  };
+
+  BnetPtr route_candidate
+      = resizer_->blockageAwareSteiner()
+            ? resizer_->rerouteBufferedNetAroundBlockages(stripped_tree,
+                                                          corner_)
+            : stripped_tree;
+  BnetPtr timing_tree = runBufferForTimingRounds(route_candidate);
+  // Always evaluate the ideal placement Steiner tree (resteiner) as well,
+  // even when orig_buf_count == 0: if the post-route dbWire has a large
+  // routing detour, buffering along the ideal Steiner tree pulls the net
+  // topology back toward the ideal placement tree.
+  if (steiner_tree) {
+    BnetPtr timing_tree_steiner = runBufferForTimingRounds(steiner_tree);
+    if (timing_tree_steiner) {
+      if (!timing_tree
+          || slackAtDriverPin(timing_tree_steiner)
+                 > slackAtDriverPin(timing_tree)) {
+        timing_tree = timing_tree_steiner;
+      }
+    }
+  }
+
+  if (!timing_tree) {
+    return 0;
+  }
+
+  sta::Delay drvr_gate_delay;
+  std::tie(drvr_gate_delay, std::ignore, std::ignore)
+      = drvrPinTiming(timing_tree);
+
+  FixedDelay target_slack = -FixedDelay::INF;
+  if (timing_tree->slackTransition() != nullptr) {
+    sta::Delay relaxation
+        = std::max<float>(
+              0.0f,
+              ((slackAtDriverPin(timing_tree).toSeconds())
+               - std::min(float(original_tree_slack_error), 0.0f)))
+              / 4.0f
+          + (std::max(float(drvr_gate_delay), 0.0f)
+             + criticalPathDelay(logger_, timing_tree).toSeconds())
+                * relaxation_factor_;
+    target_slack
+        = slackAtDriverPin(timing_tree) - FixedDelay(relaxation, resizer_);
+  }
+
+  BnetPtr area_opt_tree = timing_tree;
+  for (int i = 0; i < 5 && area_opt_tree; i++) {
+    area_opt_tree
+        = recoverArea(area_opt_tree, target_slack, ((float) (1 + i)) / 5);
+  }
+  if (!area_opt_tree) {
+    return 0;
+  }
+
+  const FixedDelay new_slack = slackAtDriverPin(area_opt_tree);
+  const int new_buf_count = area_opt_tree->bufferCount();
+  if (orig_buf_count == 0 && new_buf_count == 0) {
+    return 0;
+  }
+
+  const float slack_gain = (new_slack - orig_slack).toSeconds();
+  const bool timing_improved = (slack_gain >= 2e-12f);
+  const bool area_reduced_no_timing_loss
+      = (orig_buf_count > 0 && new_buf_count < orig_buf_count
+         && slack_gain >= -1e-12f);
+  if (!timing_improved && !area_reduced_no_timing_loss) {
+    return 0;
+  }
+
+  sta::Instance* parent
+      = db_network_->getOwningInstanceParent(const_cast<sta::Pin*>(root_pin));
+
+  if (tree_agg_scale.valid) {
+    estimate_parasitics_->setNetRcScale(db_network_->dbToSta(db_net),
+                                        tree_agg_scale);
+  }
+
+  const int inserted_count = exportBufferTree(
+      area_opt_tree, db_network_->dbToSta(db_net), 1, parent, "treerebuf");
+
+  int removed_count = 0;
+  for (auto* inst : insts) {
+    if (resizer_->removeBuffer(inst)) {
+      removed_count++;
+    }
+  }
+
+  debugPrint(logger_,
+             RSZ,
+             "rebuffer",
+             1,
+             "rebufferTreePin {}: orig_buf={} new_buf={} removed={} "
+             "orig_slack={} new_slack={}",
+             sdc_network_->pathName(root_pin),
+             orig_buf_count,
+             inserted_count,
+             removed_count,
+             delayAsString(orig_slack.toSeconds(), 3, this),
+             delayAsString(new_slack.toSeconds(), 3, this));
+
+  return inserted_count + removed_count;
 }
 
 };  // namespace rsz

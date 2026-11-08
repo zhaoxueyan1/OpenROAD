@@ -4889,6 +4889,10 @@ void Resizer::cloneClkInverter(sta::Instance* inv)
         sta::Net* clone_out_net = db_network_->makeNet(top_inst);
         odb::dbNet* clone_out_net_db = db_network_->staToDb(clone_out_net);
         clone_out_net_db->setSigType(in_net_db->getSigType());
+        if (estimate_parasitics_ && estimate_parasitics_->hasSpefCalibration()) {
+          estimate_parasitics_->ensureNetRcScale(out_net);
+          estimate_parasitics_->copyNetRcScale(out_net, clone_out_net);
+        }
 
         sta::Instance* load = network_->instance(load_pin);
         sta_->connectPin(clone, in_port, in_net);
@@ -5332,6 +5336,10 @@ odb::dbInst* Resizer::insertBufferAfterDriver(
     return nullptr;
   }
 
+  if (estimate_parasitics_ && estimate_parasitics_->hasSpefCalibration()) {
+    estimate_parasitics_->ensureNetRcScale(db_network_->dbToSta(net));
+  }
+
   odb::dbInst* buffer_inst = net->insertBufferAfterDriver(drvr_obj,
                                                           buffer_cell,
                                                           loc,
@@ -5419,6 +5427,10 @@ odb::dbInst* Resizer::insertBufferBeforeLoad(
                    "insertBufferBeforeLoad: No net found for load pin {}",
                    load_pin->getName());
     return nullptr;
+  }
+
+  if (estimate_parasitics_ && estimate_parasitics_->hasSpefCalibration()) {
+    estimate_parasitics_->ensureNetRcScale(db_network_->dbToSta(db_net));
   }
 
   // Insert buffer before the load_pin
@@ -5542,6 +5554,16 @@ odb::dbInst* Resizer::insertBufferBeforeLoads(
     return nullptr;
   }
 
+  const sta::Net* orig_sta_net = db_network_->dbToSta(net);
+  if (estimate_parasitics_ && estimate_parasitics_->hasSpefCalibration()) {
+    if (!estimate_parasitics_->hasNetRcScale(orig_sta_net)
+        && active_net_rc_scale_.valid) {
+      estimate_parasitics_->setNetRcScale(orig_sta_net, active_net_rc_scale_);
+    } else {
+      estimate_parasitics_->ensureNetRcScale(orig_sta_net);
+    }
+  }
+
   odb::dbInst* buffer_inst = net->insertBufferBeforeLoads(loads,
                                                           buffer_cell,
                                                           loc,
@@ -5556,6 +5578,18 @@ odb::dbInst* Resizer::insertBufferBeforeLoads(
                    "Failed to insert buffer before loads for net {}",
                    net->getName());
     return nullptr;
+  }
+
+  if (estimate_parasitics_ && estimate_parasitics_->hasSpefCalibration()
+      && orig_sta_net) {
+    for (odb::dbITerm* iterm : buffer_inst->getITerms()) {
+      if (!iterm->getSigType().isSupply() && iterm->getNet()) {
+        const sta::Net* buf_net = db_network_->dbToSta(iterm->getNet());
+        if (buf_net && !estimate_parasitics_->hasNetRcScale(buf_net)) {
+          estimate_parasitics_->copyNetRcScale(orig_sta_net, buf_net);
+        }
+      }
+    }
   }
 
   // Legalize the buffer position and update the design area
@@ -5593,8 +5627,45 @@ sta::Instance* Resizer::makeInstance(sta::LibertyCell* cell,
   return inst;
 }
 
+void Resizer::setActiveNetRcScale(const sta::Net* net)
+{
+  if (!estimate_parasitics_ || !estimate_parasitics_->hasSpefCalibration()
+      || net == nullptr) {
+    active_net_rc_scale_ = est::NetRcScale{};
+    return;
+  }
+  const sta::Net* flat_net = db_network_->dbToSta(db_network_->findFlatDbNet(net));
+  active_net_rc_scale_ = estimate_parasitics_->ensureNetRcScale(
+      flat_net ? flat_net : net);
+}
+
 void Resizer::insertBufferPostProcess(dbInst* buffer_inst)
 {
+  if (estimate_parasitics_ && estimate_parasitics_->hasSpefCalibration()) {
+    const sta::Net* in_net = nullptr;
+    const sta::Net* out_net = nullptr;
+    for (odb::dbITerm* iterm : buffer_inst->getITerms()) {
+      if (iterm->getSigType().isSupply() || !iterm->getNet()) {
+        continue;
+      }
+      const sta::Net* sta_net = db_network_->dbToSta(iterm->getNet());
+      if (iterm->getIoType() == odb::dbIoType::INPUT) {
+        in_net = sta_net;
+      } else if (iterm->getIoType() == odb::dbIoType::OUTPUT) {
+        out_net = sta_net;
+      }
+    }
+    if (in_net && out_net) {
+      const bool in_cal = estimate_parasitics_->hasNetRcScale(in_net);
+      const bool out_cal = estimate_parasitics_->hasNetRcScale(out_net);
+      if (in_cal && !out_cal) {
+        estimate_parasitics_->copyNetRcScale(in_net, out_net);
+      } else if (out_cal && !in_cal) {
+        estimate_parasitics_->copyNetRcScale(out_net, in_net);
+      }
+    }
+  }
+
   // ODB's insertBuffer* already placed the instance; re-run through
   // setLocation so clampLocToCore can pull it back inside the core if
   // the insertion point landed in the die-core gap.
@@ -6108,6 +6179,9 @@ MoveType Resizer::moveTypeFromString(const std::string& s)
   std::ranges::transform(lower, lower.begin(), ::tolower);
   if (lower == "buffer") {
     return MoveType::kBuffer;
+  }
+  if (lower == "tree_rebuffer") {
+    return MoveType::kTreeRebuffer;
   }
   if (lower == "unbuffer") {
     return MoveType::kUnbuffer;

@@ -255,6 +255,7 @@ sta::define_cmd_args "repair_timing" {[-setup] [-hold]\
                                         [-max_iterations iterations]\
                                         [-max_buffer_percent buffer_percent]\
                                         [-max_utilization util] \
+                                        [-max_utilization_increase util_increase] \
                                         [-match_cell_footprint] \
                                         [-max_repairs_per_pass max_repairs_per_pass]\
                                         [-verbose]}
@@ -265,7 +266,8 @@ proc repair_timing { args } {
   # same phase sequence; only one of the three may be supplied per call.
   sta::parse_key_args "repair_timing" args \
     keys {-setup_margin -hold_margin -slack_margin \
-            -libraries -max_utilization -max_buffer_percent -sequence \
+            -libraries -max_utilization -max_utilization_increase \
+            -max_buffer_percent -sequence \
             -phases -policy -policies \
             -recover_power -repair_tns -max_passes -max_iterations -max_repairs_per_pass} \
     flags {-setup -hold -allow_setup_violations -skip_pin_swap -skip_gate_cloning \
@@ -325,7 +327,7 @@ proc repair_timing { args } {
   set skip_last_gasp [info exists flags(-skip_last_gasp)]
   set skip_vt_swap [info exists flags(-skip_vt_swap)]
   set skip_crit_vt_swap [info exists flags(-skip_crit_vt_swap)]
-  rsz::set_max_utilization [rsz::parse_max_util keys]
+  rsz::set_max_utilization [rsz::parse_repair_max_util keys]
   set max_buffer_percent 20
   if { [info exists keys(-max_buffer_percent)] } {
     set max_buffer_percent $keys(-max_buffer_percent)
@@ -992,6 +994,35 @@ proc parse_max_util { keys_var } {
       utl::error RSZ 4 "-max_utilization must be between 0 and 100%."
     }
     set max_util [expr $max_util / 100.0]
+  }
+  return $max_util
+}
+
+proc parse_repair_max_util { keys_var } {
+  upvar 1 $keys_var keys
+  set has_max_util [info exists keys(-max_utilization)]
+  set has_increase [info exists keys(-max_utilization_increase)]
+
+  if {$has_max_util && $has_increase} {
+    utl::error RSZ 223 \
+      "-max_utilization and -max_utilization_increase are mutually exclusive."
+  }
+  if {!$has_increase} {
+    return [parse_max_util keys]
+  }
+
+  set increase $keys(-max_utilization_increase)
+  if {!([string is double $increase] && $increase >= 0.0 && $increase <= 100.0)} {
+    utl::error RSZ 224 \
+      "-max_utilization_increase must be between 0 and 100 percentage points."
+  }
+
+  set current_util [rsz::utilization]
+  set max_util [expr {$current_util + $increase / 100.0}]
+  if {$max_util > 1.0} {
+    set current_util_percent [expr {$current_util * 100.0}]
+    utl::error RSZ 225 \
+      "-max_utilization_increase exceeds 100% total utilization (current: $current_util_percent%)."
   }
   return $max_util
 }

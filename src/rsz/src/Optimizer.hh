@@ -47,7 +47,8 @@ class Optimizer
 
  private:
   // Default token list when the user did not supply -phases/-policy/-policies.
-  static constexpr const char* kDefaultPhases = "LEGACY LAST_GASP";
+  static constexpr const char* kDefaultPhases
+      = "LEGACY WNS_TREE_REBUFFER LAST_GASP";
 
   std::unique_ptr<OptimizationPolicy> makePolicyForPhase(
       std::string_view phase_name,

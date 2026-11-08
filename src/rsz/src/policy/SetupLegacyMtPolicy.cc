@@ -23,6 +23,7 @@
 #include "SizeUpMtGenerator.hh"
 #include "SplitLoadGenerator.hh"
 #include "SwapPinsGenerator.hh"
+#include "TreeRebufferGenerator.hh"
 #include "UnbufferGenerator.hh"
 #include "VtSwapMtGenerator.hh"
 #include "policy/SetupLegacyPolicy.hh"
@@ -76,6 +77,9 @@ void SetupLegacyMtPolicy::buildMoveGenerators(
         break;
       case MoveType::kBuffer:
         generator = std::make_unique<BufferGenerator>(context);
+        break;
+      case MoveType::kTreeRebuffer:
+        generator = std::make_unique<TreeRebufferGenerator>(context);
         break;
       case MoveType::kClone:
         generator = std::make_unique<CloneGenerator>(context);

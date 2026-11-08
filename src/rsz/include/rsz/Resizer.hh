@@ -100,6 +100,7 @@ using TgtSlews = std::array<sta::Slew, sta::RiseFall::index_count>;
 enum class MoveType : uint8_t
 {
   kBuffer,
+  kTreeRebuffer,
   kClone,
   kSizeUp,
   kSizeUpMatch,
@@ -542,6 +543,16 @@ class Resizer : public sta::dbStaState, public sta::dbNetworkObserver
   {
     return estimate_parasitics_;
   }
+  void setActiveNetRcScale(const sta::Net* net);
+  void setActiveNetRcScale(const est::NetRcScale& scale)
+  {
+    active_net_rc_scale_ = scale;
+  }
+  void clearActiveNetRcScale() { active_net_rc_scale_ = est::NetRcScale{}; }
+  const est::NetRcScale& activeNetRcScale() const
+  {
+    return active_net_rc_scale_;
+  }
 
   // Library analysis data
   std::unique_ptr<LibraryAnalysisData> lib_data_;
@@ -857,6 +868,38 @@ class Resizer : public sta::dbStaState, public sta::dbNetworkObserver
       const sta::Scene* scene);
   BufferedNetPtr makeBufferedNetGroute(const sta::Pin* drvr_pin,
                                        const sta::Scene* scene);
+  BufferedNetPtr makeBufferedNetDroute(const sta::Pin* drvr_pin,
+                                       const sta::Scene* scene);
+  void setBlockageAwareSteiner(bool enable)
+  {
+    blockage_aware_steiner_ = enable;
+  }
+  bool blockageAwareSteiner() const { return blockage_aware_steiner_; }
+  void initPlacementBlockages();
+  void ensurePlacementBlockagesInitialized();
+  bool isPointInPlacementBlockage(const odb::Point& pt,
+                                  odb::Rect* hit_box = nullptr) const;
+  bool segmentCrossesPlacementBlockage(const odb::Point& p1,
+                                       const odb::Point& p2,
+                                       odb::Rect* hit_box = nullptr) const;
+  bool segmentCrossesPlacementBlockageInterior(const odb::Point& p1,
+                                               const odb::Point& p2) const;
+  odb::Point snapPointOutsidePlacementBlockage(const odb::Point& pt,
+                                               const odb::Point& ref_pt) const;
+  bool findBlockageFreeLPath(const odb::Point& u,
+                             const odb::Point& v,
+                             std::vector<odb::Point>* out_pts = nullptr) const;
+  std::vector<odb::Point> findBlockageDetourPath(const odb::Point& p1,
+                                                 const odb::Point& p2) const;
+  bool treeTouchesPlacementBlockage(const BufferedNetPtr& tree) const;
+  bool treeCrossesPlacementBlockage(const BufferedNetPtr& tree) const;
+  BufferedNetPtr makeBufferedNetBlockageAwareSteinerOverBnets(
+      odb::Point root,
+      const std::vector<BufferedNetPtr>& sinks,
+      const sta::Scene* scene);
+  BufferedNetPtr rerouteBufferedNetAroundBlockages(
+      const BufferedNetPtr& tree,
+      const sta::Scene* scene);
   float bufferSlew(sta::LibertyCell* buffer_cell,
                    float load_cap,
                    const sta::Scene* scene,
@@ -1024,6 +1067,15 @@ class Resizer : public sta::dbStaState, public sta::dbNetworkObserver
 
   int accepted_move_count_ = 0;
   int rejected_move_count_ = 0;
+
+  bool blockage_aware_steiner_ = true;
+  est::NetRcScale active_net_rc_scale_;
+  bool placement_blockages_initialized_ = false;
+  odb::Rect placement_core_area_;
+  int placement_row_height_ = 1400;
+  std::vector<odb::Rect> placement_blockages_;
+  std::vector<odb::Point> blockage_corners_;
+  std::vector<std::vector<std::pair<int, int64_t>>> blockage_corner_adj_;
 
   friend class BufferedNet;
   friend class GateCloner;
