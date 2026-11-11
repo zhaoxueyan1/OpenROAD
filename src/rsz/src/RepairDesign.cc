@@ -1169,34 +1169,24 @@ void RepairDesign::repairNet(sta::Net* net,
 
       if (bnet) {
         bool crosses_macro = false;
-        int effective_max_length = max_length;
         if (resizer_->blockageAwareSteiner()) {
           resizer_->ensurePlacementBlockagesInitialized();
           if (resizer_->treeCrossesPlacementBlockage(bnet)) {
             crosses_macro = true;
             bnet = resizer_->rerouteBufferedNetAroundBlockages(bnet, corner);
-            const int detoured_wl = bnet ? bnet->maxLoadWireLength() : 0;
-            const int macro_detour_max_len = std::min<int>(
-                resizer_->metersToDbu(180e-6),
-                std::max<int>(resizer_->metersToDbu(60e-6),
-                              detoured_wl * 2 / 3));
-            if (effective_max_length == 0
-                || macro_detour_max_len < effective_max_length) {
-              effective_max_length = macro_detour_max_len;
-            }
           }
         }
         int wire_length = bnet->maxLoadWireLength();
-        repair_wire = needRepairWire(
-            effective_max_length, wire_length, length_violations);
+        repair_wire
+            = needRepairWire(max_length, wire_length, length_violations);
 
         // Insert buffers on the Steiner tree if need be
-        if (repair_cap || repair_load_slew || repair_wire || crosses_macro) {
+        if (repair_cap || repair_load_slew || repair_wire) {
           repaired_net = true;
           if (resizer_->blockageAwareSteiner() && !crosses_macro) {
             bnet = resizer_->rerouteBufferedNetAroundBlockages(bnet, corner);
           }
-          repairNet(bnet, drvr_pin, max_cap, effective_max_length, corner);
+          repairNet(bnet, drvr_pin, max_cap, max_length, corner);
         }
       }
     }
